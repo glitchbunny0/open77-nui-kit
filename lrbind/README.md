@@ -45,12 +45,18 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
 ```
 
 `LrBind.page(page, opts)` wraps a page you created yourself. In a plain browser (a mockup, no `Open77`), call
-`LrBind.init({ models = {...}, events = {...} })` from the page; `LrBind.set(name, path, value)` updates it.
+`LrBind.init({ models = {...}, events = {...} })` from the page; `LrBind.set(name, path, value)` updates it. A path
+walks the model's own members only, and an index may append at the end of a list but not leave a hole; `merge`
+takes top-level fields of the model.
 
 ## Rules that come from RmlUi itself (all reproduced by the shim, all measured against RmlUi 6.3)
 
 - **Every field the markup names must be in the initial model.** An unknown name is a parse error: the binding is
   dropped and a `{{nope}}` text keeps its braces. Fields cannot be added later.
+- **An assignment writes an existing scalar or nothing.** In `data-event-*`, `obj.nope = 5` (a missing member),
+  `list.size = 9`, `obj = 5` (a whole struct or list) and an alias that points past the end of a list are refused with
+  a warning, and the rest of the chain does not run. Assignments take member paths (`a.b = 1`); `list[0] = 1` is a
+  parse error natively too.
 - **A bracket mistake in text kills the rest of the document.** `{{a} }}`, a stray `}}`, nested `{{`, an unclosed
   `{{` before the next tag, or `\'` inside `{{ }}` in TEXT stops RmlUi's XML parser: that text and everything after it
   never load. The shim removes the same nodes and says so through `lrbind:error`. Escapes are fine in attributes.

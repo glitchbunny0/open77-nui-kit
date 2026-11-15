@@ -64,6 +64,40 @@ function page(body, withBridge = true) {
   check(names() === "q", "push after emptying");
 }
 
+// ---- paths from Lua and the page's own API: own members only (nothing reaches Object.prototype), no holes in a list,
+// merge takes top-level fields, a bad push/removeAt is refused with a message instead of throwing
+{
+  const p = page(`<div data-model="m"><span class="row" data-for="it : rows">{{it.name}}</span><b id="n">{{rows.size}}</b></div>`);
+  await p.fire("lrbind:init", { models: { m: { rows: [{ name: "a" }, { name: "b" }], o: { a: 1 } } }, events: {} });
+  const errors = () => p.sent.filter(([e]) => e === "lrbind:error").length;
+  let before = errors();
+  await p.fire("lrbind:set", { model: "m", path: "o.__proto__.polluted", value: "yes" });
+  p.w.LrBind.set("m", "o.constructor.prototype.polluted2", "yes");
+  await tick();
+  check(p.w.eval("({}).polluted") === undefined && p.w.eval("({}).polluted2") === undefined && errors() === before + 2,
+    "set through __proto__ / constructor is refused, Object.prototype untouched");
+  await p.fire("lrbind:set", { model: "m", path: "o.__proto__", value: { polluted3: "yes" } });
+  check(p.w.eval("({}).polluted3") === undefined && Object.keys(p.w.LrBind.get("m").o).includes("__proto__"),
+    "a member named __proto__ is an own member");
+  before = errors();
+  await p.fire("lrbind:set", { model: "m", path: "rows[9]", value: { name: "j" } });
+  check(p.$("#n").textContent === "2" && errors() === before + 1, "set past the end of a list is refused (no holes)");
+  await p.fire("lrbind:set", { model: "m", path: "rows[2]", value: { name: "c" } });
+  check(p.$("#n").textContent === "3", "set at the end appends");
+  before = errors();
+  await p.fire("lrbind:merge", { model: "m", fields: { "rows[0].name": "M", nope: 1 } });
+  check(p.w.LrBind.get("m").rows[0].name === "a" && !("nope" in p.w.LrBind.get("m")) && errors() === before + 2,
+    "merge takes top-level fields only");
+  let threw = null;
+  try {
+    await p.fire("lrbind:push", { model: "m", value: { name: "p" } });
+    await p.fire("lrbind:removeAt", { model: "m", index: 0 });
+    await p.fire("lrbind:removeAt", { model: "m", path: "rows", index: 0.5 });
+    await p.fire("lrbind:merge", { model: "m" });
+  } catch (e) { threw = e.message; }
+  check(threw === null && p.$("#n").textContent === "3", "push/removeAt without a path, a fractional index, merge without fields: refused " + threw);
+}
+
 // ---- events and errors go back to Lua
 {
   const p = page(`<div data-model="m"><div id="b" data-event-click="pick(n, 'x'); n = n + 1">{{n}}</div><div id="bad">{{nope}}</div></div>`);

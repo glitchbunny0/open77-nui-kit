@@ -353,6 +353,33 @@ MUTANTS += [
      'event ? event[address[1]] : NONE', 'parity', 'ev prototype name'),
 ]
 
+# ==== assignments RmlUi refuses are refused; paths walk own members only; set appends but leaves no holes; merge takes
+# top-level fields; a bad push/removeAt warns instead of throwing
+MUTANTS += [
+    ('an assignment creates a missing member', 'lrbind.js', '} else if (typeof entry === "number" || !hasOwn(cur, entry)) {',
+     '} else if (typeof entry === "number") {', 'parity', 'assign to a missing member'),
+    ('an assignment past the end of a list', 'lrbind.js', ' || entry < 0 || entry >= cur.length) {', ') {', 'parity',
+     'assign out of bounds through an alias'),
+    ('an assignment over a container', 'lrbind.js',
+     '      if (cur !== null && typeof cur === "object") { warn("Values can only be assigned to scalar data types."); return false; }\n',
+     '', 'parity', 'assign a container'),
+    ('an assignment walks inherited members', 'lrbind.js', '!hasOwn(cur, entry)) {', 'cur[entry] === NONE) {', 'parity',
+     'assign to an inherited name'),
+    ('set walks inherited members', 'lrbind.js', '} else if (last ? Array.isArray(next) : !hasOwn(next, entry)) {',
+     '} else if (last ? Array.isArray(next) : false) {', 'protocol', 'set through __proto__ / constructor is refused'),
+    ('a member named __proto__ set as obj[key]', 'lrbind.js', 'if (key === "__proto__") Object.defineProperty',
+     'if (false) Object.defineProperty', 'protocol', 'a member named __proto__ is an own member'),
+    ('set leaves holes in a list', 'lrbind.js', 'if (entry > next.length || (entry === next.length && !last)) {',
+     'if (false) {', 'protocol', 'set past the end of a list is refused'),
+    ('merge takes any key', 'lrbind.js', 'if (!m.variables.has(k)) { warn("merge:', 'if (false) { warn("merge:', 'protocol',
+     'merge takes top-level fields only'),
+    ('removeAt takes a fractional index', 'lrbind.js', 'if (a && Number.isInteger(index) && index >= 0', 'if (a && index >= 0',
+     'protocol', 'a fractional index'),
+    ('push/removeAt without a path throws', 'lrbind.js',
+     '  function arrayAt(model, path) {\n    const address = typeof path === "string" ? parseAddress(path) : null;',
+     '  function arrayAt(model, path) {\n    const address = parseAddress(path);', 'protocol', 'without a path'),
+]
+
 # ==== the run
 
 def plant(i, src, old, new):

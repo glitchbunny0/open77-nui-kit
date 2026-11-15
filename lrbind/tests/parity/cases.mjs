@@ -136,6 +136,10 @@ export const cases = [
   T("event bubbles from a child", `<div data-event-click="n = n + 1"><span id="c">x</span></div><b>{{n}}</b>`, { n: 0 }, { steps: [{ event: "c", type: "click" }] }),
 
   // ---- assignments RmlUi refuses, event parameters
+  T("assign to a missing member", `<div id="btn" data-event-click="obj.nope = 5; n = 1">{{obj.a}}|{{n}}</div>`, { obj: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign to size", `<div id="btn" data-event-click="list.size = 9; n = 1">{{list.size}}|{{n}}</div>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign to an inherited name", `<div id="btn" data-event-click="o.toString = 5; n = 1">{{n}}|{{o.a}}</div>`, { o: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign out of bounds through an alias", `<div id="btn" data-alias-far="list[5]" data-event-click="far = 'x'; n = 1">{{list.size}}|{{n}}</div>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
   T("assign out of array bounds", `<div id="btn" data-event-click="list[5] = 'x'; n = 1">{{list.size}}|{{n}}</div><i data-for="list">{{it}}</i>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
   T("assign a container", `<div id="btn" data-event-click="obj = 5; n = 1">{{obj.a}}|{{n}}</div>`, { obj: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
   T("assign a missing ev param", `<div id="btn" data-event-click="s = ev.nope; n = 1">{{s}}|{{n}}</div>`, { s: "keep", n: 0 }, { steps: [{ event: "btn", type: "click" }] }),

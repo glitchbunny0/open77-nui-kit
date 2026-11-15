@@ -34,6 +34,11 @@
 
   const NONE = undefined;
   const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  // obj[key] = v that stays an own property: a key "__proto__" must not reach Object.prototype
+  function setOwn(obj, key, v) {
+    if (key === "__proto__") Object.defineProperty(obj, key, { value: v, writable: true, enumerable: true, configurable: true });
+    else obj[key] = v;
+  }
   const isScalar = (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 
   // printf("%.<p>f") for a double: correctly rounded, exact ties to even (JS toFixed breaks ties upwards).
@@ -707,17 +712,27 @@
       return cur;
     }
 
+    // DataModel::GetVariable walks every entry first (a missing member, an index out of bounds or `size` fails), then
+    // DataVariable::Set takes scalars only. A refused assignment warns and stops the data-event chain.
     setValue(address, value) {
-      if (!this.variables.has(address[0]) || value === NONE) return false;
+      if (!this.variables.has(address[0])) return false;
       let parent = this.data, key = address[0];
       for (let i = 1; i < address.length; i++) {
-        const next = parent[key];
-        if (next === null || typeof next !== "object") return false;
-        parent = next;
-        key = address[i];
+        const cur = parent[key], entry = address[i];
+        if (cur === null || typeof cur !== "object") { warn("Tried to get the child of a scalar type."); return false; }
+        if (isArrayLike(cur)) {
+          if (typeof entry !== "number" || !Array.isArray(cur) || entry < 0 || entry >= cur.length) { warn("Data array index out of bounds."); return false; }
+        } else if (typeof entry === "number" || !hasOwn(cur, entry)) {
+          warn("Member " + String(entry) + " not found in data struct.");
+          return false;
+        }
+        parent = cur;
+        key = entry;
       }
-      if (parent[key] !== NONE && !isScalar(parent[key])) { warn("Values can only be assigned to scalar data types."); return false; }
-      parent[key] = value;
+      const cur = parent[key];
+      if (cur !== null && typeof cur === "object") { warn("Values can only be assigned to scalar data types."); return false; }
+      if (value === NONE) return false;
+      setOwn(parent, key, value);
       this.dirty.add(address[0]);
       schedule();
       return true;
@@ -1228,24 +1243,37 @@
   }
 
   // Lua paths come in already 0-based (lrbind.lua shifts them).
+  // A path walks own members only (it cannot reach Object.prototype), and an index may append at the end of a list,
+  // not leave a hole.
   function setPath(model, path, value) {
-    const address = parseAddress(path);
+    const address = typeof path === "string" ? parseAddress(path) : null;
     if (!address || !model.variables.has(address[0])) { warn("set: no data variable '" + path + "' in model " + model.name); return; }
     let parent = model.data, key = address[0];
     for (let i = 1; i < address.length; i++) {
       let next = parent[key];
+      const entry = address[i], last = i === address.length - 1;
       if (next === null || typeof next !== "object") { warn("set: '" + path + "' runs through a scalar"); return; }
-      if (typeof address[i] === "number" && !Array.isArray(next)) { next = []; parent[key] = next; }
+      if (typeof entry === "number") {
+        if (!Array.isArray(next)) {
+          if (Object.keys(next).length) { warn("set: '" + path + "' indexes a struct"); return; }
+          next = [];   // Lua's {} is an empty list
+          setOwn(parent, key, next);
+        }
+        if (entry > next.length || (entry === next.length && !last)) { warn("set: '" + path + "' is past the end of its list"); return; }
+      } else if (last ? Array.isArray(next) : !hasOwn(next, entry)) {
+        warn("set: no member '" + entry + "' on the way to '" + path + "'");
+        return;
+      }
       parent = next;
-      key = address[i];
+      key = entry;
     }
-    parent[key] = value;
+    setOwn(parent, key, value);
     model.dirty.add(address[0]);
     schedule();
   }
 
   function arrayAt(model, path) {
-    const address = parseAddress(path);
+    const address = typeof path === "string" ? parseAddress(path) : null;
     if (!address || !model.variables.has(address[0])) return null;
     let cur = model.data[address[0]];
     for (let i = 1; i < address.length && cur !== NONE; i++) cur = child(cur, address[i]);
@@ -1287,7 +1315,7 @@
       for (const [name, data] of Object.entries((spec && spec.models) || {})) {
         const old = models.get(name);
         if (old && old.root) {
-          for (const [k, v] of Object.entries(data || {})) if (old.variables.has(k)) { old.data[k] = v; old.dirty.add(k); }
+          for (const [k, v] of Object.entries(data || {})) if (old.variables.has(k)) { setOwn(old.data, k, v); old.dirty.add(k); }
           schedule();
           continue;
         }
@@ -1296,13 +1324,25 @@
       bindDocument(doc);
     },
     set(name, path, value) { const m = models.get(name); if (m) setPath(m, path, value); else warn("set: no model " + name); },
+    // merge takes top-level fields of the model (set takes a path)
     merge(name, fields) {
       const m = models.get(name);
       if (!m) return warn("merge: no model " + name);
-      for (const [k, v] of Object.entries(fields || {})) setPath(m, k, v);
+      if (!fields || typeof fields !== "object") return warn("merge: no fields for model " + name);
+      for (const k of Object.keys(fields)) {
+        if (!m.variables.has(k)) { warn("merge: no data variable '" + k + "' in model " + name + " (merge takes top-level fields)"); continue; }
+        setOwn(m.data, k, fields[k]);
+        m.dirty.add(k);
+      }
+      schedule();
     },
     push(name, path, value) { const m = models.get(name); const a = m && arrayAt(m, path); if (a) a.push(value); else warn("push: '" + path + "' is not an array"); },
-    removeAt(name, path, index) { const m = models.get(name); const a = m && arrayAt(m, path); if (a && index >= 0 && index < a.length) a.splice(index, 1); else warn("removeAt: no entry " + index + " in '" + path + "'"); },
+    removeAt(name, path, index) {
+      const m = models.get(name);
+      const a = m && arrayAt(m, path);
+      if (a && Number.isInteger(index) && index >= 0 && index < a.length) a.splice(index, 1);
+      else warn("removeAt: no entry " + index + " in '" + path + "'");
+    },
     get(name) { const m = models.get(name); return m ? m.data : NONE; },
     flush,
     onError(fn) { errorSink = fn; },
