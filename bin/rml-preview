@@ -279,34 +279,165 @@ def paint_of(rules, chain_strs, current):
     return out
 
 
+# ---- <path d>: every SVG command, curves and arcs flattened to polylines
+def _path_tokens(d):
+    i, n = 0, len(d)
+    num = re.compile(r'[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?')
+    while i < n:
+        ch = d[i]
+        if ch.isspace() or ch == ',':
+            i += 1
+        elif ch.isalpha() and ch not in 'eE':
+            yield ch
+            i += 1
+        else:
+            m = num.match(d, i)
+            if not m:
+                i += 1
+                continue
+            yield m.group(0)
+            i = m.end()
+
+
+def _arc(p0, rx, ry, phi, large, sweep, p1):
+    """SVG arc (endpoint form, spec F.6.5) as points after p0"""
+    if rx == 0 or ry == 0 or p0 == p1:
+        return [p1]
+    rx, ry = abs(rx), abs(ry)
+    cp, sp = math.cos(math.radians(phi)), math.sin(math.radians(phi))
+    dx, dy = (p0[0] - p1[0]) / 2, (p0[1] - p1[1]) / 2
+    x1, y1 = cp * dx + sp * dy, -sp * dx + cp * dy
+    lam = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry)
+    if lam > 1:
+        rx, ry = rx * math.sqrt(lam), ry * math.sqrt(lam)
+    num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1
+    den = rx * rx * y1 * y1 + ry * ry * x1 * x1
+    co = math.sqrt(max(0.0, num / den)) if den else 0.0
+    if large == sweep:
+        co = -co
+    cx1, cy1 = co * rx * y1 / ry, -co * ry * x1 / rx
+    cx, cy = cp * cx1 - sp * cy1 + (p0[0] + p1[0]) / 2, sp * cx1 + cp * cy1 + (p0[1] + p1[1]) / 2
+
+    def ang(ux, uy, vx, vy):
+        a = math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+        return a
+    t0 = ang(1, 0, (x1 - cx1) / rx, (y1 - cy1) / ry)
+    dt = ang((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry)
+    if not sweep and dt > 0:
+        dt -= 2 * math.pi
+    elif sweep and dt < 0:
+        dt += 2 * math.pi
+    steps = max(4, int(abs(dt) / (math.pi / 24)))
+    out = []
+    for k in range(1, steps + 1):
+        t = t0 + dt * k / steps
+        ex, ey = rx * math.cos(t), ry * math.sin(t)
+        out.append((cp * ex - sp * ey + cx, sp * ex + cp * ey + cy))
+    out[-1] = p1
+    return out
+
+
 def path_polys(d):
-    """M / L / H / V / Z subpaths (absolute or relative) as point lists, each with its closed flag"""
-    polys, cur, pen = [], None, (0.0, 0.0)
-    for cmd, args in re.findall(r'([MLHVZmlhvz])([^MLHVZmlhvz]*)', d):
-        nums = [float(x) for x in re.findall(r'-?\d*\.?\d+(?:e-?\d+)?', args)]
-        rel = cmd.islower()
-        c = cmd.upper()
-        if c == 'M' and len(nums) >= 2:
-            pen = (pen[0] + nums[0], pen[1] + nums[1]) if rel else (nums[0], nums[1])
+    """every subpath of an SVG path as (points, closed); C/S/Q/T/A flattened"""
+    toks = list(_path_tokens(d))
+    polys, cur, pen, start = [], None, (0.0, 0.0), (0.0, 0.0)
+    last_c2, last_q, prev = None, None, ''
+    i, cmd = 0, None
+    counts = {'M': 2, 'L': 2, 'H': 1, 'V': 1, 'C': 6, 'S': 4, 'Q': 4, 'T': 2, 'A': 7, 'Z': 0}
+    while i < len(toks):
+        t = toks[i]
+        if t[0].isalpha():
+            cmd = t
+            i += 1
+            if cmd.upper() == 'Z':
+                if polys:
+                    polys[-1][1] = True
+                pen = start
+                prev, cmd = 'Z', None
+                last_c2 = last_q = None
+                continue
+        if cmd is None or cmd.upper() not in counts:
+            i += 1
+            continue
+        c, rel = cmd.upper(), cmd.islower()
+        k = counts[c]
+        if c == 'A':
+            # flags may be packed ("0 011 0"): read them one character at a time
+            args, j = [], i
+            while len(args) < 7 and j < len(toks):
+                tk = toks[j]
+                if tk[0].isalpha():
+                    break
+                if len(args) in (3, 4) and len(tk) > 1 and tk[0] in '01':
+                    args.append(float(tk[0]))
+                    toks[j] = tk[1:]
+                    continue
+                args.append(float(tk))
+                j += 1
+            i = j
+        else:
+            args = []
+            while len(args) < k and i < len(toks) and not toks[i][0].isalpha():
+                args.append(float(toks[i]))
+                i += 1
+        if len(args) < k:
+            break
+        ox, oy = pen if rel else (0.0, 0.0)
+        if c == 'M':
+            pen = (ox + args[0], oy + args[1])
+            start = pen
             cur = [pen]
             polys.append([cur, False])
-            nums = nums[2:]
-            c = 'L'
-        if c == 'L' and cur is not None:
-            for k in range(0, len(nums) - 1, 2):
-                pen = (pen[0] + nums[k], pen[1] + nums[k + 1]) if rel else (nums[k], nums[k + 1])
-                cur.append(pen)
-        elif c == 'H' and cur is not None:
-            for v in nums:
-                pen = (pen[0] + v if rel else v, pen[1])
-                cur.append(pen)
-        elif c == 'V' and cur is not None:
-            for v in nums:
-                pen = (pen[0], pen[1] + v if rel else v)
-                cur.append(pen)
-        elif c == 'Z' and polys:
-            polys[-1][1] = True
-            pen = polys[-1][0][0]
+            cmd = 'l' if rel else 'L'   # further pairs are line-tos
+            last_c2 = last_q = None
+            continue
+        if cur is None:
+            cur = [pen]
+            polys.append([cur, False])
+        if c == 'L':
+            pen = (ox + args[0], oy + args[1])
+            cur.append(pen)
+            last_c2 = last_q = None
+        elif c == 'H':
+            pen = (ox + args[0] if rel else args[0], pen[1])
+            cur.append(pen)
+            last_c2 = last_q = None
+        elif c == 'V':
+            pen = (pen[0], oy + args[0] if rel else args[0])
+            cur.append(pen)
+            last_c2 = last_q = None
+        elif c in ('C', 'S'):
+            if c == 'C':
+                c1 = (ox + args[0], oy + args[1])
+                rest = args[2:]
+            else:
+                c1 = (2 * pen[0] - last_c2[0], 2 * pen[1] - last_c2[1]) if last_c2 else pen
+                rest = args
+            c2, p1 = (ox + rest[0], oy + rest[1]), (ox + rest[2], oy + rest[3])
+            p0 = pen
+            for s in range(1, 17):
+                u = s / 16
+                a, b, cc, dd = (1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3
+                cur.append((a * p0[0] + b * c1[0] + cc * c2[0] + dd * p1[0], a * p0[1] + b * c1[1] + cc * c2[1] + dd * p1[1]))
+            pen, last_c2, last_q = p1, c2, None
+        elif c in ('Q', 'T'):
+            if c == 'Q':
+                q = (ox + args[0], oy + args[1])
+                p1 = (ox + args[2], oy + args[3])
+            else:
+                q = (2 * pen[0] - last_q[0], 2 * pen[1] - last_q[1]) if last_q else pen
+                p1 = (ox + args[0], oy + args[1])
+            p0 = pen
+            for s in range(1, 17):
+                u = s / 16
+                cur.append(((1 - u) ** 2 * p0[0] + 2 * u * (1 - u) * q[0] + u * u * p1[0],
+                            (1 - u) ** 2 * p0[1] + 2 * u * (1 - u) * q[1] + u * u * p1[1]))
+            pen, last_q, last_c2 = p1, q, None
+        elif c == 'A':
+            p1 = (ox + args[5], oy + args[6])
+            cur.extend(_arc(pen, args[0], args[1], args[2], bool(args[3]), bool(args[4]), p1))
+            pen = p1
+            last_c2 = last_q = None
     return polys
 
 
@@ -927,11 +1058,19 @@ class Painter:
             ox, oy = x + (w - vb[2] * k) / 2 - vb[0] * k, y + (h - vb[3] * k) / 2 - vb[1] * k
             swm = re.match(r'[\d.]+', pt['stroke-width'] or '')
             sw = float(swm.group(0)) if swm else 1.0
-            for pts, closed in path_polys(e['d']):
-                pp = [(ox + px_ * k, oy + py_ * k) for px_, py_ in pts]
-                fill = pt['fill']
-                if closed and fill and fill != 'none' and len(pp) > 2:
-                    d.polygon(pp, fill=rgba(fill, op))
+            polys = [([(ox + px_ * k, oy + py_ * k) for px_, py_ in pts], closed) for pts, closed in path_polys(e['d'])]
+            fill = pt['fill']
+            if fill and fill != 'none':
+                # nonzero fill rule (SVG's default): add each subpath's interior with its winding direction
+                acc = Image.new('L', img.size, 128)
+                for pp, _ in polys:
+                    if len(pp) > 2:
+                        m = Image.new('L', img.size, 0)
+                        ImageDraw.Draw(m).polygon(pp, fill=1)
+                        area = sum(pp[i][0] * pp[i - 1][1] - pp[i - 1][0] * pp[i][1] for i in range(len(pp)))
+                        acc = ImageChops.add(acc, m) if area >= 0 else ImageChops.subtract(acc, m)
+                layer.paste(Image.new('RGBA', img.size, rgba(fill, op)), (0, 0), acc.point(lambda v: 0 if v == 128 else 255))
+            for pp, closed in polys:
                 if pt['stroke'] and pt['stroke'] != 'none' and len(pp) > 1:
                     d.line(pp + ([pp[0]] if closed else []), fill=rgba(pt['stroke'], op), width=max(1, int(round(sw))), joint='curve')
         mask = e.get('mask') or ''
