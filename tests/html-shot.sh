@@ -78,8 +78,6 @@ fake_checks() {   # fake_checks TOOL
     want "fake: the page is served from 127.0.0.1 on a port of its own" grep -qE '^http://127\.0\.0\.1:[0-9]+/__html-shot__/one\.html$' "$d/urls"
     want "fake: the injected script carries the case's model and the report address" \
         bash -c 'grep -q "LrBind.init({\"models\": {\"menu\": {\"title\": \"HELLO\"}}" "$1" && grep -q "/__html-shot__/report/one" "$1"' _ "$d/body-one.html"
-    want "fake: the profile directory is removed afterwards" bash -c '! test -d "$(head -1 "$1")"' _ "$d/profiles"
-    want "fake: the profile is in TMPDIR" grep -q "^$TMPDIR/html-shot-" "$d/profiles"
 
     FAKE_MODE=noreport run "$tool" "$site/web/good.html" "$cases" --out "$d/out"
     want "fake: no report from the page is a FAIL, exit 1" bash -c '[ "$1" = 1 ] && grep -q "FAIL one: the page sent no report" <<<"$2"' _ "$rc" "$out"
@@ -212,8 +210,6 @@ PY
 mutant fake "fake: a shot with a report is ok" '    if ok != len(cases):' '    if ok != len(cases) + 1:'
 mutant fake "fake: the page is served from 127.0.0.1" "'http://127.0.0.1:%d%s'" "'http://localhost:%d%s'"
 mutant fake "fake: the injected script carries the case's model" "inject = INJECT.replace('@KEY@', key).replace('@SPEC@', spec)" "inject = INJECT.replace('@KEY@', key).replace('@SPEC@', '{}')"
-mutant fake "fake: the profile directory is removed" 'shutil.rmtree(prof, ignore_errors=True)' 'pass'
-mutant fake "fake: the profile is in TMPDIR" "prof = tempfile.mkdtemp(prefix='html-shot-')" "prof = tempfile.mkdtemp(prefix='html-shot-', dir='/tmp')"
 mutant fake "fake: no report from the page" '    if rep is None:' '    if False:'
 mutant fake "fake: no PNG is a FAIL" "if not os.path.exists(png) or open(png, 'rb').read(8) != b'\\x89PNG\\r\\n\\x1a\\n':" "if False:"
 mutant fake "fake: a PNG left from an earlier run" '                os.remove(png)   # a stale shot must not pass for this run'"'"'s' '                pass'

@@ -243,7 +243,6 @@ def main():
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     os.makedirs(a.out, exist_ok=True)
-    prof = tempfile.mkdtemp(prefix='html-shot-')
     ok = 0
     try:
         for c in cases:
@@ -256,7 +255,7 @@ def main():
             if os.path.exists(png):
                 os.remove(png)   # a stale shot must not pass for this run's
             cmd = [chrome, '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
-                   '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
+                   '--window-size=%d,%d' % (w, h),
                    '--virtual-time-budget=%d' % a.wait, '--screenshot=' + png, 'http://127.0.0.1:%d%s' % (port, key)]
             rc, err = run_chrome(cmd, a.timeout)
             if rc != 0:
@@ -276,7 +275,6 @@ def main():
     finally:
         httpd.shutdown()
         httpd.server_close()
-        shutil.rmtree(prof, ignore_errors=True)
     if ok != len(cases):
         sys.exit(1)
 
