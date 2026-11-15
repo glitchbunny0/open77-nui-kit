@@ -32,3 +32,18 @@
 #c2 { background: linear-gradient(lch(50% 40 0.5turn), transparent); }
 #c3 { color: canvastext; }
 #c4 { border-color: red buttonface; }
+/* keywords in any case, back tweens, zero borders, strings, a zero animation count, calc() spacing, ; and } inside url() */
+#k1 { display: FLEX; position: ABSOLUTE; }
+#k2 { transition: opacity .2s cubic-bezier(.34, 1.56, .64, 1); }
+#k3 { border: 0; border-right: 2px solid #f00; border-left: 0; }
+#k4 { text-overflow: '"'; }
+#k5 { animation: pulse 1s 0; }
+#k6 { margin-left: calc(1px+2px); margin-top: calc(0 + 5px); margin-right: calc(1px*(2+3)); }
+#k7 { background: url(assets/x;}.png) no-repeat; color: #0f0; }
+#k8 { font-family: \5FAE\8F6F\96C5\9ED1, sans-serif; }
+@keyframes pulse { from { opacity: 0; } to { opacity: 1; } }
+/* an unterminated string ends at its line (a browser's bad string) */
+#k11 { content: "abc
+; color: #00f; }
+#k9 { content: "abc; color: red }
+#k10 { color: blue }

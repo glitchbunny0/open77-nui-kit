@@ -23,6 +23,7 @@ TOOLS = os.environ.get('HTML2RML_KIT') or KIT
 sys.path.insert(0, KIT)
 sys.dont_write_bytecode = True
 from converter import css_values as V  # noqa: E402
+from converter import css_props as P  # noqa: E402
 from converter.cli import main as cli_main  # noqa: E402
 
 UNITS = V.Units(1.0, (1920, 1080), 16)
@@ -63,6 +64,8 @@ UNIT = [
     ('oklch passes, alpha kept', lambda: conv('oklch(63% 0.25 30deg / 0.8)'), 'oklch(63% 0.25 30 / 0.8)'),
     ('lch hue in rad as degrees', lambda: conv('lch(50% 40 1rad)'), 'lch(50% 40 57.2958)'),
     ('color-mix() fails', lambda: raises(lambda: conv('color-mix(in srgb, red, blue)')), True),
+    ("exponential tween is RmlUi's e^(7.24(t-1))", lambda: round(P._tween_fn('exponential-in')(0.5), 4), 0.0268),
+    ('back tweens are fitted', lambda: P.fit_tween((.34, 1.56, .64, 1))[0], 'back-out'),
     ('named', lambda: conv('rebeccapurple'), '#663399'),
     ('nested fallback', lambda: conv('var(--a, var(--b, 3px))', lambda n: {'--b': '5px'}.get(n)), '5dp'),
     ('calc mixing % and px fails', lambda: raises(lambda: conv('calc(100% - 20px)')), True),

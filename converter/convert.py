@@ -136,6 +136,14 @@ class Converter:
             out.append((p, 1, open(p, encoding='utf-8').read(), None))
         return out
 
+    def parse_sheet(self, txt, line0, file):
+        bad = set()
+        items = css_parse.parse(txt, line0, bad)
+        for line in sorted(bad):
+            self.report.add(self.where(file), line, 'css', 'a string without its closing quote (it ends at the end of the line)',
+                            'close the string: a browser drops the declaration it is in')
+        return items
+
     def flatten(self, items, file, depth=0):
         """@media/@import/@supports resolved -> [(file, item)] of Rule and @keyframes, @font-face collected"""
         out = []
@@ -163,7 +171,7 @@ class Converter:
                     media = m.group(2).strip()
                     if media and not self.media_ok(media)[0]:
                         continue
-                    out += self.flatten(css_parse.parse(open(p, encoding='utf-8').read()), p, depth + 1)
+                    out += self.flatten(self.parse_sheet(open(p, encoding='utf-8').read(), 1, p), p, depth + 1)
                 else:
                     self.report.add(self.where(file), it.line, 'css', f'@import {it.prelude} could not be read',
                                     'copy its rules in')
@@ -995,7 +1003,7 @@ class Converter:
             if media and not self.media_ok(media)[0]:
                 self.report.add(self.where(file), line0, 'css', f'stylesheet for media {media}', 'not for the canvas: left out')
                 continue
-            rules += self.flatten(css_parse.parse(txt, line0), file)
+            rules += self.flatten(self.parse_sheet(txt, line0, file), file)
         # rem: the root font size of the page
         for f, r in rules:
             if isinstance(r, css_parse.Rule) and r.decls and re.match(r'^\s*(html|:root)\s*$', r.prelude):

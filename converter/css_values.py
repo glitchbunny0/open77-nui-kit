@@ -64,7 +64,7 @@ def tokenize(s):
             i += 1
         elif c in '"\'':
             j = i + 1
-            while j < n and s[j] != c:
+            while j < n and s[j] != c and s[j] != '\n':   # a newline ends a string (CSS: a bad string)
                 j += 2 if s[j] == '\\' else 1
             cur.append(('str', s[i + 1:j]))
             i = j + 1
@@ -153,8 +153,8 @@ def ser(toks):
             out.append(' / ')
         elif k == 'op':
             out.append(' %s ' % t[1] if t[1] in '+-' else t[1])
-        elif k == 'str':
-            out.append('"%s"' % t[1])
+        elif k == 'str':   # RCSS strings are double-quoted: a `"` inside one (from '"') is escaped
+            out.append('"%s"' % re.sub(r'(?<!\\)"', r'\\"', t[1]))
         elif k == 'num':
             out.append(fmt(t[1]) + t[2])
         elif k in ('hash', 'ident', 'delim'):
@@ -327,8 +327,20 @@ def fold_math(toks):
     return out
 
 
+def _spaced(toks):
+    """CSS wants whitespace on both sides of + and - in calc(); without it the browser drops the declaration"""
+    for i, t in enumerate(toks):
+        if t[0] == 'op' and t[1] in '+-' and not (0 < i < len(toks) - 1 and toks[i - 1][0] == 'ws'
+                                                  and toks[i + 1][0] == 'ws'):
+            raise ValueIssue('calc() without spaces around + or -: the browser ignores the whole declaration',
+                             'write calc(a + b), with the spaces')
+        if t[0] == 'paren' or (t[0] == 'func' and t[1] in MATH_FUNCS):
+            _spaced(t[-1])
+
+
 def _eval_func(t):
     name, args = t[1], t[2]
+    _spaced(args)
     if name in ('calc', '-webkit-calc'):
         return _Calc(args).run()
     vals = [_Calc(a).run() for a in split(args)]
@@ -408,7 +420,7 @@ class _Calc:
 
     @staticmethod
     def add(a, b, op):
-        if a[1] != b[1] and not (a[0] == 0 and not a[1]) and not (b[0] == 0 and not b[1]):
+        if a[1] != b[1]:   # a unitless 0 is a number here, not a length: calc(0 + 5px) is invalid CSS
             raise ValueIssue(f'calc() mixes {a[1] or "numbers"} and {b[1] or "numbers"}',
                              'RmlUi has no calc(): pick the value for the design canvas (or set it from the client '
                              'with ui:style)')

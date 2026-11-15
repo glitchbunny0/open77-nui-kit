@@ -54,6 +54,22 @@ MUTANTS = [
     ('hsl-half-up', 'css_values.py', 'int(math.floor(x + 0.5 + 1e-7))', 'int(round(x))', 'unit hsl half'),
     ('colour-name-unknown', 'css_props.py', "        if bad:\n            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour",
      "        if False:\n            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour", 'fixture 13-values'),
+    ('keyword-case', 'css_props.py', "if kws and any(t[0] == 'ident' and t[1] != t[1].lower() for t in toks):",
+     'if False:', 'fixture 13-values'),
+    ('back-tween', 'css_props.py', "'circular', 'back', 'linear')", "'circular', 'linear')", 'fixture 13-values'),
+    ('exp-tween', 'css_props.py', 'math.exp(7.24 * (t - 1))', '2 ** (10 * (t - 1))', 'unit exponential'),
+    ('border-zero', 'css_props.py', " or width in ('0', '0dp'):", ':', 'fixture 13-values'),
+    ('string-quote', 'css_values.py', """re.sub(r'(?<!\\\\)"', r'\\\\"', t[1])""", 't[1]', 'fixture 13-values'),
+    ('animation-count-0', 'css_props.py', "        if count == '0':\n            continue", "        if False:\n            continue",
+     'fixture 13-values'),
+    ('calc-spaces', 'css_values.py', '    _spaced(args)\n', '    pass\n', 'fixture 13-values'),
+    ('calc-zero-number', 'css_values.py', 'if a[1] != b[1]:   # a unitless 0', 'if a[1] != b[1] and a[0] and b[0]:   #',
+     'fixture 13-values'),
+    ('block-parens', 'css_parse.py', '            elif parens:\n                pass', '            elif False:\n                pass',
+     'fixture 13-values'),
+    ('bad-string', 'css_parse.py', "while j < n and text[j] != c and text[j] != '\\n':", 'while j < n and text[j] != c:',
+     'fixture 13-values'),
+    ('path-semicolon', 'css_props.py', "        if re.search(r'[;{}]', src):", '        if False:', 'fixture 13-values'),
 ]
 
 

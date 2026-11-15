@@ -12,7 +12,7 @@ class Issue:
 
 
 # ---- easing: CSS timing functions -> the nearest RmlUi tween (max error over the curve measured by _fit)
-TWEEN_FAMILIES = ('sine', 'quadratic', 'cubic', 'quartic', 'quintic', 'exponential', 'circular', 'linear')
+TWEEN_FAMILIES = ('sine', 'quadratic', 'cubic', 'quartic', 'quintic', 'exponential', 'circular', 'back', 'linear')
 CSS_EASE = {'ease': (0.25, 0.1, 0.25, 1), 'ease-in': (0.42, 0, 1, 1), 'ease-out': (0, 0, 0.58, 1),
             'ease-in-out': (0.42, 0, 0.58, 1), 'linear': (0, 0, 1, 1)}
 
@@ -21,7 +21,8 @@ def _tween_fn(name):
     fam, mode = re.match(r'^(\w+)-(in-out|in|out)$', name).groups()
     f = {'sine': lambda t: 1 - math.cos(t * math.pi / 2), 'quadratic': lambda t: t * t, 'cubic': lambda t: t ** 3,
          'quartic': lambda t: t ** 4, 'quintic': lambda t: t ** 5,
-         'exponential': lambda t: 0 if t == 0 else 2 ** (10 * (t - 1)),
+         'exponential': lambda t: t if t in (0, 1) else math.exp(7.24 * (t - 1)),   # RmlUi's Tween.cpp
+         'back': lambda t: t * t * (2.70158 * t - 1.70158),
          'circular': lambda t: 1 - math.sqrt(max(0.0, 1 - t * t)), 'linear': lambda t: t}[fam]
     if mode == 'in':
         return f
@@ -61,7 +62,7 @@ def fit_tween(p):
 
 
 EASE_MAP = {k: fit_tween(v)[0] for k, v in CSS_EASE.items()}
-RML_TWEENS = {f'{f}-{m}' for f in TWEEN_FAMILIES + ('back', 'bounce', 'elastic') for m in ('in', 'out', 'in-out')}
+RML_TWEENS = {f'{f}-{m}' for f in TWEEN_FAMILIES + ('bounce', 'elastic') for m in ('in', 'out', 'in-out')}
 
 
 def tween_of(word, issues):
@@ -343,6 +344,10 @@ def image_decorator(L, ctx, issues, what):
     if img[0] == 'url':
         src = ctx.asset(img[1], issues)
         if src is None:
+            return None
+        if re.search(r'[;{}]', src):
+            issues.append(Issue(f'{what} image {img[1]}', 'RmlUi\'s sheet parser ends a declaration at ; { or } even '
+                                'inside quotes: rename the file (dropped)'))
             return None
         fit = _size_fit(L['size'])
         al = _align(L['pos'], issues, what)
@@ -635,6 +640,11 @@ def map_decl(d, ctx, issues):
                 else '')))
             return []
     h = HANDLERS.get(n)
+    kinds, kws = PROPERTIES.get(n, ((), ()))
+    if kws and any(t[0] == 'ident' and t[1] != t[1].lower() for t in toks):
+        # CSS keywords are case-insensitive, RmlUi's are lower-case: DISPLAY: FLEX is display: flex
+        toks = [('ident', t[1].lower()) if t[0] == 'ident' and (not kinds or t[1].lower() in kws) else t for t in toks]
+        s, ws = V.ser(toks), V.words(toks)
     if h:
         return h(n, toks, ws, s, ctx, issues)
     if n in OPEN77_PROPS:
@@ -880,7 +890,7 @@ def h_border(n, toks, ws, s, ctx, issues):
             issues.append(Issue(f'{n}: {s}', 'could not read it: write width and colour'))
             return []
     side = n[len('border'):]   # '', '-top', ...
-    if style in ('none', 'hidden') or (style is None and width is None and color is None):
+    if style in ('none', 'hidden') or (style is None and width is None and color is None) or width in ('0', '0dp'):
         return [(f'border{side}-width' if side else 'border-width', '0')]
     if style not in (None, 'solid'):
         issues.append(Issue(f'border style {style}', 'RmlUi draws solid borders only: written solid'))
@@ -1077,7 +1087,12 @@ def h_animation(n, toks, ws, s, ctx, issues):
                 if t[1] != int(t[1]):
                     issues.append(Issue(f'animation iteration count {V.fmt(t[1])}', 'RmlUi counts whole runs: '
                                         'rounded'))
-                count = str(max(1, int(round(t[1]))))
+                if round(t[1]) < 1:
+                    issues.append(Issue(f'animation iteration count {V.fmt(t[1])}', 'RmlUi runs an animation at least '
+                                        'once: dropped (leave the animation out instead)'))
+                    count = '0'
+                else:
+                    count = str(int(round(t[1])))
             elif t[0] == 'ident' and t[1] == 'infinite':
                 count = 'infinite'
             elif t[0] == 'ident' and t[1] == 'alternate':
@@ -1104,6 +1119,8 @@ def h_animation(n, toks, ws, s, ctx, issues):
             continue
         if not times or float(times[0][:-1]) == 0:
             issues.append(Issue(f'animation {name} has no duration', 'dropped'))
+            continue
+        if count == '0':
             continue
         if ctx.keyframes and name not in ctx.keyframes:
             issues.append(Issue(f'animation {name}: no @keyframes {name} in the sheets', 'dropped'))
