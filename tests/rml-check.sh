@@ -61,7 +61,7 @@ chk_click_nothing(){ variant c.json 's/"sel":"\.btn"/"sel":"#title"/'; rc "$fx/u
 chk_exit_click()   { variant c.json 's/\["2"\]/["3"]/'; rc "$fx/ui.rml" "$fx/c.json" --quiet; want 1 'CLICK FAIL' && wantnot 'WARN'; }
 chk_property()     { variant p.rcss 's/color/colr/'; cp "$fx/ui.rml" "$fx/p.rml"; sed -i 's/ui.rcss/p.rcss/' "$fx/p.rml"
                      rc "$fx/p.rml" "$fx/ok.json"; want 1 "WARN +Syntax error parsing property declaration 'colr: red;'" 'rml-check: FAIL'; }
-chk_click_undeclared() { variant c.json '0,/"event":"pick"/s//"event":"zzz"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 "CLICK FAIL state: \\.row -> the case's \"events\" do not list 'zzz'"; }
+chk_click_undeclared() { variant c.json '0,/"event":"pick"/s//"event":"zzz"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 "CLICK FAIL state: \\.row -> the case's \"events\" do not list 'zzz'" && wantnot 'EVENT'; }
 # click args as JSON numbers and bools: compared as RmlUi prints them
 mdl='"model":{"title":"T","rows":[{"id":2,"name":"n","f":0.3333333}],"show":false},"events":["pick","a","b","close","f"]'
 typed() { printf '[{"name":"state",%s,"clicks":[%s]}]' "$mdl" "$1" > "$fx/t.json"; rc "${doc:-$fx/ui.rml}" "$fx/t.json"; }
@@ -71,6 +71,21 @@ chk_arg_types()    { local row='{"sel":".row","event":"pick","args":[2]}' x='{"s
                      typed '{"sel":".row","event":"pick","args":[]}'; want 1 'pick\(2\) \(want pick\(\)\)' || return 1   # a forgotten arg fails
                      typed '{"sel":".x","event":"b","args":[false,2.5]}'; want 1 'b\(1,2.5\) \(want b\(0,2.5\)\)' || return 1
                      typed '{"sel":".f","event":"f","args":[0.33]}'; want 1 'f\(0.333\) \(want f\(0.33\)\)'; }
+
+# every data-event-* of the document is checked against the case's events, clicked or not; the expression is parsed
+# the way RmlUi does (statements, bare names, assignments, string literals)
+evdoc() { # EXPRESSION (an attribute value, with its quotes), the linked template's expression, the events list
+          printf '<rml><body data-model="m"><link type="text/template" href="t.rml"/>\n<div id="x" class="k j" data-event-click=%s>x</div></body></rml>' "$1" > "$fx/ev.rml"
+          printf '<template name="t"><body><div data-event-keydown="%s"></div></body></template>' "${2:-}" > "$fx/t.rml"
+          printf '[{"name":"s","model":{"show":0},"events":[%s]}]' "$3" > "$fx/ev.json"; rc "$fx/ev.rml" "$fx/ev.json"; }
+chk_event_static() { variant e.rml 's/data-event-click="close"/data-event-click="closs()"/'; doc="$fx/e.rml" typed '{"sel":".row","event":"pick","args":["2"]}'   # nothing clicks it
+                     want 1 'EVENT closs  data-event-click on <div.btn> at e.rml:[0-9]+ calls an event that is not in the "events" of \[state\]' && wantnot 'CLICK FAIL' || return 1
+                     typed '{"sel":".row","event":"pick","args":["2"]}'; want 0 'rml-check: ok'; }
+chk_event_parse()  { evdoc "\"a(); show = 1; b('x;y(\\'(', 2); close\"" "" '"a","b","close"'; want 0 'rml-check: ok' || return 1
+                     evdoc "\"a(); show = 1; b('x;y(\\'(', 2); close\"" "" '"a","close"'; want 1 'EVENT b ' 'on <div#x.k.j>' && wantnot 'EVENT (a|close|show|x) ' || return 1
+                     evdoc "\"a(); show = 1; b('x;y(\\'(', 2); close\"" "" '"a","b"'; want 1 'EVENT close ' && wantnot 'EVENT (a|b|show|x) ' || return 1
+                     evdoc "'a(1) ; w'" "" '"a"'; want 1 'EVENT w ' && wantnot 'EVENT a'; }
+chk_event_template() { evdoc '"a()"' 'zap()' '"a"'; want 1 'EVENT zap  data-event-keydown on <div> at t.rml:1'; }
 
 # the Open77 allow-list: what Open77 adds passes, a typo next to it does not
 open77='.row { fill: #FFFFFF; stroke: #000000; stroke-width: 2dp; filter: glow(2dp #FFFFFF 1); decorator: fx(border-flow 1 2); }'
@@ -146,7 +161,7 @@ chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$
                       echo '[{"name":"one","model":{"title":"T","rows":[],"show":false}},{"name":"two","model":{"title":"T","rows":[],"show":false}}]' > "$fx/two.json"
                       rc "$fx/p.rml" "$fx/two.json"; want 1 "colr: red;'.*\[one, two\]"; }
 
-CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_exit_click
+CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_event_static chk_event_parse chk_event_template chk_exit_click
         chk_property chk_allow_open77 chk_allow_scope chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
         chk_no_cases chk_cases_shape chk_exit_codes chk_emoji chk_name_inject chk_outline_path
@@ -168,7 +183,7 @@ mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_emoji"
 mut load_failed_lost "elif line == 'LOAD FAILED':" "elif line == 'LOAD FAILED!':" "chk_load_failed"
 mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
 mut click_fail_lost  "fails += [f'{name}: {f}' for f in res['fails']]" 'pass' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_event_name chk_exit_click"
-mut click_exit_lost  'if bad or fails or loadfail:' 'if bad or loadfail:' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_click_undeclared chk_exit_click"
+mut click_exit_lost  'if bad or undeclared or fails or loadfail:' 'if bad or undeclared or loadfail:' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_click_undeclared chk_exit_click"
 mut allow_everything "ALLOWED_BASE = [r'^No font face defined']" "ALLOWED_BASE = [r'']" "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
 mut allow_too_wide   "property declaration '(fill|stroke|stroke-width" "property declaration '([a-z]+|fill|stroke|stroke-width" "chk_allow_flag chk_allow_scope chk_property chk_warn_each_case"
 mut allow_filter_gone '\b(glow|chromatic|scanlines)\(' '\b(chromatic|scanlines)\(' "chk_allow_open77"
@@ -184,6 +199,15 @@ mut args_bool_text   "return '1' if v else '0'" "return 'true' if v else 'false'
 mut args_two_places  "s = '%.3f' % v" "s = '%.2f' % v" "chk_arg_types"
 mut args_float_zeros "return s.rstrip('0').rstrip('.') if '.' in s else s" "return s" "chk_arg_types"
 mut click_undeclared_ok "if k['event'] not in events:" "if False:" "chk_click_undeclared"
+mut event_static_lost "        if miss:" "        if False:" "chk_event_static chk_event_parse chk_event_template"
+mut event_call_lost  "            out.append(name)
+            i = skip_to(i, ')')" "            i = skip_to(i, ')')" "chk_event_static chk_event_parse chk_event_template"
+mut event_bare_lost  "        elif i >= n or expr[i] == ';':
+            out.append(name)" "        elif i >= n or expr[i] == ';':
+            pass" "chk_event_parse"
+mut event_string_open "            if c == \"'\":" "            if False:" "chk_event_parse"
+mut event_assign_call "            i = skip_to(i + 1, ';')" "            out.append(name); i = skip_to(i + 1, ';')" "chk_event_parse"
+mut event_template_skip "                todo.append(os.path.join(os.path.dirname(path), attrs['href']))" "                pass" "chk_event_template"
 mut warn_lines_split "r['warns'][-1] += '\n' + line" 'pass' "chk_warn_lines"
 mut no_header_ok     "if not lines or lines[0] != f'=== case {idx}':" 'if False:' "chk_no_header"
 mut exit_is_1        'def die(msg, code=2):' 'def die(msg, code=1):' "chk_cases_shape chk_exit_codes chk_host_crash chk_model_none chk_no_cases chk_no_header"

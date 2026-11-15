@@ -8,6 +8,7 @@ is reported for every case that sees it). Fails when:
     member that does not exist, an XML error, a data-for over a non-array, ...);
   - a click listed in the case does not call the model event it should (dispatched on the first VISIBLE element
     the selector matches, with real RmlUi event handling), or names an event the case does not declare;
+  - the document calls a model event (any `data-event-*`, clicked or not) that a case's "events" does not declare;
   - the document does not load, or there are no cases.
 Allowed by default: "No font face defined" (the check runs without fonts) and the properties Open77's NativeUI adds
 to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
@@ -21,7 +22,7 @@ to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
 Click args: JSON numbers and bools are compared as RmlUi prints them (`pick(2)`, `toggle(1)`, three decimals at most,
 trailing zeros cut), so `"args": [2]` and `"args": ["2"]` both want `pick(2)`.
 Environment: NUIKIT_HOST=/path/to/rmlhost uses that host binary instead of building one with scripts/build.sh.
-Exit status: 0 clean, 1 warnings, failed clicks, 2 usage, input or build problem.
+Exit status: 0 clean, 1 warnings, failed clicks or undeclared events, 2 usage, input or build problem.
 """
 import argparse, difflib, html, json, os, re, subprocess, sys, tempfile
 
@@ -91,6 +92,81 @@ def model_names(txt):
     for _, attrs, _ in tags(txt):
         if attrs.get('data-model') and attrs['data-model'] not in out:
             out.append(attrs['data-model'])
+    return out
+
+
+def event_calls(expr):
+    """Names of the model events a data-event expression calls: `a(1); b; c = 2` calls a and b (RmlUi's grammar:
+    statements separated by `;`, each `name(args)`, a bare `name`, or an assignment)."""
+    i, n, out = 0, len(expr), []
+
+    def skip_ws(i):
+        while i < n and expr[i].isspace():
+            i += 1
+        return i
+
+    def skip_to(i, stop):         # past the first `stop` outside quotes; a `;` stops before it
+        depth = 0
+        while i < n:
+            c = expr[i]
+            if c == "'":          # a string literal, \\ and \' escape
+                i += 1
+                while i < n and expr[i] != "'":
+                    i += 2 if expr[i] == '\\' else 1
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth <= 0 and stop == ')':
+                    return i + 1
+            elif c == ';' and depth <= 0 and stop == ';':
+                return i
+            i += 1
+        return i
+
+    while True:
+        i = skip_ws(i)
+        m = re.compile(r'[A-Za-z][A-Za-z0-9_.]*').match(expr, i)
+        if not m:
+            return out            # RmlUi reports what it cannot parse
+        name, i = m.group(), skip_ws(m.end())
+        if i < n and expr[i] == '=':
+            i = skip_to(i + 1, ';')
+        elif i < n and expr[i] == '(':
+            out.append(name)
+            i = skip_to(i, ')')
+        elif i >= n or expr[i] == ';':
+            out.append(name)
+        else:
+            return out
+        i = skip_ws(i)
+        if i < n and expr[i] == ';':
+            i += 1
+        elif i < n:
+            return out
+
+
+def doc_event_calls(doc):
+    """[(name, attribute, element, 'file:line')] for every data-event-* of the document and of the templates it
+    links (relative to it), whether or not a case clicks it."""
+    out, seen, todo = [], set(), [doc]
+    while todo:
+        path = todo.pop()
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            txt = open(path, encoding='utf-8').read()
+        except (OSError, UnicodeDecodeError):
+            continue                      # RmlUi reports what it cannot load
+        for tag, attrs, line in tags(txt):
+            if tag.lower() == 'link' and attrs.get('type') == 'text/template' and attrs.get('href'):
+                todo.append(os.path.join(os.path.dirname(path), attrs['href']))
+            el = tag + ('#' + attrs['id'] if attrs.get('id') else '') + ''.join('.' + c for c in attrs.get('class', '').split())
+            for k, v in attrs.items():
+                if k.startswith('data-event-') and len(k) > 11:
+                    for name in event_calls(v):
+                        out.append((name, k, el, f'{os.path.basename(path)}:{line}'))
     return out
 
 
@@ -262,6 +338,13 @@ def main():
             if not any(p.search(msg) for p in allowed):
                 bad.setdefault(msg, []).append(name)
 
+    # a data-event-* that calls a name no case declares is wrong whether or not a case clicks it
+    undeclared = {}
+    for ev, attr, el, at in doc_event_calls(a.doc):
+        miss = [esc(c['name']) for c in cases if ev not in c.get('events', [])]
+        if miss:
+            undeclared.setdefault((ev, attr, el, at), []).extend(miss)
+
     out = a.outline
     try:
         if out:
@@ -282,11 +365,13 @@ def main():
         return f'[{", ".join(names[:4])}{" ..." if len(names) > 4 else ""}]'
     for msg, names in sorted(bad.items()):
         print(f'WARN  {msg}  {where(names)}')
+    for (ev, attr, el, at), names in sorted(undeclared.items()):
+        print(f'EVENT {ev}  {attr} on <{el}> at {at} calls an event that is not in the "events" of {where(names)}')
     for f in fails:
         print('CLICK FAIL ' + f)
     for n in loadfail:
         print(f'LOAD FAILED {n}')
-    if bad or fails or loadfail:
+    if bad or undeclared or fails or loadfail:
         print('rml-check: FAIL')
         sys.exit(1)
     if not a.quiet:
