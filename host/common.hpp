@@ -291,7 +291,10 @@ public:
 	}
 	bool Set(void* ptr, const Variant& v) override {
 		J* j = (J*)ptr;
-		if (j->t == J::Arr || j->t == J::Obj) return false;
+		if (j->t == J::Arr || j->t == J::Obj) {
+			Log::Message(Log::LT_WARNING, "Values can only be assigned to scalar data types.");
+			return false;
+		}
 		switch (v.GetType()) {
 		case Variant::BOOL: j->t = J::Bool; j->b = v.Get<bool>(); return true;
 		case Variant::INT: case Variant::INT64: j->t = J::Int; j->i = v.Get<int64_t>(); return true;
@@ -313,7 +316,8 @@ static DynDef dyn_def;
 
 DataVariable DynDef::Child(void* ptr, const DataAddressEntry& e) {
 	J* j = (J*)ptr;
-	if (j->t == J::Arr || (j->t == J::Obj && j->o.empty())) {
+	// an empty Lua table is an empty array (NativeUI maps it so), but read as a struct when a member name is asked for
+	if (j->t == J::Arr || (j->t == J::Obj && j->o.empty() && (e.index >= 0 || e.name == "size"))) {
 		int size = j->t == J::Arr ? (int)j->a.size() : 0;
 		if (e.index < 0 || e.index >= size) {
 			if (e.name == "size") return MakeLiteralIntVariable(size);

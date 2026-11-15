@@ -181,6 +181,21 @@ def _():
     bad_case('layout', [doc('plain', '<p>x</p>'), 'm', fonts({}, 'empty')], [{'name': 'a', 'model': {}}], 'no font faces')
 
 
+# ---- the dynamic data model says what RmlUi's own data variables say
+@check('model: assigning to an array warns as RmlUi does')
+def _():
+    r = parity('<div id="b" data-event-click="rows = 3">x</div>', {'rows': [1]}, steps=[{'event': 'b', 'type': 'click'}])
+    w = r['snapshots'][1]['warnings']
+    expect('Values can only be assigned to scalar data types.' in w, f'warnings {w}')
+
+
+@check('model: a member of an empty table reads as a missing struct member')
+def _():
+    r = parity('<p>{{cfg.title}}</p>', {'cfg': {}})
+    w = r['snapshots'][0]['warnings']
+    expect(any('Member title not found in data struct.' in x for x in w), f'warnings {w}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

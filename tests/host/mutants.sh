@@ -48,3 +48,9 @@ mutant host host/common.hpp "input: a model bound twice is an error" \
     'if (!ctor) badInput(' 'if (false) badInput('
 mutant host host/mode_layout.inc "input: a fonts.json without faces is an error" \
     'if (faces.empty()) badInput(' 'if (false) badInput('
+
+# the dynamic data model
+mutant host host/common.hpp "model: assigning to an array warns as RmlUi does" \
+    'Log::Message(Log::LT_WARNING, "Values can only be assigned to scalar data types.");' ''
+mutant host host/common.hpp "model: a member of an empty table reads as a missing struct member" \
+    '(j->t == J::Obj && j->o.empty() && (e.index >= 0 || e.name == "size"))' '(j->t == J::Obj && j->o.empty())'
