@@ -213,6 +213,17 @@ function page(body, withBridge = true) {
   check(/data-rml: dropped/.test((p.last("lrbind:error") || [, {}])[1].message || ""), "data-rml: what it dropped is reported");
 }
 
+// ---- an HTML page lowercases attribute names (RmlUi keeps them): a camelCase alias still resolves, with a warning
+{
+  const p = page(`<div data-model="m"><div data-alias-firstRow="rows[0]"><span id="a">{{firstRow.name}}</span></div>
+    <div data-for="row : rows"><span class="r">{{Row.name}}</span></div></div>`);
+  await p.fire("lrbind:init", { models: { m: { rows: [{ name: "a" }] } }, events: {} });
+  const errs = p.sent.filter(([e]) => e === "lrbind:error").map(([, m]) => m.message);
+  check(p.$("#a").textContent === "a" && errs.some((m) => /'firstRow' matches data-alias-firstrow only ignoring case/.test(m)),
+    "a camelCase data-alias resolves in an HTML page and says why " + JSON.stringify(errs));
+  check(p.$(".r").textContent === "{{Row.name}}", "an iterator name is matched as written (its case was never lost)");
+}
+
 // ---- plain browser (a mockup): no Open77, init by hand, nothing pending
 {
   const p = page(`<div data-model="voice"><span id="d">{{mode | to_upper}}</span></div>`, false);

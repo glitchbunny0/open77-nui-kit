@@ -185,5 +185,9 @@ export const cases = [
   T("value view on a text input", `<input id="t" type="text" data-value="v"/>`, { v: 2.5 }, { steps: [{ set: "v", value: "x" }] }),
   T("reserved and illegal model names", `<div>[{{size}}]|[{{it}}]|[{{literal}}]|[{{Size2}}]|[{{x_1}}]</div>`, { size: 3, it: "x", literal: 5, Size2: 1, x_1: 2 }),
   T("model names RmlUi refuses: case, first character, characters", `<div>[{{Size}}]|[{{TRUE}}]|[{{a1}}]|[{{ok_1}}]</div>`, { Size: 1, TRUE: 2, _x: 3, "1a": 4, "a-b": 5, a1: 6, ok_1: 7, "é": 8 }),
+  T("camelCase alias and class names", `<div data-alias-firstRow="rows[0]" data-class-isOn="t">{{firstRow.name}}</div><div data-alias-first="rows[0]">{{First.name}}</div>`,
+    { rows: [{ name: "a" }], t: true }, { xhtml: true }),
+  T("xhtml: a page parsed as XML binds as an HTML one", `<div data-for="row, i : rows" data-class-on="i == sel"><span id="b" data-event-click="sel = i">{{row.name}}</span></div><input id="c" type="checkbox" data-checked="flag"/><b>{{sel}}|{{flag}}</b>`,
+    { rows: [{ name: "a" }, { name: "b" }], sel: 1, flag: false }, { xhtml: true, steps: [{ event: "b", type: "click" }, { event: "c", type: "click" }] }),
   T("for iterator named like a reserved word", `<div data-for="size : list">{{size}}</div>`, { list: ["p"] }),
 ];

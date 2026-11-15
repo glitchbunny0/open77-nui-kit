@@ -65,6 +65,10 @@ takes top-level fields of the model.
   never load. The shim removes the same nodes and says so through `lrbind:error`. Escapes are fine in attributes.
 - **Markup must parse as both XML and HTML.** Close every tag, quote attributes, write `&amp;&amp;` and `&lt;` (a raw
   `<` inside `{{ }}` is legal RML but starts a tag in HTML). Use div/span/b/i, not `<p>` (HTML re-nests it).
+- **Write `data-*` modifier names in lowercase.** HTML lowercases attribute names, RmlUi keeps them as written:
+  `data-class-isOn` sets class `ison` in WebUI and `isOn` in game, `data-event-mouseDown` listens to `mousedown` in
+  WebUI and to nothing in game. The shim takes names as the page's DOM gives them, so a page served as XHTML keeps the
+  case exactly as RmlUi does; in an HTML page a camelCase `data-alias-*` still resolves, with a warning.
 - **Strings are not truthy.** In a condition only `'1'`/`'true'` (any case) are true; `'abc'` and `'yes'` are false.
 - **Booleans print as 1 and 0** (`{{flag}}` shows `1`); numbers print `%.3f` with trailing zeros cut (`1/3` -> `0.333`,
   `-0.0001` -> `-0`), exact halves round to even (`0.0625` -> `0.062`). `format(x, p[, trim])`, `round` (floor of

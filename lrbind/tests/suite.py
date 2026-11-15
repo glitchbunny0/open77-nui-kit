@@ -494,6 +494,23 @@ MUTANTS += [
      '', 'parity', 'style with a number'),
 ]
 
+# ==== attribute names keep their case where the DOM keeps it (a page as XHTML, as RmlUi reads XML); in an HTML page a
+# camelCase alias the parser lowercased still resolves, with a warning; nothing else is matched ignoring case
+MUTANTS += [
+    ('alias names lowercased', 'lrbind.js', 'insertAlias(model, el, a.name.slice(11), target, true);',
+     'insertAlias(model, el, asciiLower(a.name.slice(11)), target, true);', 'parity', 'camelCase alias and class names'),
+    ('class names lowercased', 'lrbind.js', 'class(el, value, mod) { el.classList.toggle(mod, toBool(value)); },',
+     'class(el, value, mod) { el.classList.toggle(asciiLower(mod), toBool(value)); },', 'parity', 'camelCase alias and class names'),
+    ('aliases matched ignoring case in XML too', 'lrbind.js', ' && lowercasesAttributes(el.ownerDocument)) {', ') {', 'parity',
+     'camelCase alias and class names'),
+    ('no case fallback in HTML', 'lrbind.js', 'if (lower !== address[0] && fromAttr && fromAttr.has(lower)',
+     'if (false && fromAttr && fromAttr.has(lower)', 'protocol', 'a camelCase data-alias resolves in an HTML page'),
+    ('the case fallback is silent', 'lrbind.js', 'warn("\'" + address[0] + "\' matches data-alias-', 'void ("\'" + address[0] + "\' matches data-alias-',
+     'protocol', 'a camelCase data-alias resolves in an HTML page'),
+    ('iterator names matched ignoring case', 'lrbind.js', 'fromAttr && fromAttr.has(lower) &&', 'names.has(lower) &&',
+     'protocol', 'an iterator name is matched as written'),
+]
+
 # ==== the run
 
 def plant(i, src, old, new):

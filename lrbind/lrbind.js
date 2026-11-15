@@ -693,6 +693,7 @@
       this.views = [];
       this.dirty = new Set();
       this.aliases = new WeakMap();   // element -> Map(name -> address)
+      this.attrAliases = new WeakMap();   // element -> Set of the names that came from data-alias-* attributes
       this.root = null;
     }
 
@@ -701,11 +702,18 @@
       const address = parseAddress(str);
       if (!address) return null;
       if (this.variables.has(address[0])) return address;
+      const lower = asciiLower(address[0]);
       for (let el = element; el && modelOf(el) === this; el = el.parentNode) {
         const names = this.aliases.get(el);
-        if (names && names.has(address[0])) {
-          const target = names.get(address[0]);
-          return target.concat(address.slice(1));
+        if (!names) continue;
+        if (names.has(address[0])) return names.get(address[0]).concat(address.slice(1));
+        // An HTML parser lowercases attribute names, so data-alias-firstRow reaches the shim as firstrow; RmlUi (XML)
+        // keeps it as written. Resolve the name as written, and say so: in game it must match exactly.
+        const fromAttr = this.attrAliases.get(el);
+        if (lower !== address[0] && fromAttr && fromAttr.has(lower) && lowercasesAttributes(el.ownerDocument)) {
+          warn("'" + address[0] + "' matches data-alias-" + lower + " only ignoring case: the HTML parser lowercased the attribute name, " +
+            "NativeUI keeps it as written. Write data-* modifier names in lowercase.");
+          return names.get(lower).concat(address.slice(1));
         }
       }
       return null;
@@ -1079,11 +1087,19 @@
     }
   }
 
-  function insertAlias(model, el, name, address) {
+  function insertAlias(model, el, name, address, fromAttr) {
     if (model.variables.has(name)) warn("Alias variable '" + name + "' is shadowed by a global variable.");
     const names = model.aliases.get(el) || new Map();
     names.set(name, address);
     model.aliases.set(el, names);
+    if (fromAttr) model.attrAliases.set(el, (model.attrAliases.get(el) || new Set()).add(name));
+  }
+
+  // An HTML document lowercases attribute names; an XML one (a page served as XHTML) keeps them, as RmlUi does
+  const htmlDocs = new WeakMap();
+  function lowercasesAttributes(doc) {
+    if (!htmlDocs.has(doc)) htmlDocs.set(doc, doc.createElement("a").tagName === "A");
+    return htmlDocs.get(doc);
   }
 
   // data-for: the element becomes a hidden anchor; copies of it (without data-for) go in before it, one per entry.
@@ -1233,7 +1249,7 @@
       if (!a.name.startsWith("data-alias-")) continue;
       const target = model.resolve(a.value, el);
       if (!target) { warn("Could not add data-alias-" + a.name.slice(11) + ": no data variable '" + a.value + "'"); continue; }
-      insertAlias(model, el, a.name.slice(11), target);
+      insertAlias(model, el, a.name.slice(11), target, true);
     }
     for (const a of attrs) {
       const name = a.name;
