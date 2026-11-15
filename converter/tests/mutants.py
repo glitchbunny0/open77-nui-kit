@@ -12,6 +12,8 @@ KIT = os.path.dirname(os.path.dirname(HERE))
 
 # (id, file under converter/, old, new, check) - check: 'fixture NAME' or 'unit LABEL'
 MUTANTS = [
+    ('escape-ident', 'css_values.py', r"(?:\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n0-9a-fA-F]|[\w\u00a0-\uffff-])*')",
+     r"[\w\u00a0-\uffff-]*')", 'unit escape'),
 ]
 
 

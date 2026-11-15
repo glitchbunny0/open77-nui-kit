@@ -61,6 +61,11 @@ UNIT = [
     ('nested fallback', lambda: conv('var(--a, var(--b, 3px))', lambda n: {'--b': '5px'}.get(n)), '5dp'),
     ('calc mixing % and px fails', lambda: raises(lambda: conv('calc(100% - 20px)')), True),
     ('a var() cycle fails', lambda: raises(lambda: conv('var(--x)', lambda n: 'var(--x)')), True),
+    # CSS escapes: decoded, and never a hang (a lone backslash, an escape at the end)
+    ('escape: hex code points', lambda: V.tokenize(r'\5FAE\8F6F, x'),
+     [('ident', '\u5fae\u8f6f'), ('comma',), ('ws',), ('ident', 'x')]),
+    ('escape: digit after a dash', lambda: V.tokenize(r'-\31 x'), [('ident', '-1x')]),
+    ('escape: a lone backslash', lambda: V.tokenize('a\\'), [('ident', 'a'), ('delim', '\\')]),
 ]
 
 

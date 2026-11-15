@@ -14,7 +14,20 @@ class ValueIssue(Exception):
 # ---- tokens: (kind, ...). kinds: ws, comma, slash, op (+ - *), str, num (value, unit), hash, ident,
 # func (name, args), paren (args), url (path), delim
 NUM_RE = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?')
-IDENT_START = re.compile(r'-?-?[A-Za-z_\u00a0-\uffff\\]|--')
+IDENT_START = re.compile(r'-?-?(?:[A-Za-z_\u00a0-\uffff]|\\[^\n])|--')
+# an ident: name characters and CSS escapes (`\5FAE `, `\:`), decoded by _unescape
+IDENT_RE = re.compile(r'(?:--|-?)(?:\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n0-9a-fA-F]|[\w\u00a0-\uffff-])*')
+ESCAPE_RE = re.compile(r'\\(?:([0-9a-fA-F]{1,6})[ \t\n]?|([^\n]))')
+
+
+def _unescape(s):
+    """CSS escapes decoded: `\\5FAE` -> the code point, `\\:` -> `:` (an out-of-range code point -> U+FFFD)"""
+    def one(m):
+        if m.group(1):
+            cp = int(m.group(1), 16)
+            return chr(cp) if 0 < cp <= 0x10FFFF and not 0xD800 <= cp <= 0xDFFF else '\ufffd'
+        return m.group(2)
+    return ESCAPE_RE.sub(one, s) if '\\' in s else s
 
 
 def tokenize(s):
@@ -28,9 +41,15 @@ def tokenize(s):
                 return t
         return None
 
+    last = -1
     while i < n:
         c = s[i]
         cur = stack[-1]
+        if i == last:   # no branch below consumed anything: take the character as a delim (never loop forever)
+            cur.append(('delim', c))
+            i += 1
+            continue
+        last = i
         if c in ' \t\r\n\f':
             j = i
             while j < n and s[j] in ' \t\r\n\f':
@@ -75,9 +94,9 @@ def tokenize(s):
             cur.append(('op', c))
             i += 1
         elif IDENT_START.match(s, i):
-            m = re.match(r'(?:--|-?)[\w\u00a0-\uffff-]*', s[i:])
-            name = m.group(0)
-            j = i + len(name)
+            raw = IDENT_RE.match(s, i).group(0)
+            j = i + len(raw)
+            name = _unescape(raw)
             if j < n and s[j] == '(':
                 if name.lower() == 'url':
                     k = j + 1
@@ -86,8 +105,10 @@ def tokenize(s):
                     if k < n and s[k] in '"\'':
                         q = s[k]
                         e = s.find(q, k + 1)
+                        e = n if e < 0 else e
                         path = s[k + 1:e]
                         e = s.find(')', e)
+                        e = n if e < 0 else e
                     else:
                         e = s.find(')', k)
                         e = n if e < 0 else e
