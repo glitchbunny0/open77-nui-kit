@@ -63,4 +63,5 @@ u { color: var(--c); }
 .co { --cx: 3px; padding: var(--cx) 3px; }
 .dsp { --d: flex; display: var(--d); }
 .dsp.g { --d: grid; }
+.cc { --cw: 2px; --cb: #0f0; color: #ff0000; border: var(--cw) solid currentColor; outline-color: var(--cb, currentColor); background-color: color-mix(in srgb, red, var(--cw)); }
 @keyframes k { from { --o: 0; opacity: 0; } to { opacity: 1; } }

@@ -148,6 +148,8 @@ MUTANTS = [
      'fixture 10-at-rules'),
     ('inline-important-report', 'convert.py', "        for d in all_d:\n            if d.name.startswith('--') and d.important:",
      "        for d in all_d:\n            if False:", 'fixture 14-cascade'),
+    ('native-var-text', 'convert.py', "                except ValueIssue:\n                    txt = None", "                except KeyError:\n                    txt = None",
+     'fixture 15-native'),
 ]
 
 

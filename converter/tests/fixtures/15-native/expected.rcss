@@ -61,6 +61,7 @@ u { color: var(--c); }
 .co { --cx: 3dp; padding: 3dp 3dp; }
 .dsp { --d: flex; display: flex; }
 .dsp.g { --d: grid; }
+.cc { --cw: 2dp; --cb: #0f0; color: #ff0000; border: 2dp #ff0000; }
 @keyframes k {
     from { opacity: 0; }
     to { opacity: 1; }

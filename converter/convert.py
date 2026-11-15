@@ -501,7 +501,7 @@ class Converter:
     def convert_rules(self, flat, doc):
         body = H.find(doc.root, 'body') or doc.root
         all_els = list(body.walk())
-        self.all_els, self._virtual = all_els, []
+        self.all_els, self._virtual, self.flat, self._setters = all_els, [], flat, None
         self.keyframe_names = {it.prelude.strip() for _, it in flat if isinstance(it, css_parse.AtRule)}
         # which elements other rules give a decorator, a mask or a background colour (a shorthand resets them in
         # CSS; the RCSS gets the reset only where it can matter), and the cascade of layer sizes/positions/repeats
@@ -724,14 +724,20 @@ class Converter:
         return V.ser(toks)
 
     def setters(self, name):
-        """every value the page gives custom property `name`: (raw value, file it is declared in)"""
-        out = [(e[3][name], e[4]) for e in self.casc.by_name.get(name, ())]
-        for el in self.all_els:
-            for d in css_parse.parse_decls(el.attrs.get('style') or '', el.line) if '--' in (el.attrs.get('style') or '') \
-                    else ():
-                if d.name == name:
-                    out.append((d.value, self.page))
-        return out
+        """every value the page gives custom property `name`: (raw value, file it is declared in), from every rule
+        of the sheets and every inline style"""
+        if self._setters is None:
+            self._setters = {}
+            for file, it in self.flat:
+                for d in (it.decls or ()) if isinstance(it, css_parse.Rule) else ():
+                    if d.name.startswith('--'):
+                        self._setters.setdefault(d.name, []).append((d.value, file))
+            for el in self.all_els:
+                if '--' in (el.attrs.get('style') or ''):
+                    for d in css_parse.parse_decls(el.attrs['style'], el.line):
+                        if d.name.startswith('--'):
+                            self._setters.setdefault(d.name, []).append((d.value, self.page))
+        return self._setters.get(name, [])
 
     def native_ok(self, name, stack=()):
         """RmlUi can resolve var(name) itself: every value the page gives it converts, and so does every variable those
@@ -758,7 +764,10 @@ class Converter:
         out = []
         for d in decls:
             if self.native_ok(d.name):
-                out = [x for x in out if x[0] != d.name] + [(d.name, self.custom_value(d.value, file))]
+                try:
+                    out = [x for x in out if x[0] != d.name] + [(d.name, self.custom_value(d.value, file))]
+                except ValueIssue:   # native_ok saw every setter: only a path seen from another file can get here
+                    pass
         return out
 
     def native_lines(self, decls, file, matched, sheet, once, prelude, inline, rule):
@@ -780,9 +789,13 @@ class Converter:
         base = self.lookup_for(matched, file, decls[0].line, set(), quiet=names)
         texts = {}
         for d in decls:   # var(--x, fallback) as RmlUi gets it
-            for t in self._var_funcs(V.convert_colors(V.convert_units(V.tokenize(d.value), self.units, []))):
-                texts.setdefault(V.ser(V.split(t[2])[0]).strip(), set()).add(V.ser([t]))
-        bad = {n for n in clean if len(texts.get(n, ())) != 1}
+            for t in self._var_funcs(V.tokenize(d.value)):
+                try:
+                    txt = V.ser(V.convert_colors(V.convert_units([t], self.units, [])))
+                except ValueIssue:
+                    txt = None
+                texts.setdefault(V.ser(V.split(t[2])[0]).strip(), set()).add(txt)
+        bad = {n for n in clean if len(texts.get(n, ())) != 1 or None in texts[n]}
         tmpl = None
         while clean - bad:
             good = clean - bad
