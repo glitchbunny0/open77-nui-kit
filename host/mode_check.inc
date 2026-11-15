@@ -1,13 +1,15 @@
 namespace check {
 // check: load the document (its stylesheets too) with the case's data models and a stand-in font (every family, each
-// glyph half an em), print the warnings and an outline of the element tree (tag#id.classes, [none] for display: none, @x,y WxH, inline style, text nodes). Each click is
-// dispatched as the player's mouse would: on the first VISIBLE element the selector matches, the pointer moves to its
-// centre and presses there. When something else is under the pointer (pointer-events: none on the element, an
-// overlay on top) the line says "covered by <that element> at x,y"; a box with no width or height says "zero-size box",
-// one whose centre is outside the context "off screen". The model event the click must call
-// (name + arguments) is compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
-// (a JSON 2 and the markup's pick(2) both print 2, true prints 1). A click that bubbles into an ancestor's
-// data-event-click calls that event too, as in the game: the click passes only when the wanted event is the one call.
+// glyph half an em), draw it once (so images load), print the warnings and an outline of the element tree
+// (tag#id.classes sorted, [none] for display: none, @x,y WxH, inline style, text nodes).
+// Each click is dispatched as the player's mouse would: on the first VISIBLE element the selector matches, the pointer
+// moves to its centre and presses there. When something else is under the pointer (pointer-events: none on the
+// element, an overlay on top) the line says "covered by <that element> at x,y"; a box with no width or height says
+// "zero-size box", one whose centre is outside the context "off screen". The model event the click must call
+// (name + arguments) is compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi
+// prints the value (a JSON 2 and the markup's pick(2) both print 2, true prints 1). A click that bubbles into an
+// ancestor's data-event-click calls that event too, as in the game: the click passes only when the wanted event is the
+// one call, and the line lists every call in dispatch order.
 // a case name or a message on one output line: a newline in it can never start a line of its own
 static std::string oneLine(const std::string& s) {
 	std::string o;

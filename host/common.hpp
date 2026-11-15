@@ -2,10 +2,11 @@
 // open77-nui-kit host: real RmlUi (pinned in scripts/build.sh) with a dynamic, Lua-like data model fed from JSON.
 // One binary, three modes:
 //   rmlhost check  <doc.rml> <model>              < cases.json   element outline, warnings, real clicks per case
-//   rmlhost layout <doc.rml> <model> <fonts.json> < cases.json   boxes + text runs as JSON, laid out with real advances
+//   rmlhost layout <doc.rml> <model> <fonts.json> < cases.json   boxes + text runs + warnings as JSON, real advances
 //   rmlhost parity                                 < cases.json   lrbind parity reference (tree after each step)
 // Every case: { name, model: {...}, models?: { other: {...} }, events?: [..], clicks?: [{ sel, event, args }],
-// place?: { selector: [left, top] }, size?: [w, h] }. See docs/cases.md.
+// place?: { selector: [left, top] }, size?: [w, h] }. See docs/cases.md. Every mode registers Open77's additions to
+// RmlUi (registerOpen77). Bad input (malformed JSON, a field of the wrong shape) exits 2 with a message on stderr.
 #include <algorithm>
 #include <fstream>
 #include <cerrno>
