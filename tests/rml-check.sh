@@ -15,9 +15,12 @@ export TMPDIR="$tmp/tmpdir"
 RC="$kit/bin/rml-check"        # the tool under test; a mutant run points it at a broken copy
 out=""; code=0; verbose=1
 
-# ---- the fixture: a document with bindings, a data-for, a hidden copy before a visible one, a bare event name
+# ---- the fixture: a document with bindings, a data-for, a hidden copy before a visible one, a bare event name;
+# its elements have a box (RmlUi's default display is inline, which has no size without a font, and a click is
+# dispatched at the element's centre)
 cat > "$fx/ui.rcss" <<'EOF'
 body { width: 400dp; height: 300dp; }
+div { display: block; height: 20dp; }
 .row { color: red; }
 EOF
 cat > "$fx/ui.rml" <<'EOF'
@@ -90,7 +93,7 @@ chk_event_template() { evdoc '"a()"' 'zap()' '"a"'; want 1 'EVENT zap  data-even
 # what Open77 adds (the host registers it) passes, a typo or a bad value in it or next to it does not; nothing is
 # allowed by pattern, RmlUi validates every declaration
 open77='.row { fill: #FFFFFF; stroke: #000000; stroke-width: 2dp; stroke-linejoin: round; trim-end: 0.5; filter: glow(2dp #FFFFFF 1); backdrop-filter: glow(5dp #5EF6FF 0.9); decorator: fx(border-flow 1 2); }'
-scoped() { printf 'body { width: 400dp; }\n%s\n' "$1" > "$fx/s.rcss"; sed 's/ui.rcss/s.rcss/' "$fx/ui.rml" > "$fx/s.rml"; rc "$fx/s.rml" "$fx/ok.json"; }
+scoped() { printf 'body { width: 400dp; }\ndiv { display: block; height: 20dp; }\n%s\n' "$1" > "$fx/s.rcss"; sed 's/ui.rcss/s.rcss/' "$fx/ui.rml" > "$fx/s.rml"; rc "$fx/s.rml" "$fx/ok.json"; }
 chk_allow_open77() { scoped "$open77"; want 0 'rml-check: ok'; }
 chk_allow_scope()  { local d; for d in '.row { strokes: 1; }' '.row { fill-rule: 1; }' '.row { filter: blurr(2dp); }' '.row { decorator: bogus(1); }'; do
                        scoped "$d"; want 1 'WARN' 'rml-check: FAIL' || { echo "   (for: $d)"; return 1; }; done; }
@@ -104,6 +107,9 @@ chk_allow_flag()   { scoped '.row { glowy: 1; }'; want 1 'WARN' || return 1; rc 
 
 # the host protocol, with a scripted host
 fake() { printf '#!/bin/sh\ncat >/dev/null\n%s\n' "$2" > "$tmp/fake-$1"; chmod +x "$tmp/fake-$1"; }
+# a host that accepts any input (the CLI's own validation is what the shape checks test) and one that records it
+fake quiet "printf '=== case 0\\n'"
+printf '#!/bin/sh\ncat > "$REC"\nprintf "=== case 0\\n"\n' > "$tmp/fake-rec"; chmod +x "$tmp/fake-rec"
 withhost() { local h=$1; shift; NUIKIT_HOST="$tmp/fake-$h" rc "$@"; }
 chk_load_failed()  { fake load "printf '=== case 0\nLOAD FAILED\n'"; withhost load "$fx/ui.rml" "$fx/ok.json"; want 1 'LOAD FAILED state' 'rml-check: FAIL'; }
 chk_no_header()    { fake none "exit 0"; withhost none "$fx/ui.rml" "$fx/ok.json"; want 2 'no "=== case 0" header'; }
@@ -117,7 +123,7 @@ chk_warn_lines()   { fake lines "printf '=== case 0\nbody\nWARN x1: one\n  two\n
 # the input
 chk_no_cases()     { echo '[]' > "$fx/n.json"; rc "$fx/ui.rml" "$fx/n.json"; want 2 'no cases' && wantnot 'rml-check: ok'; }
 chk_cases_shape()  { local j m
-                     while IFS='|' read -r m j; do printf '%s' "$j" > "$fx/s.json"; rc "$fx/ui.rml" "$fx/s.json"; want 2 "$m" || { echo "   (for: $j)"; return 1; }; done <<'EOF'
+                     while IFS='|' read -r m j; do printf '%s' "$j" > "$fx/s.json"; withhost quiet "$fx/ui.rml" "$fx/s.json"; want 2 "$m" || { echo "   (for: $j)"; return 1; }; done <<'EOF'
 "clicks"|[{"name":"a","model":{},"clicks":{"sel":"div","event":"b"}}]
 "sel" and "event"|[{"name":"a","model":{},"events":["b"],"clicks":[{"sel":"div"}]}]
 "sel" and "event"|[{"name":"a","model":{},"events":["b"],"clicks":[{"event":"b"}]}]
@@ -153,6 +159,17 @@ chk_name_inject()  { python3 -c 'import json; print(json.dumps([{"name":"a\nWARN
 chk_outline_path() { local a b; rc "$fx/ui.rml" "$fx/ok.json"; a=$(sed -n 's/.*outline: //p' <<<"$out"); rc "$fx/ui.rml" "$fx/ok.json"; b=$(sed -n 's/.*outline: //p' <<<"$out")
                      [ -n "$a" ] && [ "$a" != "$b" ] && [ -s "$a" ] && [ -s "$b" ] && [ "${a#"$TMPDIR"/}" != "$a" ] || fail "outline paths '$a' '$b'"; }
 
+# what the host is sent (a recording host: true of every host, old or new)
+chk_host_input()   { export REC="$tmp/rec.json"
+                     python3 -c 'import json; print(json.dumps([{"name":"n\nx","model":{"t":"\U0001F600 a\rb\fc\bd"},"events":["pick","a","b","close","f"],
+                       "clicks":[{"sel":".r","event":"pick","args":[2,2.0,"2",3]},{"sel":".x","event":"b","args":[True,False,2.5]},{"sel":".f","event":"f","args":[0.3333333,-1.5,1e3]}]}]))' > "$fx/hi.json"
+                     withhost rec "$fx/ui.rml" "$fx/hi.json"; want 0 'rml-check: ok' || return 1
+                     grep -qF '😀' "$REC" && ! grep -qiF '\ud83d' "$REC" || { fail "the emoji is not plain UTF-8 in the host's input"; return 1; }
+                     grep -qF 'a\u000db\u000cc\u0008d' "$REC" || { fail "\r \f \b are not sent as \u escapes"; return 1; }
+                     grep -qF '"name": "0"' "$REC" || { fail "the case is not sent under its index"; return 1; }
+                     grep -qF '"args": ["2", "2", "2", "3"]' "$REC" && grep -qF '"args": ["1", "0", "2.5"]' "$REC" \
+                       && grep -qF '"args": ["0.333", "-1.5", "1000"]' "$REC" || { fail "click args are not the text RmlUi prints: $(grep -o '"args": [^]]*]' "$REC" | tr '\n' ' ')"; return 1; }; }
+
 # the model name
 chk_model_comment(){ printf '<rml><body>\n<!-- <div data-model="old"> -->\n<div my-data-model="nope"></div><div data-model='"'"'m'"'"'>{{t}}</div></body></rml>' > "$fx/mc.rml"
                      echo '[{"name":"a","model":{"t":"1"}}]' > "$fx/mc.json"
@@ -171,7 +188,7 @@ chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$
 CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_event_static chk_event_parse chk_event_template chk_exit_click
         chk_property chk_allow_open77 chk_allow_scope chk_allow_values chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
-        chk_no_cases chk_cases_shape chk_exit_codes chk_emoji chk_name_inject chk_outline_path
+        chk_no_cases chk_cases_shape chk_exit_codes chk_host_input chk_emoji chk_name_inject chk_outline_path
         chk_model_comment chk_model_many chk_model_none chk_warn_each_case)
 
 failed=()
@@ -186,7 +203,7 @@ status=0; [ ${#failed[@]} = 0 ] || status=1
 # ---- tool mutants: one line of a copy of bin/rml-check broken; $2 names the check(s) that must go red
 mname=(); mold=(); mnew=(); mexp=()
 mut() { mname+=("$1"); mold+=("$2"); mnew+=("$3"); mexp+=("$4"); }
-mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_emoji"
+mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_host_input"
 mut load_failed_lost "elif line == 'LOAD FAILED':" "elif line == 'LOAD FAILED!':" "chk_load_failed"
 mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_allow_values chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
 mut click_fail_lost  "fails += [f'{name}: {f}' for f in res['fails']]" 'pass' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_event_name chk_exit_click"
@@ -199,12 +216,12 @@ mut empty_cases_ok   'if not cases:' 'if False:' "chk_no_cases"
 mut clicks_unchecked "if not isinstance(c['clicks'], list):" 'if False:' "chk_cases_shape"
 mut size_unchecked   "if 'size' in c and not" "if False and not" "chk_cases_shape"
 mut name_unescaped   "name = esc(c['name'])" "name = c['name']" "chk_name_inject"
-mut crlf_unescaped   "{'r': '\\\\u000d', 'f': '\\\\u000c', 'b': '\\\\u0008'}.get(m.group(1), m.group())" 'm.group()' "chk_emoji"
+mut crlf_unescaped   "{'r': '\\\\u000d', 'f': '\\\\u000c', 'b': '\\\\u0008'}.get(m.group(1), m.group())" 'm.group()' "chk_host_input"
 mut forged_lines_in  "        if r['warns']:" "        if False:" "chk_forged_lines chk_warn_lines"
-mut args_untyped     "args=[fmt_arg(x) for x in k.get('args', [])]" "args=k.get('args', [])" "chk_arg_types"
-mut args_bool_text   "return '1' if v else '0'" "return 'true' if v else 'false'" "chk_arg_types"
-mut args_two_places  "s = '%.3f' % v" "s = '%.2f' % v" "chk_arg_types"
-mut args_float_zeros "return s.rstrip('0').rstrip('.') if '.' in s else s" "return s" "chk_arg_types"
+mut args_untyped     "args=[fmt_arg(x) for x in k.get('args', [])]" "args=k.get('args', [])" "chk_arg_types chk_host_input"
+mut args_bool_text   "return '1' if v else '0'" "return 'true' if v else 'false'" "chk_arg_types chk_host_input"
+mut args_two_places  "s = '%.3f' % v" "s = '%.2f' % v" "chk_arg_types chk_host_input"
+mut args_float_zeros "return s.rstrip('0').rstrip('.') if '.' in s else s" "return s" "chk_arg_types chk_host_input"
 mut click_undeclared_ok "if k['event'] not in events:" "if False:" "chk_click_undeclared"
 mut event_static_lost "        if miss:" "        if False:" "chk_event_static chk_event_parse chk_event_template"
 mut event_call_lost  "            out.append(name)
@@ -244,7 +261,8 @@ EOF
     all=("${CHECKS[@]}"); [ -n "${RML_CHECK_ALL:-}" ] || CHECKS=($expect)
     RC="$tmp/mut/$name"; verbose=0; run_checks; RC="$kit/bin/rml-check"; verbose=1; CHECKS=("${all[@]}")
     # red ON ITS OWN: exactly the named checks fail, nothing else
-    got=$(printf '%s\n' "${failed[@]}" | sort | tr '\n' ' '); want_set=$(printf '%s\n' $expect | sort | tr '\n' ' ')
+    # chk_emoji is end to end: a host that cannot decode surrogate pairs (the one before its fix) reddens it too
+    got=$(printf '%s\n' "${failed[@]}" | grep -vx 'chk_emoji' | sort | tr '\n' ' '); want_set=$(printf '%s\n' $expect | sort | tr '\n' ' ')
     if [ "$got" != "$want_set" ]; then echo "FAIL: mutant $name: red in [${got}], expected [${want_set}]"; status=1
     else echo "ok:   mutant $name -> red: ${got//chk_/}"; fi
 done
