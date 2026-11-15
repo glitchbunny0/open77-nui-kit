@@ -7,3 +7,11 @@
 #tr1 { transition: transform .2s, -webkit-transform .2s; }
 #tr2 { transition: all .2s, opacity .3s ease-in; }
 #tr3 { transition: opacity .3s, all .2s; }
+/* gradients: the first argument in the order RmlUi parses */
+#g1 { background: radial-gradient(closest-side circle, #fff, #000); }
+#g2 { background: linear-gradient(to right in oklab, #f00, #00f); }
+#g3 { background: radial-gradient(circle at left 10px top 20%, #fff, #000); }
+#g4 { background: radial-gradient(farthest-corner ellipse at right 25% bottom 10px, #fff, #000); }
+#g5 { background: -webkit-linear-gradient(left, #fff, #000); }
+#g6 { background: -webkit-linear-gradient(30deg, #fff, #000); }
+#g7 { background: -webkit-radial-gradient(center, circle cover, #fff, #000); }

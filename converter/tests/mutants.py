@@ -30,6 +30,13 @@ MUTANTS = [
     ('transition-dropped-item', 'css_props.py', 'if named and not props:', 'if False:', 'fixture 13-values'),
     ('transition-all-alone', 'css_props.py', "if 'all' in (props or ['all']) and len(items) > 1:",
      "if 'all' in (props or ['all']) and len(items) > 99:", 'fixture 13-values'),
+    ('radial-size-first', 'css_props.py', 'words = shape + size', 'words = size + shape', 'fixture 13-values'),
+    ('gradient-in-space', 'css_props.py', "    if 'in' in words:\n        k = words.index('in')",
+     "    if 'in' in []:\n        k = words.index('in')", 'fixture 13-values'),
+    ('position-4value', 'css_props.py', '    if len(words) <= 2:\n        return list(words)',
+     '    if len(words) <= 4:\n        return list(words)', 'fixture 13-values'),
+    ('webkit-gradient', 'css_props.py', '    if legacy:   # the prefixed form', '    if False:   # the prefixed form',
+     'fixture 13-values'),
 ]
 
 

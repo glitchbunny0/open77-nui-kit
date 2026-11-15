@@ -346,10 +346,86 @@ def image_decorator(L, ctx, issues, what):
     return gradient(img, issues)
 
 
+POS_KW = {'left': 'x', 'right': 'x', 'top': 'y', 'bottom': 'y', 'center': None}
+RADIAL_SIZE_KW = {'closest-side', 'closest-corner', 'farthest-side', 'farthest-corner'}
+
+
+def position2(words, issues, what):
+    """a CSS <position> (1-4 words, as strings) -> [x, y] the two-value form RmlUi takes. An offset from left/top is
+    the plain length; an offset from right/bottom in % becomes its complement; one in a length can't be written in two
+    values: reported, kept as the edge keyword"""
+    if len(words) <= 2:
+        return list(words)
+    x = y = None
+    i = 0
+    while i < len(words):
+        w = words[i]
+        off = words[i + 1] if i + 1 < len(words) and words[i + 1] not in POS_KW else None
+        axis = POS_KW.get(w, 'bad')
+        if axis == 'bad':
+            issues.append(Issue(f'{what} position {" ".join(words)}', 'write it as two values (x y)'))
+            return None
+        if axis is None:
+            val = 'center'
+        elif off is None:
+            val = w
+        elif w in ('left', 'top'):
+            val = off
+        elif off.endswith('%'):
+            val = V.fmt(100 - float(off[:-1])) + '%'
+        else:
+            issues.append(Issue(f'{what} position {" ".join(words)}', f'RmlUi takes two values (x y): an offset from '
+                                f'{w} needs the box size; written as {w}, give the offset as a % or from left/top'))
+            val = w
+        if axis == 'y' or (axis is None and x is not None):
+            y = val
+        else:
+            x = val
+        i += 2 if off is not None else 1
+    return [x or 'center', y or 'center']
+
+
+def _gradient_prelude(name, p, issues):
+    """the first argument of a gradient (direction, shape, size, position, colour space) in the order RmlUi parses:
+    shape before size, `at` two-value position; `in <space>` is dropped (RmlUi interpolates in sRGB)"""
+    words = [V.ser(w) for w in V.words(p)]
+    if 'in' in words:
+        k = words.index('in')
+        end = k + 2
+        if end < len(words) and words[end] in ('shorter', 'longer', 'increasing', 'decreasing'):
+            end += 2   # `longer hue`
+        issues.append(Issue(f'{name}() interpolation {" ".join(words[k:end])}', 'RmlUi interpolates gradients in '
+                            'sRGB: dropped (colours between the stops may differ)'))
+        words = words[:k] + words[end:]
+    pos = []
+    if 'at' in words:
+        k = words.index('at')
+        pos = position2(words[k + 1:], issues, f'{name}()')
+        words = words[:k]
+        if pos is None:
+            pos = ['center', 'center']
+    if 'radial' in name:
+        shape = [w for w in words if w in ('circle', 'ellipse')]
+        size = [w for w in words if w not in ('circle', 'ellipse')]
+        words = shape + size
+    return ' '.join(words + (['at'] + pos if pos else []))
+
+
 def gradient(t, issues):
     """a CSS gradient function token -> RmlUi decorator text"""
     name, args = t[1], t[2]
     parts = V.split(args)
+    legacy = re.match(r'^-(webkit|moz|o)-', name)
+    if legacy:   # the prefixed form: the direction names the start side, angles run counter-clockwise from east
+        name = name[legacy.end():]
+        if 'linear' not in name:
+            raise ValueIssue(f'-{legacy.group(1)}-{name}()', f'the prefixed form has its own syntax: write {name}()')
+        ws0 = [V.ser(w) for w in V.words(V.strip_ws(parts[0]))]
+        opp = {'left': 'right', 'right': 'left', 'top': 'bottom', 'bottom': 'top'}
+        if ws0 and all(w in opp for w in ws0):
+            parts = [[('ident', 'to'), ('ws',)] + [x for w in ws0 for x in (('ident', opp[w]), ('ws',))][:-1]] + parts[1:]
+        elif len(ws0) == 1 and re.fullmatch(r'-?[\d.]+deg', ws0[0]):
+            parts = [[('num', 90 - float(ws0[0][:-3]), 'deg')]] + parts[1:]
     out = []
     conic = 'conic' in name
     for k, p in enumerate(parts):
@@ -358,7 +434,9 @@ def gradient(t, issues):
         if not ws:
             continue
         if k == 0 and not any(V.is_color(w[0]) for w in ws):
-            out.append(V.ser(p))   # direction / shape: RmlUi reads the CSS forms (checked in docs/converter.md)
+            pre = _gradient_prelude(name, p, issues)
+            if pre:
+                out.append(pre)
             continue
         colors = [w for w in ws if V.is_color(w[0])]
         if not colors:
