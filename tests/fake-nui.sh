@@ -110,4 +110,14 @@ mutant "Open77.ui: registerEffect records" 'F.effects[name] = hlsl' ''
 mutant "Open77.ui: registerEffect records" 'return nil, "invalid_effect"' 'return nil, "x"'
 mutant "Open77.ui: registerEffect records" '{ path, family, fallback }' '{ path, family }'
 
+# F.json
+mutant "json: strings, escapes" 'table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)' 'table.sort(keys, function(a, b) return tostring(a) > tostring(b) end)'
+mutant "json: strings, escapes" 'if count == 0 or v[1] ~= nil then' 'if v[1] ~= nil then'
+mutant "json: floats keep every digit" 'for digits = 15, 17 do' 'for digits = 6, 6 do'
+mutant "json: floats keep every digit" 'return s:find("[%.eE]") and s or (s .. ".0")' 'return s'
+mutant "json: NaN and infinity" 'if v ~= v or v == math.huge or v == -math.huge then' 'if v ~= v then'
+mutant "json: NaN and infinity" 'if v ~= v or v == math.huge or v == -math.huge then' 'if v == math.huge or v == -math.huge then'
+mutant "json: a table mixing" 'if count ~= #v then error(' 'if false then error('
+mutant "json: a function" '    error("F.json: a " .. t .. " at " .. path .. " is not JSON", 0)' '    return "null"'
+
 exit $fail

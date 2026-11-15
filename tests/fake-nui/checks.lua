@@ -438,4 +438,38 @@ check("Open77.ui: registerEffect records the effect, stats has a text, loadFont 
     eq(ok, nil); eq(why, "font_not_declared")
 end)
 
+-- ---- F.json ----
+
+check("json: strings, escapes, booleans, nested objects with sorted keys, an empty table is []", function()
+    local F = fresh()
+    eq(F.json({ b = { 1, 2 }, a = false, [ "q" ] = "x\"y\\z\n\1" }), '{"a":false,"b":[1,2],"q":"x\\"y\\\\z\\n\\u0001"}')
+    eq(F.json({}), "[]")
+    eq(F.json({ {} , { n = {} } }), '[[],{"n":[]}]')
+end)
+
+check("json: floats keep every digit and stay floats", function()
+    local F = fresh()
+    eq(F.json({ 1234567.5, 0.1, 3.0, -2.5e-9 }), "[1234567.5,0.1,3.0,-2.5e-09]")
+    local third = F.json(1 / 3)
+    eq(tonumber(third), 1 / 3, "1/3 reads back as itself (" .. third .. ")")
+end)
+
+check("json: NaN and infinity are an error naming the path", function()
+    local F = fresh()
+    errors(function() F.json({ rows = { 1, 0 / 0 } }) end, "$.rows[2]", "NaN")
+    errors(function() F.json({ math.huge }) end, "$[1]", "inf")
+    errors(function() F.json({ -math.huge }) end, "$[1]", "-inf")
+end)
+
+check("json: a table mixing an array with other keys, or with holes, is an error naming the path", function()
+    local F = fresh()
+    errors(function() F.json({ rows = { 1, x = 2 } }) end, "$.rows mixes", "mixed")
+    errors(function() F.json({ [1] = "a", [3] = "c" }) end, "$ mixes", "a hole")
+end)
+
+check("json: a function (or anything else JSON cannot hold) is an error naming the path", function()
+    local F = fresh()
+    errors(function() F.json({ f = print }) end, "$.f", "function")
+end)
+
 if failed > 0 then say(failed .. " check(s) failed"); os.exit(1) end

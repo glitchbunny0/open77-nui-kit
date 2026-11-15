@@ -329,8 +329,10 @@ end
 function F.advance(ms) F.frames(math.ceil(ms / FRAME)) end
 
 -- JSON for the cases file (strings, numbers, booleans, arrays = sequences, objects with sorted keys; an empty table is
--- an empty array, as NativeUI maps it)
-function F.json(v)
+-- an empty array, as NativeUI maps it). What JSON cannot hold is an error naming the path ($.rows[2].price): NaN and
+-- infinity, a table that mixes a sequence with other keys (or has holes), a function. Floats keep every digit (the
+-- shortest of 15..17 that reads back the same).
+local function jsonOf(v, path)
     local t = type(v)
     if t == "string" then
         return '"' .. v:gsub('[%c"\\]', function(c)
@@ -339,24 +341,33 @@ function F.json(v)
         end) .. '"'
     elseif t == "number" then
         if math.type(v) == "integer" then return tostring(v) end
-        local s = ("%.6g"):format(v)
-        return s:find("[%.e]") and s or (s .. ".0")
+        if v ~= v or v == math.huge or v == -math.huge then error("F.json: " .. tostring(v) .. " at " .. path .. " is not JSON", 0) end
+        local s
+        for digits = 15, 17 do
+            s = ("%." .. digits .. "g"):format(v)
+            if tonumber(s) == v then break end
+        end
+        return s:find("[%.eE]") and s or (s .. ".0")
     elseif t == "boolean" then return tostring(v)
     elseif t == "table" then
-        if next(v) == nil or v[1] ~= nil then
+        local count = 0
+        for _ in pairs(v) do count = count + 1 end
+        if count == 0 or v[1] ~= nil then
+            if count ~= #v then error("F.json: " .. path .. " mixes an array with other keys, or has holes", 0) end
             local p = {}
-            for i, x in ipairs(v) do p[i] = F.json(x) end
+            for i, x in ipairs(v) do p[i] = jsonOf(x, path .. "[" .. i .. "]") end
             return "[" .. table.concat(p, ",") .. "]"
         end
         local keys = {}
         for k in pairs(v) do keys[#keys + 1] = k end
         table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
         local p = {}
-        for _, k in ipairs(keys) do p[#p + 1] = F.json(tostring(k)) .. ":" .. F.json(v[k]) end
+        for _, k in ipairs(keys) do p[#p + 1] = jsonOf(tostring(k), path) .. ":" .. jsonOf(v[k], path .. "." .. tostring(k)) end
         return "{" .. table.concat(p, ",") .. "}"
     end
-    return "null"
+    error("F.json: a " .. t .. " at " .. path .. " is not JSON", 0)
 end
+function F.json(v) return jsonOf(v, "$") end
 
 -- one case for rml-check / rml-preview from a fake document: its model as the client left it, plus what to click
 -- (clicks = { { selector, event, { args... } } }) and the model events the document declares
