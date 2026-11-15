@@ -114,23 +114,51 @@ class Converter:
         return os.path.relpath(absp, self.out).replace(os.sep, '/')
 
     # ---- sheets
+    def local_path(self, href, base_dir):
+        """a page-relative or root-relative (/web/x.css, with --root) reference, query and fragment dropped"""
+        u = href.strip().split('#')[0].split('?')[0]
+        if u.startswith('/'):
+            return os.path.normpath(os.path.join(self.root or self.pdir, u.lstrip('/')))
+        return os.path.normpath(os.path.join(base_dir, u))
+
     def load_sheets(self, doc):
-        """(file, base line, text) in cascade order: <link>/<style> in document order, then --css"""
+        """(file, base line, text) in cascade order: <link>/<style> in document order, then --css; the sheets a
+        browser does not apply (disabled, alternate, not CSS, inside <template>) are reported and left out"""
         out = []
         for el in doc.root.walk():
-            if el.tag == 'link' and 'stylesheet' in (el.attrs.get('rel') or '').lower().split():
+            if el.tag not in ('link', 'style'):
+                continue
+            rel = (el.attrs.get('rel') or '').lower().split()
+            if el.tag == 'link' and 'stylesheet' not in rel:
+                continue
+            anc, skip = el.parent, None
+            while isinstance(anc, H.Element) and skip is None:
+                skip = 'it is inside a <template>' if anc.tag == 'template' else None
+                anc = anc.parent
+            typ = (el.attrs.get('type') or 'text/css').lower().split(';')[0].strip()
+            if 'disabled' in el.attrs:
+                skip = 'it is disabled'
+            elif 'alternate' in rel:
+                skip = 'it is an alternate stylesheet'
+            elif typ not in ('text/css', ''):
+                skip = f'its type is {typ}'
+            if skip:
+                self.report.add(self.where(None), el.line, 'markup', f'<{el.tag}> {el.attrs.get("href") or ""}'.strip(),
+                                f'a browser does not apply it ({skip}): left out')
+                continue
+            if el.tag == 'link':
                 href = el.attrs.get('href') or ''
                 if re.match(r'^[a-z]+://', href):
                     self.report.add(self.where(None), el.line, 'markup', f'remote stylesheet {href}',
                                     'copy it next to the page and link it locally')
                     continue
-                p = os.path.normpath(os.path.join(self.pdir, href))
+                p = self.local_path(href, self.pdir)
                 if not os.path.exists(p):
                     self.report.add(self.where(None), el.line, 'markup', f'stylesheet {href} not found', 'check the path')
                     continue
                 media = el.attrs.get('media')
                 out.append((p, 1, open(p, encoding='utf-8').read(), media))
-            elif el.tag == 'style':
+            else:
                 txt = ''.join(c.text for c in el.children if isinstance(c, H.Text))
                 out.append((self.page, el.line, txt, el.attrs.get('media')))
         for p in self.extra_css:
@@ -148,11 +176,15 @@ class Converter:
     def flatten(self, items, file, depth=0):
         """@media/@import/@supports resolved -> [(file, item)] of Rule and @keyframes, @font-face collected"""
         out = []
+        rules_seen = False   # an @import after other rules is ignored by the browser
         for it in items:
             if isinstance(it, css_parse.Rule):
                 out.append((file, it))
+                rules_seen = True
                 continue
             n = it.name
+            if n not in ('import', 'charset', 'layer') or (n == 'layer' and it.block):
+                rules_seen = rules_seen or n not in ('import', 'charset')
             if n == 'media':
                 ok, why = self.media_ok(it.prelude)
                 if why:
@@ -165,17 +197,7 @@ class Converter:
                                     f'@media {it.prelude} does not apply to the {self.canvas[0]}x{self.canvas[1]} canvas: '
                                     f'{len(it.block)} rules left out', 'nothing to do, or convert with --canvas')
             elif n == 'import':
-                m = re.match(r'''^(?:url\()?\s*["']?([^"')\s]+)["']?\)?\s*(.*)$''', it.prelude)
-                href = m.group(1) if m else ''
-                p = os.path.normpath(os.path.join(os.path.dirname(file), href))
-                if m and os.path.exists(p) and depth < 8:
-                    media = m.group(2).strip()
-                    if media and not self.media_ok(media)[0]:
-                        continue
-                    out += self.flatten(self.parse_sheet(open(p, encoding='utf-8').read(), 1, p), p, depth + 1)
-                else:
-                    self.report.add(self.where(file), it.line, 'css', f'@import {it.prelude} could not be read',
-                                    'copy its rules in')
+                out += self.css_import(it, file, depth, rules_seen)
             elif n.endswith('keyframes'):
                 out.append((file, it))
             elif n == 'font-face':
@@ -192,6 +214,43 @@ class Converter:
                                 {'supports': 'RmlUi has no @supports: write the rules that apply',
                                  'container': 'RmlUi has no container queries'}.get(n, f'RmlUi has no @{n}: dropped'))
         return out
+
+    def css_import(self, it, file, depth, late):
+        """@import url [layer[(name)]] [supports(...)] [media]: inlined when a browser would apply it"""
+        where = self.where(file)
+        if late:
+            self.report.add(where, it.line, 'css', f'@import {it.prelude} after other rules',
+                            'a browser ignores it (and so does this converter): move it to the top of the sheet')
+            return []
+        m = re.match(r'''^(?:url\(\s*)?(["']?)([^"')\s]+)\1\s*\)?\s*(.*)$''', it.prelude, re.S)
+        if not m:
+            self.report.add(where, it.line, 'css', f'@import {it.prelude} could not be read', 'copy its rules in')
+            return []
+        href, rest = m.group(2), m.group(3).strip()
+        lm = re.match(r'^layer(\([^)]*\))?\s*', rest, re.I)
+        if lm:
+            rest = rest[lm.end():]
+            self.report.add(where, it.line, 'css', f'@import {href} into a cascade layer',
+                            'RmlUi has no layers: its rules are kept in source order; check overrides')
+        sm = re.match(r'^supports\(', rest, re.I)
+        if sm:
+            depth_, k = 0, 0
+            for k, ch in enumerate(rest):
+                depth_ += {'(': 1, ')': -1}.get(ch, 0)
+                if depth_ == 0 and ch == ')':
+                    break
+            cond, rest = rest[len('supports('):k], rest[k + 1:].strip()
+            self.report.add(where, it.line, 'css', f'@import {href} supports({cond})', 'RmlUi has no @supports: '
+                            'left out, as @supports blocks are; copy in the rules that apply')
+            return []
+        if rest and not self.media_ok(rest)[0]:
+            self.report.add(where, it.line, 'css', f'@import {href} for media {rest}', 'not for the canvas: left out')
+            return []
+        p = self.local_path(href, os.path.dirname(file))
+        if re.match(r'^[a-z]+://', href) or not os.path.exists(p) or depth >= 8:
+            self.report.add(where, it.line, 'css', f'@import {it.prelude} could not be read', 'copy its rules in')
+            return []
+        return self.flatten(self.parse_sheet(open(p, encoding='utf-8').read(), 1, p), p, depth + 1)
 
     def media_ok(self, prelude):
         """evaluate a media query list for the canvas -> (applies, note about what could not be evaluated)"""
@@ -1046,7 +1105,7 @@ class Converter:
         code, label = None, 'inline <script>'
         if src:
             label = f'<script src="{src}">'
-            p = os.path.normpath(os.path.join(self.pdir, src))
+            p = self.local_path(src, self.pdir)
             if os.path.exists(p):
                 code = open(p, encoding='utf-8', errors='replace').read()
             if os.path.basename(src) == 'lrbind.js':
@@ -1112,7 +1171,7 @@ class Converter:
             if el.tag == 'script':
                 code = ''.join(c.text for c in el.children if isinstance(c, H.Text))
                 if el.attrs.get('src'):
-                    sp = os.path.normpath(os.path.join(self.pdir, el.attrs['src']))
+                    sp = self.local_path(el.attrs['src'], self.pdir)
                     code = open(sp, encoding='utf-8', errors='replace').read() if os.path.exists(sp) else ''
                 self.script_vars |= set(re.findall(r'setProperty\(\s*["\'](--[\w-]+)', code))
         rules = []

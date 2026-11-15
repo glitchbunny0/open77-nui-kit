@@ -7,6 +7,7 @@ body, div, path, span { box-sizing: border-box; }
 path.svg-1 { width: 4dp; height: 4dp; }
 
 #a { padding: 2dp; }
+#a { padding: 2dp; }
 * { margin: 0; }
 body { width: 100%; }
 .html2rml-root { font-size: 16dp; }
@@ -18,3 +19,4 @@ body { width: 100%; }
 #a[class~="x"] > span + span { margin-left: 2dp; }
 path.ic { stroke: #fff; }
 #a span:hover, #a span:active { color: #ff0; }
+#a span + span { color: #00ff00; }

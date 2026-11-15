@@ -109,6 +109,17 @@ MUTANTS = [
      "                c2.tag = 'body'", 'fixture 14-cascade'),
     ('root-merge-report', 'convert.py', 'if other and other[0] != d.value.strip():', 'if False:', 'fixture 14-cascade'),
     ('hidden-class', 'selector.py', "HIDDEN_CLASS = 'html2rml-hidden'", "HIDDEN_CLASS = 'hidden'", 'fixture 14-cascade'),
+    # @import variants, sheets a browser does not apply, root-relative/query hrefs (L6-7, L6-17, L6-20)
+    ('import-late', 'convert.py', '        if late:\n', '        if False:\n', 'fixture 10-at-rules'),
+    ('import-supports', 'convert.py', '        if sm:\n', '        if False:\n', 'fixture 10-at-rules'),
+    ('import-media', 'convert.py', 'if rest and not self.media_ok(rest)[0]:', 'if False:', 'fixture 10-at-rules'),
+    ('import-layer', 'convert.py', '        if lm:\n', '        if False:\n', 'fixture 10-at-rules'),
+    ('href-query', 'convert.py', "u = href.strip().split('#')[0].split('?')[0]", 'u = href.strip()', 'fixture 10-at-rules'),
+    ('sheet-disabled', 'convert.py', "if 'disabled' in el.attrs:", 'if False:', 'fixture 10-at-rules'),
+    ('sheet-alternate', 'convert.py', "elif 'alternate' in rel:", 'elif False:', 'fixture 10-at-rules'),
+    ('sheet-type', 'convert.py', "elif typ not in ('text/css', ''):", 'elif False:', 'fixture 10-at-rules'),
+    ('sheet-template', 'convert.py', "skip = 'it is inside a <template>' if anc.tag == 'template' else None", 'skip = None',
+     'fixture 10-at-rules'),
 ]
 
 

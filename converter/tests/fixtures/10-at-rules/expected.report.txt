@@ -1,12 +1,21 @@
+markup   index.html:1  <link> off.css  =>  a browser does not apply it (it is disabled): left out
+markup   index.html:1  <link> off.css  =>  a browser does not apply it (it is an alternate stylesheet): left out
+markup   index.html:1  <style>  =>  a browser does not apply it (its type is text/x-scss): left out
+markup   index.html:4  <style>  =>  a browser does not apply it (it is inside a <template>): left out
 css      r.css:3  @import "missing.css" could not be read  =>  copy its rules in
-css      r.css:9  @media (max-width: 800px) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
-css      r.css:11  @media (prefers-color-scheme: dark): (prefers-color-scheme = dark) taken as false (no colour scheme in the game)  =>  write the rules for the design canvas
-css      r.css:11  @media (prefers-color-scheme: dark) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
-css      r.css:12  @supports (display: grid)  =>  RmlUi has no @supports: write the rules that apply
-css      r.css:13  @layer (cascade layers)  =>  RmlUi has no layers: its rules are kept in source order; check overrides
-css      r.css:14  @page  =>  RmlUi has no @page: dropped
+css      r.css:4  @import more.css into a cascade layer  =>  RmlUi has no layers: its rules are kept in source order; check overrides
+css      r.css:5  @import more.css supports(display: grid)  =>  RmlUi has no @supports: left out, as @supports blocks are; copy in the rules that apply
+css      r.css:6  @import more.css for media print  =>  not for the canvas: left out
+css      r.css:12  @media (max-width: 800px) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
+css      r.css:14  @media (prefers-color-scheme: dark): (prefers-color-scheme = dark) taken as false (no colour scheme in the game)  =>  write the rules for the design canvas
+css      r.css:14  @media (prefers-color-scheme: dark) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
+css      r.css:15  @supports (display: grid)  =>  RmlUi has no @supports: write the rules that apply
+css      r.css:16  @layer (cascade layers)  =>  RmlUi has no layers: its rules are kept in source order; check overrides
+css      r.css:17  @page  =>  RmlUi has no @page: dropped
+css      r.css:27  @import "more.css" after other rules  =>  a browser ignores it (and so does this converter): move it to the top of the sheet
 css      print.css:1  stylesheet for media print  =>  not for the canvas: left out
-selector r.css:17  #a span:not(.y, .z): :not(.y, .z) with a list or a combinator  =>  RmlUi's :not() takes one compound selector: chain :not(.a):not(.b)
-selector r.css:18  #a::before: pseudo-element ::before  =>  RmlUi has no generated content: put a real element in the markup (an empty <div class="..."/>) and style that
-selector r.css:19  #a span:is(.y): :is()  =>  RmlUi has no :is(): write each alternative as its own selector
-selector r.css:20  #a:focus-within: :focus-within  =>  RmlUi 6.3 never sets this pseudo-class (it knows active, checked, disabled, drag, focus, focus-visible, hover, placeholder-shown, selected and the structural ones): toggle a class from the client instead
+selector r.css:20  #a span:not(.y, .z): :not(.y, .z) with a list or a combinator  =>  RmlUi's :not() takes one compound selector: chain :not(.a):not(.b)
+selector r.css:21  #a::before: pseudo-element ::before  =>  RmlUi has no generated content: put a real element in the markup (an empty <div class="..."/>) and style that
+selector r.css:22  #a span:is(.y): :is()  =>  RmlUi has no :is(): write each alternative as its own selector
+selector r.css:23  #a:focus-within: :focus-within  =>  RmlUi 6.3 never sets this pseudo-class (it knows active, checked, disabled, drag, focus, focus-visible, hover, placeholder-shown, selected and the structural ones): toggle a class from the client instead
+markup   index.html:4  <template>  =>  RmlUi has no templates: use data-for
