@@ -11,6 +11,8 @@ Checks, one line each:
   example   examples/side-menu/web/lrbind.js is the kit's file
   sync      bin/lrbind-sync on a scratch resource tree (what a copy is, own comment lines, refresh, check, --help)
   browser   data-rml in a real Chromium: nothing planted in the string runs (skipped without Chromium)
+  nojsdom   without a loadable jsdom both node tests fail and say why (npm ci, Node 20.19+)
+  cli       bin/lrbind-parity --help exits 0
 Then every mutant in MUTANTS: a copy of one file with ONE planted bug, run through the one check it names. That check
 must go red, and its output must contain the expected text (the failing case or check). A mutant whose pattern no
 longer matches exactly once fails too, so the table cannot rot silently.
@@ -537,6 +539,52 @@ MUTANTS += [
      'local i = type(index) == "number" and index or nil', 'lua', 'removeAt refuses a fractional index'),
     ('lua: event arity ignores n', 'lrbind.lua', 'table.unpack(args, 1, tonumber(payload.n) or #args)', 'table.unpack(args)',
      'lua', 'two empty arguments'),
+]
+
+# ==== jsdom that does not load (missing, or a Node older than 20.19): both node tests say so, with npm ci and the
+# Node version, and fail
+PROTOCOL = os.path.join(KIT, 'lrbind', 'tests', 'protocol.test.mjs')
+SOURCES['protocol.test.mjs'] = (PROTOCOL, 'test')
+
+
+def check_nojsdom(test=PROTOCOL):
+    d = os.path.join(TMP, 'nojsdom-' + re.sub(r'\W', '_', os.path.basename(test)))
+    os.makedirs(os.path.join(d, 'parity'), exist_ok=True)
+    shutil.copy(os.path.join(KIT, 'lrbind', 'tests', 'package.json'), d)
+    shutil.copy(test, os.path.join(d, 'protocol.test.mjs'))
+    shutil.copy(os.path.join(KIT, 'lrbind', 'tests', 'parity', 'parity.test.mjs'), os.path.join(d, 'parity'))
+    bad = []
+    for t in ('protocol.test.mjs', os.path.join('parity', 'parity.test.mjs')):
+        rc, out = sh(['node', os.path.join(d, t), '--cases', CASES, '--golden', GOLDEN], cwd=d)
+        if rc == 0 or 'npm ci' not in out or 'Node ' not in out:
+            bad.append(f'{t}: rc {rc}, {out.strip()[:200]!r}')
+    return not bad, ('without a loadable jsdom both node tests fail and say: npm ci, Node 20.19+' if not bad else
+                     'FAIL nojsdom: ' + '; '.join(bad))
+
+
+CHECKS['nojsdom'] = check_nojsdom
+MUTANTS += [
+    ('the old jsdom message', 'protocol.test.mjs', 'run \\`npm ci\\` in lrbind/tests', 'run \\`npm install\\` in lrbind/tests',
+     'nojsdom', 'protocol.test.mjs: rc 1'),
+]
+
+# ==== bin/lrbind-parity: --help prints the usage and exits 0, bad arguments exit 2
+PARITY_BIN = os.path.join(KIT, 'bin', 'lrbind-parity')
+SOURCES['lrbind-parity'] = (PARITY_BIN, 'tool')
+
+
+def check_cli(tool=PARITY_BIN):
+    rc, out = sh(['bash', tool, '--help'])
+    rc2, _ = sh(['bash', tool, 'only-one-argument'])
+    ok = rc == 0 and 'lrbind-parity CASES.mjs GOLDEN.json' in out and rc2 == 2
+    return ok, ('bin/lrbind-parity --help: usage, exit 0; bad arguments: exit 2' if ok else
+                f'FAIL cli: bin/lrbind-parity --help rc {rc}, bad arguments rc {rc2}')
+
+
+CHECKS['cli'] = check_cli
+MUTANTS += [
+    ('lrbind-parity --help exits 2', 'lrbind-parity', "-h|--help) sed -n '2,8p' \"$0\"; exit 0 ;;",
+     "-h|--help) sed -n '2,8p' \"$0\"; exit 2 ;;", 'cli', 'FAIL cli'),
 ]
 
 # ==== the run

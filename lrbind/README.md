@@ -55,7 +55,7 @@ refused (a line in the client log, `false` back) before the Lua copy or the page
 `#list + 1`, no further. `merge` takes top-level fields the model has and skips any other key; `removeAt` takes an
 integral index.
 
-## Rules that come from RmlUi itself (all reproduced by the shim, all measured against RmlUi 6.3)
+## Rules that come from RmlUi (reproduced by the shim, measured against RmlUi 6.3; where WebUI differs, the rule says so)
 
 - **Every field the markup names must be in the initial model.** An unknown name is a parse error: the binding is
   dropped and a `{{nope}}` text keeps its braces. Fields cannot be added later.
@@ -127,7 +127,7 @@ integral index.
 | What | Where | Run |
 |---|---|---|
 | Parity: every snapshot of every case compared with real RmlUi 6.3, form controls included (the harness drops only the classes and local styles RmlUi's controls give themselves) | `tests/parity/` (`cases.mjs`, `golden.json`) | `bin/lrbind-parity` |
-| Page protocol, form controls, mockup mode | `tests/protocol.test.mjs` | `node lrbind/tests/protocol.test.mjs` |
+| Page protocol, paths, form controls, `ev.*` types, `data-rml` in a browser, mockup mode | `tests/protocol.test.mjs` | `node lrbind/tests/protocol.test.mjs` |
 | Lua facade | `tests/lrbind_lua.lua` | `cd lrbind && lua5.4 tests/lrbind_lua.lua` |
 | All of the above, plus the golden regenerated through real RmlUi and compared, and one planted bug per check | `tests/suite.py` (the kit's `tests/lrbind.sh`) | `scripts/test.sh` |
 
@@ -142,4 +142,13 @@ red.
 Your own markup can get the same proof: write a cases file that imports `T` and `sharedBlock` from
 `lrbind/tests/parity/cases.mjs` (a block of your real document between `<!-- name: begin -->` and `<!-- name: end -->`
 markers), then `bin/lrbind-parity my-cases.mjs my-golden.json --regen` once and `bin/lrbind-parity my-cases.mjs
-my-golden.json` in your test run.
+my-golden.json` in your test run. `sharedBlock` reads its file relative to the kit's parity folder unless you pass
+your own folder as the third argument:
+
+```js
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { T, sharedBlock } from "<kit>/lrbind/tests/parity/cases.mjs";
+const here = dirname(fileURLToPath(import.meta.url));
+export const cases = [T("price row", sharedBlock("../web/index.html", "price", here), { price: 12 })];
+```

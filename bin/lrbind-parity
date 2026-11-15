@@ -11,9 +11,11 @@ kit="$(cd "$(dirname "$0")/.." && pwd)"
 t="$kit/lrbind/tests/parity"
 cases="$t/cases.mjs"; golden="$t/golden.json"; regen=0
 args=()
-for a in "$@"; do [ "$a" = "--regen" ] && regen=1 || args+=("$a"); done
+for a in "$@"; do
+    case "$a" in --regen) regen=1 ;; -h|--help) sed -n '2,8p' "$0"; exit 0 ;; *) args+=("$a") ;; esac
+done
 if [ ${#args[@]} -eq 2 ]; then cases="$(realpath "${args[0]}")"; golden="$(realpath -m "${args[1]}")"
-elif [ ${#args[@]} -ne 0 ]; then sed -n '2,9p' "$0"; exit 2; fi
+elif [ ${#args[@]} -ne 0 ]; then sed -n '2,8p' "$0"; exit 2; fi
 if [ ! -d "$kit/lrbind/tests/node_modules/jsdom" ]; then (cd "$kit/lrbind/tests" && npm ci --silent --no-audit --no-fund); fi
 if [ $regen = 1 ]; then
     host="$(bash "$kit/scripts/build.sh" | tail -1)"

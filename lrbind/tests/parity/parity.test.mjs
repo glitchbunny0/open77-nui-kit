@@ -29,8 +29,9 @@ if (args.includes("--emit-cases")) {
 async function main() {
 
 let JSDOM;
-try { ({ JSDOM } = require("jsdom")); } catch {
-  console.log("FAIL jsdom missing: run `npm install` in lrbind/tests of the kit");
+try { ({ JSDOM } = require("jsdom")); } catch (e) {
+  // jsdom 29 needs Node ^20.19 || ^22.13 || >=24; on an older Node it is there but does not load
+  console.log(`FAIL jsdom does not load (Node ${process.versions.node}; it needs 20.19+): run \`npm ci\` in lrbind/tests of the kit. ${String(e && e.message).split("\n")[0]}`);
   process.exit(1);
 }
 
