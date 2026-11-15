@@ -540,6 +540,22 @@ def _():
     expect(next(e for e in es if e.get('id') == 'x')['cls'] == 'aa zz', f'{es}')
 
 
+# ---- the numbers of a probe document (fonts.json face: ascent 0.8 em, descent 0.2 em, every glyph 0.5 em)
+@check('layout: a probe document lays out to known numbers')
+def _():
+    es = els('<div id="a"></div><div id="t">abc</div><div id="row"><div id="r1"></div><div id="r2"></div></div>',
+             'div { display: block; } #a { position: absolute; left: 20dp; top: 30dp; width: 200dp; height: 100dp; '
+             'padding: 10dp; border: 5dp #ffffff; } #t { position: absolute; left: 0; top: 200dp; font-size: 20dp; '
+             'line-height: 30dp; } #row { position: absolute; left: 300dp; top: 0; display: flex; width: 100dp; } '
+             '#r1 { flex: 1; height: 10dp; } #r2 { width: 30dp; height: 20dp; }', name='probe')
+    by = {e.get('id'): e for e in es if 'tag' in e}
+    run = next(e for e in es if e.get('text') == 'abc')
+    got = {'a': [by['a'][k] for k in ('x', 'y', 'w', 'h', 'bt')], 'text': [run[k] for k in ('x', 'y', 'w', 'size')],
+           't': by['t']['h'], 'r1': [by['r1'][k] for k in ('x', 'w')], 'r2': [by['r2'][k] for k in ('x', 'h')]}
+    want = {'a': [20, 30, 230, 130, 5], 'text': [0, 221, 30, 20], 't': 30, 'r1': [300, 70], 'r2': [370, 20]}
+    expect(got == want, f'got {got}, want {want}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

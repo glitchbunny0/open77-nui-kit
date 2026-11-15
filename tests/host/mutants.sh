@@ -147,3 +147,9 @@ mutant host host/mode_check.inc "classes: the check outline sorts them" \
     'std::string c = classesOf(el);' 'std::string c = el->GetClassNames();'
 mutant host host/mode_layout.inc "classes: layout sorts them" \
     'q(classesOf(el))' 'q(el->GetClassNames())'
+
+# layout numbers
+mutant host host/common.hpp "layout: a probe document lays out to known numbers" \
+    'h.m.ascent = faces[f].ascent * size / 1000.f;' 'h.m.ascent = faces[f].descent * size / 1000.f;'
+mutant host host/mode_layout.inc "layout: a probe document lays out to known numbers" \
+    'Vector2f sz = el->GetBox().GetSize(BoxArea::Border);' 'Vector2f sz = el->GetBox().GetSize(BoxArea::Content);'
