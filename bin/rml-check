@@ -10,8 +10,9 @@ is reported for every case that sees it). Fails when:
     the selector matches, with real RmlUi event handling), or names an event the case does not declare;
   - the document calls a model event (any `data-event-*`, clicked or not) that a case's "events" does not declare;
   - the document does not load, or there are no cases.
-Allowed by default: "No font face defined" (the check runs without fonts) and the properties Open77's NativeUI adds
-to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
+Allowed by default: "No font face defined" (the check runs without fonts). The properties, filters and decorator
+Open77's NativeUI adds to RmlUi are known to the host, so they are validated like RmlUi's own. Add your own
+allowances with --allow REGEX.
 
   rml-check DOC.rml CASES.json|- [--model NAME] [--allow REGEX ...] [--outline FILE] [--quiet]
 
@@ -27,15 +28,10 @@ Exit status: 0 clean, 1 warnings, failed clicks or undeclared events, 2 usage, i
 import argparse, difflib, html, json, os, re, subprocess, sys, tempfile
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Properties and values Open77's NativeUI understands and vanilla RmlUi does not: <path>/<shape> paint, the extra
-# filters and the fx() decorator. Vanilla RmlUi reports them as syntax errors; they are fine in the game.
-ALLOWED_OPEN77 = [
-    r"^Syntax error parsing (inline )?property declaration '(fill|stroke|stroke-width|stroke-linejoin|stroke-linecap"
-    r"|stroke-dasharray|stroke-dashoffset|trim-start|trim-end|trim-offset): ",
-    r"^Syntax error parsing (inline )?property declaration 'filter: [^']*\b(glow|chromatic|scanlines)\(",
-    r"^Syntax error parsing (inline )?property declaration 'decorator: [^']*\bfx\(",
-    r"^(Filter|Decorator) type '(glow|chromatic|scanlines|fx)' not found",
-]
+# What Open77's NativeUI understands and vanilla RmlUi does not. Nothing is allowed on top: the host registers the
+# Open77 properties (fill, stroke*, trim-*) with real value parsers and stubs the extra filters (glow, chromatic,
+# scanlines) and the fx() decorator, so RmlUi itself validates every declaration that mentions them.
+ALLOWED_OPEN77 = []
 ALLOWED_BASE = [r'^No font face defined']
 CASE_KEYS = ['name', 'model', 'models', 'events', 'clicks', 'place', 'size']
 

@@ -87,12 +87,19 @@ chk_event_parse()  { evdoc "\"a(); show = 1; b('x;y(\\'(', 2); close\"" "" '"a",
                      evdoc "'a(1) ; w'" "" '"a"'; want 1 'EVENT w ' && wantnot 'EVENT a'; }
 chk_event_template() { evdoc '"a()"' 'zap()' '"a"'; want 1 'EVENT zap  data-event-keydown on <div> at t.rml:1'; }
 
-# the Open77 allow-list: what Open77 adds passes, a typo next to it does not
-open77='.row { fill: #FFFFFF; stroke: #000000; stroke-width: 2dp; filter: glow(2dp #FFFFFF 1); decorator: fx(border-flow 1 2); }'
+# what Open77 adds (the host registers it) passes, a typo or a bad value in it or next to it does not; nothing is
+# allowed by pattern, RmlUi validates every declaration
+open77='.row { fill: #FFFFFF; stroke: #000000; stroke-width: 2dp; stroke-linejoin: round; trim-end: 0.5; filter: glow(2dp #FFFFFF 1); backdrop-filter: glow(5dp #5EF6FF 0.9); decorator: fx(border-flow 1 2); }'
 scoped() { printf 'body { width: 400dp; }\n%s\n' "$1" > "$fx/s.rcss"; sed 's/ui.rcss/s.rcss/' "$fx/ui.rml" > "$fx/s.rml"; rc "$fx/s.rml" "$fx/ok.json"; }
 chk_allow_open77() { scoped "$open77"; want 0 'rml-check: ok'; }
 chk_allow_scope()  { local d; for d in '.row { strokes: 1; }' '.row { fill-rule: 1; }' '.row { filter: blurr(2dp); }' '.row { decorator: bogus(1); }'; do
                        scoped "$d"; want 1 'WARN' 'rml-check: FAIL' || { echo "   (for: $d)"; return 1; }; done; }
+chk_allow_values() { local d; for d in '.row { fill: #GGGGGG; }' '.row { stroke-width: 2pxx; }' '.row { stroke-linejoin: roundd; }' '.row { trim-end: lots; }' \
+                       '.row { filter: blur(4pz) glow(2dp #FFFFFF 1); }' '.row { filter: glow(2dp nocolor 1); }' \
+                       '.row { decorator: linear-gradient(90dge, #f00, #00f), fx(border-flow 1 2); }'; do
+                       scoped "$d"; want 1 'WARN' 'rml-check: FAIL' || { echo "   (for: $d)"; return 1; }; done
+                     printf '<rml><body data-model="m"><div style="fill: nope">x</div></body></rml>' > "$fx/in.rml"; echo '[{"name":"a","model":{}}]' > "$fx/in.json"
+                     rc "$fx/in.rml" "$fx/in.json"; want 1 "WARN +Syntax error parsing property declaration 'fill: nope;'"; }
 chk_allow_flag()   { scoped '.row { glowy: 1; }'; want 1 'WARN' || return 1; rc "$fx/s.rml" "$fx/ok.json" --allow 'glowy'; want 0 'rml-check: ok'; }
 
 # the host protocol, with a scripted host
@@ -162,7 +169,7 @@ chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$
                       rc "$fx/p.rml" "$fx/two.json"; want 1 "colr: red;'.*\[one, two\]"; }
 
 CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_event_static chk_event_parse chk_event_template chk_exit_click
-        chk_property chk_allow_open77 chk_allow_scope chk_allow_flag
+        chk_property chk_allow_open77 chk_allow_scope chk_allow_values chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
         chk_no_cases chk_cases_shape chk_exit_codes chk_emoji chk_name_inject chk_outline_path
         chk_model_comment chk_model_many chk_model_none chk_warn_each_case)
@@ -181,12 +188,12 @@ mname=(); mold=(); mnew=(); mexp=()
 mut() { mname+=("$1"); mold+=("$2"); mnew+=("$3"); mexp+=("$4"); }
 mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_emoji"
 mut load_failed_lost "elif line == 'LOAD FAILED':" "elif line == 'LOAD FAILED!':" "chk_load_failed"
-mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
+mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_allow_values chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
 mut click_fail_lost  "fails += [f'{name}: {f}' for f in res['fails']]" 'pass' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_event_name chk_exit_click"
 mut click_exit_lost  'if bad or undeclared or fails or loadfail:' 'if bad or undeclared or loadfail:' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_click_undeclared chk_exit_click"
-mut allow_everything "ALLOWED_BASE = [r'^No font face defined']" "ALLOWED_BASE = [r'']" "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
-mut allow_too_wide   "property declaration '(fill|stroke|stroke-width" "property declaration '([a-z]+|fill|stroke|stroke-width" "chk_allow_flag chk_allow_scope chk_property chk_warn_each_case"
-mut allow_filter_gone '\b(glow|chromatic|scanlines)\(' '\b(chromatic|scanlines)\(' "chk_allow_open77"
+mut allow_everything "ALLOWED_BASE = [r'^No font face defined']" "ALLOWED_BASE = [r'']" "chk_allow_flag chk_allow_scope chk_allow_values chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
+mut allow_pattern_back 'ALLOWED_OPEN77 = []' "ALLOWED_OPEN77 = [r\"^Syntax error parsing (inline )?property declaration '(fill|stroke|trim)[a-z-]*: \"]" "chk_allow_scope chk_allow_values"
+mut allow_filter_back  'ALLOWED_OPEN77 = []' "ALLOWED_OPEN77 = [r\"^Syntax error parsing (inline )?property declaration 'filter: [^']*glow[(]\"]" "chk_allow_values"
 mut allow_flag_lost  '[re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77 + a.allow]' '[re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77]' "chk_allow_flag chk_exit_codes chk_warn_lines"
 mut empty_cases_ok   'if not cases:' 'if False:' "chk_no_cases"
 mut clicks_unchecked "if not isinstance(c['clicks'], list):" 'if False:' "chk_cases_shape"
