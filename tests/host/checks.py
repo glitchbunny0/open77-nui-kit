@@ -285,6 +285,15 @@ def _():
     expect(got == 'CLICK ok   #t -> go(1) (want go(1))', got)
 
 
+# ---- parity
+@check('parity: boolean and string event params reach the expression as such')
+def _():
+    r = parity('<div id="b" data-event-mousedown="pick(ev.flag, ev.name, ev.x)">x</div>', {},
+               steps=[{'event': 'b', 'type': 'mousedown', 'params': {'flag': True, 'name': 'n', 'x': 1.5}}], events=['pick'])
+    calls = r['snapshots'][1]['calls']
+    expect(calls == ['pick(1,n,1.5)'], f'calls {calls}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

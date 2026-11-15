@@ -78,3 +78,7 @@ mutant host host/mode_check.inc "click: a box sized by its text alone can be cli
     'NullRender render; Sys sys; MeasureFont font;' 'NullRender render; Sys sys; NullFont font;'
 mutant host host/mode_check.inc "click: events the pointer calls on its way there are not the click" \
     'fired.clear();   // what moving there' '// what moving there'
+
+# parity
+mutant host host/mode_parity.inc "parity: boolean and string event params reach the expression as such" \
+    ': toVariant(kv.second);' ': (kv.second.t == J::Str ? Variant(kv.second.s) : Variant(kv.second.n));'

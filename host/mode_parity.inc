@@ -140,7 +140,8 @@ int run() {
 					Element* el = doc->GetElementById(id->s);
 					Dictionary params;
 					if (J* ps = s.get("params"))
-						for (auto& kv : ps->o) params[kv.first] = kv.second.t == J::Str ? Variant(kv.second.s) : Variant(kv.second.t == J::Int ? (double)kv.second.i : kv.second.n);
+						for (auto& kv : ps->o)   // numbers as doubles, as the cases' mouse_x and friends always were
+							params[kv.first] = isNum(&kv.second) ? Variant(num(kv.second)) : toVariant(kv.second);
 					if (el) el->DispatchEvent(s.get("type")->s, params);
 				}
 				context->Update();
