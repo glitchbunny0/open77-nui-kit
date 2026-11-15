@@ -1,0 +1,58 @@
+<rml>
+<head>
+    <title>side menu example</title>
+    <link type="text/rcss" href="menu.rcss"/>
+</head>
+<!-- A side menu: a 640 dp panel pinned to the left edge, tabs, a list, a confirm dialog inside the panel. client/menu.lua
+     fills the "menu" model and answers its events (tab, pick, buy, confirm, cancel, close). Every name bound here is in
+     the first model the client creates (RmlUi drops a binding to a name it does not know). -->
+<body data-model="menu">
+<div id="root">
+    <div id="panel"></div>
+    <div id="lines"></div>
+    <div id="edge"></div>
+
+    <div id="top">
+        <div class="title"><span>{{title}}</span></div>
+        <div class="sub"><span>{{place}}</span></div>
+        <div class="cash"><span class="k">CASH</span><span>{{cash}}</span></div>
+    </div>
+
+    <div id="tabs">
+        <div class="tab" data-for="t : tabs" data-class-on="t.id == tab" data-event-click="tab(t.id)">
+            <span>{{t.label}}</span><div class="bar"></div>
+        </div>
+    </div>
+
+    <div id="list" data-class-dim="askOn">
+        <div class="row" data-for="r : rows" data-class-sel="r.id == pick" data-class-own="r.own"
+             data-event-click="pick(r.id)">
+            <div class="strip" data-style-background-color="r.rarity"></div>
+            <div class="body">
+                <div class="name"><span>{{r.name}}</span></div>
+                <div class="desc"><span>{{r.desc}}</span></div>
+                <div class="price"><span>{{r.price}}</span></div>
+                <div class="tag" data-if="r.own"><span>OWNED</span></div>
+            </div>
+        </div>
+        <div class="empty" data-if="rows.size == 0"><span>Nothing here.</span></div>
+    </div>
+
+    <div id="foot">
+        <div class="btn buy" data-class-off="!canBuy" data-event-click="buy()"><span>BUY</span></div>
+        <div class="close" data-event-click="close()"><span class="key">ESC</span><span>Close</span></div>
+    </div>
+
+    <div id="ask" data-if="askOn">
+        <div class="box">
+            <div class="head"><span>{{askHead}}</span></div>
+            <div class="line"><span>{{askLine}}</span></div>
+            <div class="btns">
+                <div class="btn go" data-event-click="confirm()"><span>PAY {{askPrice}}</span></div>
+                <div class="btn" data-event-click="cancel()"><span>CANCEL</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</rml>

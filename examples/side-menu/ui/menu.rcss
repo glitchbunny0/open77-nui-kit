@@ -1,0 +1,63 @@
+/* side menu example. RmlUi has no default stylesheet: every div is made a block here, and boxes are border-box
+   (padded widths include the padding). 1 dp = 1 px at 1080p. No var(), calc() or grid in RCSS: write the numbers. */
+div { display: block; box-sizing: border-box; }
+body { width: 100%; height: 100%; font-family: KitRaj; font-weight: 400; font-size: 19dp; color: #FF6159; }
+#root { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+#panel { position: absolute; left: 0; top: 0; width: 640dp; height: 1080dp;
+    decorator: linear-gradient(90deg, #08080DFB 0%, #08080DF9 93.75%, #08080DE6 100%); }
+#lines { position: absolute; left: 0; top: 0; width: 640dp; height: 1080dp;
+    decorator: repeating-linear-gradient(0deg, #FF615905 0dp, #FF615905 1dp, #FF615900 1dp, #FF615900 4dp); }
+#edge { position: absolute; left: 638dp; top: 40dp; width: 2dp; height: 1000dp; background-color: #FF615959; }
+
+#top { position: absolute; left: 40dp; top: 30dp; width: 560dp; height: 50dp; }
+#top .title { width: 360dp; height: 30dp; overflow: hidden; }
+#top .title span { font-size: 28dp; font-weight: 600; letter-spacing: 1dp; white-space: nowrap; }
+#top .sub { margin-top: 2dp; font-size: 13dp; letter-spacing: 2dp; color: #AE3B36; white-space: nowrap; }
+#top .cash { position: absolute; right: 0; top: 4dp; width: 200dp; text-align: right; font-size: 21dp; white-space: nowrap; }
+#top .cash .k { font-size: 13dp; letter-spacing: 1dp; color: #AE3B36; margin-right: 8dp; }
+
+#tabs { position: absolute; left: 40dp; top: 92dp; width: 560dp; height: 42dp; display: flex; flex-direction: row;
+    border-bottom: 2dp #FF615959; }
+#tabs .tab { position: relative; flex: 1; height: 40dp; text-align: center; padding-top: 8dp; font-size: 18dp; font-weight: 600;
+    letter-spacing: 1dp; color: #FF61598C; }
+#tabs .tab:hover { color: #FF6159D9; }
+#tabs .tab.on { color: #5EF6FF; }
+#tabs .tab .bar { position: absolute; left: 30%; bottom: 0; width: 40%; height: 3dp; }
+#tabs .tab.on .bar { background-color: #5EF6FF; }
+
+#list { position: absolute; left: 40dp; top: 150dp; width: 568dp; height: 800dp; overflow: hidden auto; padding-right: 12dp; }
+#list.dim { opacity: 0.35; }
+#list .row { position: relative; width: 556dp; height: 82dp; margin-bottom: 6dp; }
+#list .strip { position: absolute; left: 0; top: 0; width: 7dp; height: 82dp; }
+#list .body { position: absolute; left: 10dp; top: 0; width: 546dp; height: 82dp; background-color: #0E0E17E3;
+    border: 1dp #FF615921; }
+#list .row:hover .body { background-color: #2A171D; border-color: #FF6159A6; }
+#list .row.sel .body { border-color: #5EF6FF; }
+#list .row.own .body { border-color: #349197; }
+#list .name { position: absolute; left: 16dp; top: 10dp; width: 360dp; height: 26dp; overflow: hidden; }
+#list .name span { font-size: 20dp; font-weight: 600; color: #E8E2E0; white-space: nowrap; }
+#list .desc { position: absolute; left: 16dp; top: 38dp; width: 360dp; height: 38dp; overflow: hidden;
+    font-size: 15dp; line-height: 18dp; color: #A09A96; }
+#list .price { position: absolute; right: 16dp; top: 26dp; width: 140dp; text-align: right; font-size: 22dp;
+    font-weight: 600; color: #5EF6FF; }
+#list .tag { position: absolute; right: 8dp; top: 6dp; height: 17dp; padding: 0 6dp; background-color: #349197;
+    font-size: 12dp; font-weight: 600; color: #000000; }
+#list .empty { padding-top: 40dp; text-align: center; color: #A09A96; }
+
+#foot { position: absolute; left: 40dp; top: 1014dp; width: 560dp; height: 40dp; }
+.btn { display: inline-block; height: 38dp; padding: 7dp 22dp 0 22dp; font-size: 17dp; font-weight: 600;
+    letter-spacing: 1dp; color: #FF6159; background-color: #0E0E17CC; border: 1dp #FF615973; }
+.btn:hover { border-color: #FF6159; background-color: #26141B; }
+.btn.off { opacity: 0.35; }
+#foot .close { position: absolute; right: 0; top: 8dp; font-size: 16dp; font-weight: 600; }
+#foot .close .key { background-color: #FF6159; color: #000000; font-size: 13dp; padding: 1dp 5dp; margin-right: 8dp; }
+
+#ask { position: absolute; left: 0; top: 0; width: 640dp; height: 1080dp; background-color: #06060BC7; }
+#ask .box { position: absolute; left: 30dp; top: 380dp; width: 580dp; height: 230dp; padding: 24dp 28dp;
+    background-color: #0E0E17; border-top: 3dp #FF6159; }
+#ask .head { font-size: 24dp; font-weight: 600; }
+#ask .line { margin-top: 10dp; height: 70dp; font-size: 17dp; color: #C0C8CF; }
+#ask .btns { margin-top: 20dp; }
+#ask .btn { margin-right: 12dp; }
+#ask .btn.go { background-color: #FF6159; color: #000000; border-color: #FF6159; }
