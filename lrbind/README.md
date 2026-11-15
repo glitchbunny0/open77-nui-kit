@@ -15,6 +15,14 @@ bin/lrbind-sync refresh path/to/resources # after updating the kit: refresh ever
 bin/lrbind-sync check path/to/resources   # exit 1 when a copy differs from the kit's (put it in your test run)
 ```
 
+**What counts as a copy** (the rule `lrbind-sync` applies; a census of your own should apply the same one): every
+file named `lrbind.js` or `lrbind.lua` under the folder, wherever it sits (`web/js/lrbind.js` and `web/data/lrbind.js`
+too); only `node_modules`, `.git` and the kit's own tree are skipped. A copy is current when it is the kit's file
+byte for byte, licence header included. Lines of your own above the kit's first line (`// SPDX-License-Identifier:
+MIT`) may stay if they are comments (`//` in lrbind.js, `--` in lrbind.lua) or blank: `check` accepts them and
+`refresh`/`add` keep them. Anything else above that line, or a copy without it (from before the header), is stale,
+and `refresh` writes the kit's file whole.
+
 Page: `<script src="lrbind.js"></script>` before the page's own script, bindings under one `data-model` root:
 
 ```html

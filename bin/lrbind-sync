@@ -2,57 +2,104 @@
 """lrbind-sync: give a resource its own copies of lrbind.js / lrbind.lua and keep them current.
 
   lrbind-sync add <resource>      write <resource>/web/lrbind.js and <resource>/client/lrbind.lua
-  lrbind-sync refresh <folder>    overwrite every copy found under <folder> with the kit's files
-  lrbind-sync check <folder>      list stale copies under <folder>; exit 1 if any
-A copy is a file named lrbind.js in a `web/` folder or lrbind.lua in a `client/` folder.
+  lrbind-sync refresh <folder>    rewrite every copy under <folder> that is not current
+  lrbind-sync check <folder>      list the copies under <folder> that are not current; exit 1 if any
+
+A copy is every file named lrbind.js or lrbind.lua under <folder>, wherever it sits; only node_modules, .git and the
+kit's own tree are skipped. A copy is current when it is the kit's file byte for byte, licence header included,
+optionally preceded by lines of your own: comments (// in lrbind.js, -- in lrbind.lua) and blank lines above the
+kit's first line. add and refresh keep those lines and write the kit's file below them.
 """
-import filecmp, os, shutil, sys
+import os, sys
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(KIT, 'lrbind')
-FILES = {'lrbind.js': 'web', 'lrbind.lua': 'client'}
+FILES = {'lrbind.js': ('web', '//'), 'lrbind.lua': ('client', '--')}
 SKIP = {'node_modules', '.git'}
+
+
+def inside(path, root):
+    path, root = os.path.realpath(path), os.path.realpath(root)
+    return os.path.commonpath([path, root]) == root
 
 
 def copies(root):
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP]
-        if os.path.realpath(dirpath).startswith(os.path.realpath(KIT)):
+        if inside(dirpath, KIT):
+            dirnames[:] = []
             continue
-        for name in filenames:
-            if name in FILES and os.path.basename(dirpath) == FILES[name]:
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
+        for name in sorted(filenames):
+            if name in FILES:
                 yield os.path.join(dirpath, name), name
 
 
+def kit_file(name):
+    with open(os.path.join(SRC, name), 'rb') as f:
+        return f.read()
+
+
+def own_lines(name, data):
+    """The copy's own lines above the kit's first line, or None when there are none that may stay (no kit first
+    line in the copy, or something above it that is not a comment or a blank line)."""
+    first = kit_file(name).split(b'\n', 1)[0] + b'\n'
+    at = 0 if data.startswith(first) else data.find(b'\n' + first)
+    if at < 0:
+        return None
+    own = data[:at + 1] if at else b''
+    comment = FILES[name][1]
+    for line in own.decode('utf-8', 'replace').splitlines():
+        if line.strip() and not line.lstrip().startswith(comment):
+            return None
+    return own
+
+
+def current(path, name):
+    with open(path, 'rb') as f:
+        data = f.read()
+    own = own_lines(name, data)
+    return own is not None and data[len(own):] == kit_file(name)
+
+
+def write(path, name):
+    own = b''
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            own = own_lines(name, f.read()) or b''
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    with open(path, 'wb') as f:
+        f.write(own + kit_file(name))
+
+
 def main(argv):
-    if len(argv) != 3 or argv[1] not in ('add', 'refresh', 'check'):
+    if len(argv) == 2 and argv[1] in ('-h', '--help', 'help'):
         print(__doc__.strip())
+        return 0
+    if len(argv) != 3 or argv[1] not in ('add', 'refresh', 'check'):
+        print(__doc__.strip(), file=sys.stderr)
         return 2
     cmd, target = argv[1], argv[2]
     if not os.path.isdir(target):
-        print(f'lrbind-sync: not a folder: {target}')
+        print(f'lrbind-sync: not a folder: {target}', file=sys.stderr)
         return 2
     if cmd == 'add':
-        for name, sub in FILES.items():
-            os.makedirs(os.path.join(target, sub), exist_ok=True)
-            shutil.copyfile(os.path.join(SRC, name), os.path.join(target, sub, name))
-            print('wrote', os.path.join(target, sub, name))
+        for name, (sub, _) in FILES.items():
+            path = os.path.join(target, sub, name)
+            write(path, name)
+            print('wrote', path)
         return 0
     stale = []
     n = 0
     for path, name in copies(target):
         n += 1
-        if not filecmp.cmp(path, os.path.join(SRC, name), shallow=False):
+        if not current(path, name):
             stale.append(path)
             if cmd == 'refresh':
-                shutil.copyfile(os.path.join(SRC, name), path)
-    if cmd == 'refresh':
-        print(f'{n} copies, {len(stale)} refreshed')
-        return 0
+                write(path, name)
     for p in stale:
-        print('stale', p)
-    print(f'{n} copies, {len(stale)} stale')
-    return 1 if stale else 0
+        print('refreshed' if cmd == 'refresh' else 'stale', p)
+    print(f'{n} copies, {len(stale)} {"refreshed" if cmd == "refresh" else "stale"}')
+    return 1 if stale and cmd == 'check' else 0
 
 
 if __name__ == '__main__':

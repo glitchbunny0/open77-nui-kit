@@ -8,6 +8,7 @@ Checks, one line each:
   lua       lrbind.lua against a fake page (lrbind_lua.lua)
   header    lrbind.js / lrbind.lua carry the MIT notice (the kit's, and RmlUi's for the ported parts of lrbind.js)
   example   examples/side-menu/web/lrbind.js is the kit's file
+  sync      bin/lrbind-sync on a scratch resource tree (what a copy is, own comment lines, refresh, check, --help)
 Then every mutant in MUTANTS: a copy of one file with ONE planted bug, run through the one check it names. That check
 must go red, and its output must contain the expected text (the failing case or check). A mutant whose pattern no
 longer matches exactly once fails too, so the table cannot rot silently.
@@ -114,6 +115,109 @@ MUTANTS += [
     ('lrbind.lua without its SPDX line', 'lrbind.lua', '-- SPDX-License-Identifier: MIT\n', '', 'header', 'first line'),
     ('the kit file changes, the example copy does not', 'lrbind.js', '"use strict";', '"use strict"; ', 'example',
      'FAIL example'),
+]
+
+# ==== sync: bin/lrbind-sync on a scratch tree (a copy is every lrbind.js / lrbind.lua; own comment lines may sit above
+# the kit's first line; refresh keeps them; the kit's own tree and node_modules are not copies)
+SYNC = os.path.join(KIT, 'bin', 'lrbind-sync')
+SOURCES['lrbind-sync'] = (SYNC, 'sync')
+
+
+def check_sync(sync=SYNC):
+    root = os.path.join(TMP, 'sync-' + re.sub(r'\W', '_', os.path.basename(sync)))
+    shutil.rmtree(root, ignore_errors=True)
+    res = os.path.join(root, 'res')
+    kit = os.path.join(res, 'lib', 'kit')   # a vendored kit: the tool under test + the kit's two files
+    os.makedirs(os.path.join(kit, 'bin'))
+    os.makedirs(os.path.join(kit, 'lrbind'))
+    shutil.copy(sync, os.path.join(kit, 'bin', 'lrbind-sync'))
+    for n in ('lrbind.js', 'lrbind.lua'):
+        shutil.copy(os.path.join(KIT, 'lrbind', n), os.path.join(kit, 'lrbind', n))
+    with open(JS, 'rb') as f:
+        js = f.read()
+    with open(LUA, 'rb') as f:
+        lua = f.read()
+    p = lambda *a: os.path.join(res, *a)
+    run = lambda *a: sh([sys.executable, os.path.join(kit, 'bin', 'lrbind-sync')] + list(a), cwd=root)
+    last = lambda out: (out.strip().splitlines() or [''])[-1]
+    bad = []
+
+    def put(path, data):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+
+    def get(path):
+        with open(path, 'rb') as f:
+            return f.read()
+
+    os.makedirs(p('hud'))
+    rc, out = run('add', p('hud'))
+    if rc or get(p('hud', 'web', 'lrbind.js')) != js or get(p('hud', 'client', 'lrbind.lua')) != lua:
+        bad.append('add does not write the kit files, header included')
+    rc, out = run('check', res)
+    if rc != 0 or '2 copies, 0 stale' not in out:
+        bad.append(f'check after add: rc {rc}, {last(out)!r} (want 2 copies, 0 stale: the kit tree under lib/ skipped)')
+    own = b'// my resource: hud page\n// (c) someone else\n\n'
+    put(p('hud', 'web', 'lrbind.js'), own + js)
+    put(p('hud', 'client', 'lrbind.lua'), b'-- vendored by hand\n' + lua)
+    rc, out = run('check', res)
+    if rc != 0:
+        bad.append(f'own comment lines above the header count as stale: {last(out)!r}')
+    put(p('hud', 'web', 'lrbind.js'), own + js + b'// drift\n')
+    put(p('old', 'web', 'lrbind.js'), js.split(b'\n\n', 1)[1])                 # an old copy without the header
+    put(p('misc', 'web', 'js', 'lrbind.js'), js + b' ')                         # a copy in another folder
+    put(p('misc', 'web', 'data', 'lrbind.js'), js + b' ')                       # ships under web/** too
+    put(p('code', 'web', 'lrbind.js'), b'window.x = 1;\n' + js)                 # code above the header
+    put(p('mods', 'node_modules', 'web', 'lrbind.js'), b'not a copy')           # skipped
+    put(os.path.join(kit, 'examples', 'web', 'lrbind.js'), b"the kit's own")    # skipped: inside the kit
+    rc, out = run('check', res)
+    want = sorted(['hud/web/lrbind.js', 'old/web/lrbind.js', 'misc/web/js/lrbind.js', 'misc/web/data/lrbind.js',
+                   'code/web/lrbind.js'])
+    got = sorted(os.path.relpath(l.split(' ', 1)[1], res) for l in out.splitlines() if l.startswith('stale '))
+    if rc != 1 or got != want or '6 copies, 5 stale' not in out:
+        bad.append(f'check on drifted copies: rc {rc}, stale {got} (want {want}), {last(out)!r}')
+    rc, out = run('refresh', res)
+    if rc or '5 refreshed' not in out:
+        bad.append(f'refresh: rc {rc}, {last(out)!r}')
+    if get(p('hud', 'web', 'lrbind.js')) != own + js:
+        bad.append("refresh does not keep the copy's own comment lines above the header")
+    if get(p('code', 'web', 'lrbind.js')) != js or get(p('old', 'web', 'lrbind.js')) != js:
+        bad.append('refresh does not write the whole kit file over a copy with code above it or without the header')
+    if get(p('misc', 'web', 'js', 'lrbind.js')) != js or get(p('misc', 'web', 'data', 'lrbind.js')) != js:
+        bad.append('refresh misses a copy outside <res>/web/')
+    if get(p('mods', 'node_modules', 'web', 'lrbind.js')) != b'not a copy' or \
+            get(os.path.join(kit, 'examples', 'web', 'lrbind.js')) != b"the kit's own":
+        bad.append("refresh touched node_modules or the kit's own tree")
+    rc, out = run('check', res)
+    if rc != 0:
+        bad.append(f'check after refresh: {last(out)!r}')
+    rc, out = run('--help')
+    if rc != 0 or 'A copy is every file named' not in out:
+        bad.append(f'--help: rc {rc}')
+    return not bad, ('lrbind-sync add/check/refresh: every copy found, own comment lines kept, the header kept'
+                     if not bad else 'FAIL sync: ' + '; '.join(bad))
+
+
+CHECKS['sync'] = check_sync
+MUTANTS += [
+    ('sync: own comment lines count as stale', 'lrbind-sync', 'if line.strip() and not line.lstrip().startswith(comment):',
+     'if line.strip():', 'sync', 'own comment lines above the header count as stale'),
+    ('sync: refresh drops own lines', 'lrbind-sync', 'f.write(own + kit_file(name))', 'f.write(kit_file(name))', 'sync',
+     "does not keep the copy's own comment lines"),
+    ('sync: code above the header passes', 'lrbind-sync',
+     '        if line.strip() and not line.lstrip().startswith(comment):\n            return None\n', '', 'sync',
+     'check on drifted copies'),
+    ('sync: only web/ and client/ copies', 'lrbind-sync', 'if name in FILES:',
+     'if name in FILES and os.path.basename(dirpath) == FILES[name][0]:', 'sync', 'check on drifted copies'),
+    ('sync: the kit tree is not skipped', 'lrbind-sync',
+     '        if inside(dirpath, KIT):\n            dirnames[:] = []\n            continue\n', '', 'sync', 'check after add'),
+    ('sync: node_modules is not skipped', 'lrbind-sync', 'sorted(d for d in dirnames if d not in SKIP)', 'sorted(dirnames)',
+     'sync', 'check on drifted copies'),
+    ('sync: a drifted tail passes', 'lrbind-sync', 'return own is not None and data[len(own):] == kit_file(name)',
+     'return own is not None', 'sync', 'check on drifted copies'),
+    ('sync: --help exits 2', 'lrbind-sync', '        return 0\n    if len(argv) != 3', '        return 2\n    if len(argv) != 3',
+     'sync', '--help'),
 ]
 
 # ==== mutants of lrbind.js and lrbind.lua that the suites have always caught
