@@ -19,6 +19,10 @@ screen just looks wrong. `rml-check` catches the ones RmlUi logs; `rml-preview` 
 - **Text can't be measured from RCSS.** A long name either overflows or gets cut: measure in your client (the
   sum of the font's advances per character, read once from the TTF) and switch a class (`small`, `two-lines`).
 - **Mono text collapses spaces** unless `white-space: pre`.
+- **A scrolling box needs scrollbar styles.** RmlUi has no default scrollbar: a box with `overflow: auto` whose
+  content overflows, and no `scrollbarvertical` rules, lays its children out at their narrowest (rows of one word per
+  line), with no warning. Style it: `scrollbarvertical { width: 8dp; }`, `scrollbarvertical sliderbar { ... }`, and
+  zero-size `sliderarrowdec` / `sliderarrowinc` if you want no arrows. Preview a state whose list overflows.
 - **Size layers with width/height** where you can, not left/top/right/bottom pinning: a port's bar layers stretched
   to the whole row that way, in a sheet that also lacked the `display: block` rule. Offline RmlUi lays pinned layers
   out right once divs are blocks; check pinning in the game before relying on it.
