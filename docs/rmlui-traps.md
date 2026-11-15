@@ -31,7 +31,7 @@ screen just looks wrong. `rml-check` catches the ones RmlUi logs; `rml-preview` 
 - **`em` is resolved on every element.** A `letter-spacing: .06em` on a block spaces a bigger-font child wider than a
   browser does (CSS computes it once, where it is declared). Write dp.
 - **CSS easing names and `ms` are syntax errors** in `transition`/`animation` (`ease-out`, `250ms`); write
-  `sine-out`, `0.25s`. `animation` needs its duration first and the name last.
+  an RmlUi tween (`sine-out`, `quadratic-out`, ...) and `0.25s`. `animation` needs its duration first and the name last.
 - **`drop-shadow` takes the colour first**: `drop-shadow(#000000D9 0dp 0dp 2dp)`.
 
 ## Data bindings
@@ -57,5 +57,7 @@ screen just looks wrong. `rml-check` catches the ones RmlUi logs; `rml-preview` 
 - **Panels that lean together share one `perspective`** on a full-screen root and one rotating wrapper; per-panel
   `perspective` gives each its own eye and the edges stop lining up.
 - **Every rml/rcss/png/ttf goes in the manifest's `files`**, not `web_files`.
-- **The client's instruction budget is small** (around 10k per resume): never deep-compare model tables to find
-  changes, key fields instead; big lists go through `data-for`, not a `create` per row.
+- **The client's budgets bite before you expect:** Open77 allows 1,500,000 Lua instructions per coroutine resume
+  (500,000 on older clients) and 6 ms of Lua per frame for the whole client host, and the time is the tighter limit. Never
+  deep-compare model tables to find changes, key fields instead; big lists go through `data-for`, not a `create` per
+  row (or `ui:batch` and a few passes). fake-nui enforces the instruction budget and reports `F.maxInstr`.

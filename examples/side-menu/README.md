@@ -8,12 +8,13 @@ a confirm dialog inside the panel. Everything the kit does, on one screen.
 | `ui/menu.rml` | the document: markup with RmlUi data bindings (`{{x}}`, `data-for`, `data-if`, `data-class-*`, `data-event-click`) |
 | `ui/menu.rcss` | its sheet |
 | `client/menu.lua` | the client half: `Menu.open(shop, cash)` creates the document, fills the `menu` model, answers the events |
-| `models.lua` | runs `client/menu.lua` on the kit's fake `Open77.ui`, clicks through it like a player, prints one case per state |
+| `models.lua` | runs `client/menu.lua` on the kit's fake `Open77.ui`, clicks through it like a player, prints one case per state (and, on stderr, the most Lua instructions one resume took) |
+| `cases.json` | what `models.lua` prints, committed; `scripts/test.sh` fails when it differs from a fresh run, and asserts what each state means (`tests/example.sh`) |
 | `fonts/` | Rajdhani (SIL OFL, `fonts/OFL.txt`) |
 | `web/index.html`, `web/app.css` | the WebUI twin: the same markup and bindings as a browser page (lrbind.js), styled the way a web page is written (px, `:root` variables, `calc()`, `rgba()`, shorthands) |
 
 ```sh
-lua5.4 models.lua > cases.json
+lua5.4 models.lua > cases.json          # `lua` where Lua 5.4 has that name (Fedora, Arch)
 ../../bin/rml-check ui/menu.rml cases.json
 ../../bin/rml-preview ui/menu.rml cases.json --font kitraj=fonts/Rajdhani-Regular.ttf,fonts/Rajdhani-SemiBold.ttf --out out
 ```
@@ -25,9 +26,10 @@ the document, and list `ui/*` and `fonts/*` in the manifest's `files`.
 ## The WebUI twin
 
 `web/` is the same screen as a browser page. `bin/html2rml` turns it into an RmlUi document + sheet that pass
-`rml-check` with the same cases, and whose layout is pixel-identical to the hand-written `ui/menu.rml` + `menu.rcss` in
-all six states (`scripts/test.sh` checks both). `bin/html-shot` shoots the page per case with the case's models, so the
-browser and the converted document can sit side by side:
+`rml-check` with the same cases, and whose layout paints pixel-identical to the hand-written `ui/menu.rml` + `menu.rcss`
+in all six states (`scripts/test.sh` checks both; the two are painted by the same rml-preview, so this says the layouts
+agree, not that the painter is right). `bin/html-shot` shoots the page per case with the case's models (and fails a case
+whose bindings did not run), so the browser and the converted document can sit side by side:
 
 ```sh
 ../../bin/html2rml web/index.html --out out/twin --name menu      # + out/twin/menu.report.md: 3 items (lrbind.js, 2 fonts)

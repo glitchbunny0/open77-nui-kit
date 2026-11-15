@@ -4,3 +4,4 @@ rml-preview-out/
 __pycache__/
 examples/*/out/
 converter/tests/.out/
+examples/*/shots/
