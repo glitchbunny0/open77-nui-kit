@@ -535,11 +535,42 @@ class Converter:
                 out.append((k2, nlines))
         return out
 
+    def cascade_color(self, matched):
+        """the text colour these elements get from the page's static cascade (body's default black when nothing sets
+        it), or None when they differ or it can't be read"""
+        vals = set()
+        for el in matched:
+            raw = self.casc.inherited(el, 'color')
+            if raw is None:
+                vals.add('#000000')
+                continue
+            try:
+                c = V.ser(CP.prepare('color', raw, CP.Ctx(self.units, lambda n, e=el: self.casc.inherited(e, n), None),
+                                     []))
+            except ValueIssue:
+                return None
+            vals.add(c)
+        if len(vals) == 1:
+            c = vals.pop()
+            return c if c.startswith('#') else None
+        return None
+
+    def cascade_color_note(self, file, d, color):
+        self.report.add(self.where(file), d.line, 'css', f'{d.name}: {" ".join(d.value.split())} uses the text colour',
+                        f'RmlUi has no currentColor: written as {color}, the colour these elements get on the page as '
+                        'written (a state that changes their color does not change this)')
+
     def map_decls(self, decls, file, matched, sheet, once, prelude, inline=False, rule=None):
         look = self.lookup_for(matched, file, decls[0].line, once)
         issues_at = []
-        prepared = []
-        for d in decls:
+        prepared = {}
+        # the rule's own colour first: currentColor in its other declarations and colourless borders/shadows take it;
+        # without one, the colour these elements get from the page's cascade (reported where it is used)
+        color, color_from = None, None
+        for d in sorted(decls, key=lambda d: d.name != 'color'):
+            if d.name != 'color' and color_from is None:
+                color_from = 'rule' if color else 'cascade'
+                color = color or self.cascade_color(matched)
             if not d.name:
                 self.report.add(self.where(file), d.line, 'css', f'declaration {d.value!r} has no property name',
                                 'fix the sheet')
@@ -549,6 +580,7 @@ class Converter:
                                 'RmlUi has no !important: kept without it; raise the selector\'s specificity if it '
                                 'must win')
             ctx = CP.Ctx(self.units, look, None, where=prelude)
+            ctx.color = color if d.name != 'color' else None
             try:
                 d.toks = CP.prepare(d.name, d.value, ctx, issues_at)
             except ValueIssue as e:
@@ -559,14 +591,14 @@ class Converter:
                             'itself (ui:style), or a class per state does')
                 self.report.add(self.where(file), d.line, 'css', f'{d.name}: {" ".join(d.value.split())}: {e.what}', todo)
                 continue
-            prepared.append(d)
-        # the rule's own colour (for currentColor and colourless borders/shadows)
-        color = None
-        for d in prepared:
             if d.name == 'color':
                 c = V.ser(d.toks)
                 if c.startswith('#') or c == 'transparent':
                     color = c
+            elif color_from == 'cascade' and color and 'currentcolor' in d.value.lower():
+                self.cascade_color_note(file, d, color)
+            prepared[id(d)] = d
+        prepared = [d for d in decls if id(d) in prepared]
         names = {d.name: V.ser(d.toks) for d in prepared}
         grid_centre = False
         if names.get('display') in ('grid', 'inline-grid'):
@@ -596,6 +628,8 @@ class Converter:
                 group_at.setdefault('mask', (len(out), d.line))
                 continue
             got = CP.map_decl(d, ctx, issues)
+            if ctx.used_color and color_from == 'cascade':
+                self.cascade_color_note(file, d, color)
             for iss in issues:
                 self.report.add(self.where(file), d.line, iss.kind, iss.what, iss.todo)
             for k, v in got:

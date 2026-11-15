@@ -7,3 +7,5 @@ body { margin: 8dp; font-size: 16dp; color: #000000; }
 #b { color: #FF0000; background-color: #FF000080; border-left-color: #0080FF40; border-right-color: #FF8000; }
 #b { caret-color: #008000; image-color: #0000FF33; }
 #c { color: #663399; background-color: transparent; border: 2dp #663399; }
+#c { border-top: 1dp #663399; box-shadow: #663399 0dp 0dp 4dp; }
+#d { color: #00ff00; background-color: #00ff00; border: 1dp #00ff00; }

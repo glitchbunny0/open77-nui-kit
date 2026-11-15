@@ -228,6 +228,7 @@ class Ctx:
         self.rule_decls = rule_decls or {}
         self.keyframes, self.where = keyframes, where
         self.color = None
+        self.used_color = False   # a handler fell back to the text colour (a colourless border or shadow)
 
 
 def prepare(name, value, ctx, issues):
@@ -898,7 +899,7 @@ def h_border(n, toks, ws, s, ctx, issues):
         width = V.fmt(3 / ctx.units.ppd) + 'dp'   # CSS medium
     if color is None:
         if ctx.color:
-            color = ctx.color
+            color, ctx.used_color = ctx.color, True
         else:
             issues.append(Issue(f'{n}: {s} without a colour', 'CSS uses the text colour, RmlUi black: write the '
                                 'colour'))
@@ -983,7 +984,8 @@ def h_text_shadow(n, toks, ws, s, ctx, issues):
     effects = []
     for p in V.split(toks):
         lens, color, _ = _shadow_parts(p)
-        color = color or ctx.color
+        if color is None and ctx.color:
+            color, ctx.used_color = ctx.color, True
         if color is None or len(lens) < 2:
             issues.append(Issue(f'text-shadow: {s}', 'write offsets and a colour'))
             return []
@@ -1001,8 +1003,8 @@ def h_box_shadow(n, toks, ws, s, ctx, issues):
     out = []
     for p in V.split(toks):
         lens, color, inset = _shadow_parts(p)
-        if color is None:
-            color = ctx.color
+        if color is None and ctx.color:
+            color, ctx.used_color = ctx.color, True
         if color is None:
             issues.append(Issue(f'box-shadow: {s} without a colour', 'CSS uses the text colour: write the colour'))
             return []
@@ -1018,7 +1020,8 @@ def h_filter(n, toks, ws, s, ctx, issues):
         t = w[0]
         if t[0] == 'func' and t[1] == 'drop-shadow':
             lens, color, _ = _shadow_parts(t[2])
-            color = color or ctx.color
+            if color is None and ctx.color:
+                color, ctx.used_color = ctx.color, True
             if color is None:
                 issues.append(Issue(f'{n}: drop-shadow without a colour', 'write the colour'))
                 continue
