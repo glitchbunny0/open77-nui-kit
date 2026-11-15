@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+"""rml-preview: what an RmlUi document really looks like, without the game.
+
+Real RmlUi (the kit's host, `layout` mode) lays the document out for every case with the real glyph advances of your
+TTFs; this script paints the boxes, borders, gradients, image decorators, masks, backdrop blur, vector <path>s (fill
+and stroke read from the sheets, as vanilla RmlUi drops them) and text lines with Pillow over a backdrop.
+
+It shows layout, sizes, wrapping, clipping and colours as the document gets them. It does NOT show Open77's additions
+(glow/chromatic/scanlines filters, fx(), <shape> paint, motion, <scene3d>), hover states or anti-aliasing exactly as the
+game draws them. A --hook module can paint those for your screen.
+
+  rml-preview DOC.rml CASES.json|- --font FAMILY=a.ttf,b.ttf [--font ...] [--model NAME] [--out DIR]
+              [--bg IMAGE] [--root DIR] [--compare DIR] [--hook hook.py] [--sheet-crop X0,Y0,X1,Y1]
+
+  FAMILY      the font-family name your sheet uses; each TTF's weight is read from its style name
+              (Regular 400, Medium 500, SemiBold 600, Bold 700, ...). The first font given is the fallback.
+  --root      where `image(/path)` and `src="/path"` resolve (default: the current directory)
+  --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview right
+  --hook      a Python file with optional `place(case) -> {selector: [left, top]}` (positions your client code writes
+              at run time) and `paint(draw, el, case, rgba)` (called for every box after the built-in paint)
+Writes <out>/<case>.png, <out>/sheet.png (every case) and, with --compare, <out>/compare.png. Needs Pillow.
+"""
+import argparse, importlib.util, json, math, os, re, subprocess, sys
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WEIGHTS = {'thin': 100, 'extralight': 200, 'ultralight': 200, 'light': 300, 'regular': 400, 'normal': 400, 'book': 400,
+           'medium': 500, 'semibold': 600, 'demibold': 600, 'bold': 700, 'extrabold': 800, 'ultrabold': 800,
+           'black': 900, 'heavy': 900}
+# measured besides ASCII: Latin-1, general punctuation, currency, arrows, a few symbols
+EXTRA = list(range(0xA0, 0x180)) + list(range(0x2010, 0x2040)) + list(range(0x20A0, 0x20C0)) + \
+    list(range(0x2190, 0x21A0)) + [0x3A3, 0x2122, 0x2212, 0x2022, 0x25B2, 0x25B6, 0x25BC, 0x25C0]
+
+
+def die(msg):
+    sys.exit('rml-preview: ' + msg)
+
+
+def weight_of(path):
+    style = ImageFont.truetype(path, 10).getname()[1] or 'Regular'
+    key = re.sub(r'[^a-z]', '', style.lower().replace('italic', '').replace('oblique', '')) or 'regular'
+    return WEIGHTS.get(key, 400), 'italic' in style.lower() or 'oblique' in style.lower()
+
+
+def parse_fonts(specs):
+    faces, first = {}, None
+    for spec in specs:
+        if '=' not in spec:
+            die(f'--font wants FAMILY=file.ttf[,file.ttf], got {spec!r}')
+        fam, files = spec.split('=', 1)
+        for p in files.split(','):
+            if not os.path.exists(p):
+                die(f'font file not found: {p}')
+            w, it = weight_of(p)
+            faces[f'{fam.lower()}|{w}' + ('|i' if it else '')] = p
+            first = first or p
+    return faces, first
+
+
+def fonts_json(faces, path):
+    out = {}
+    for key, p in faces.items():
+        if key.endswith('|i'):
+            continue   # the host keys faces by family and weight; italic faces are only used for painting
+        f = ImageFont.truetype(p, 1000)
+        a, d = f.getmetrics()
+        adv = {}
+        for c in list(range(32, 127)) + EXTRA:
+            try:
+                adv[str(c)] = f.getlength(chr(c))
+            except (RuntimeError, OSError):
+                pass   # a code point the shaper refuses: the host uses the font's default advance
+        out[key] = {'ascent': a, 'descent': d, 'def': f.getlength('n'), 'adv': adv}
+    with open(path, 'w') as fh:
+        json.dump(out, fh)
+
+
+def rgba(s, op=1.0):
+    s = (s or '#00000000').lstrip('#')
+    if len(s) in (3, 4):
+        s = ''.join(c * 2 for c in s)
+    r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+    a = int(s[6:8], 16) if len(s) >= 8 else 255
+    return (r, g, b, int(a * max(0.0, min(1.0, op))))
+
+
+# ---- the sheets' fill/stroke for <path> (vanilla RmlUi drops these properties, so they are read from the RCSS)
+def sheet_texts(doc):
+    src = open(doc, encoding='utf-8').read()
+    base = os.path.dirname(doc)
+    out = []
+    for m in re.finditer(r'<link\b[^>]*>', src):
+        href = re.search(r'href\s*=\s*"([^"]+)"', m.group(0))
+        if href and 'rcss' in m.group(0):
+            p = os.path.join(base, href.group(1))
+            if os.path.exists(p):
+                out.append(open(p, encoding='utf-8').read())
+    out += re.findall(r'<style[^>]*>(.*?)</style>', src, flags=re.S)
+    return out
+
+
+def parse_comp(c):
+    tag = re.match(r'^[a-zA-Z][\w-]*', c)
+    idm = re.search(r'#([\w-]+)', c)
+    return (tag.group(0) if tag else None, idm.group(1) if idm else None, set(re.findall(r'\.([\w-]+)', c)))
+
+
+def sheet_rules(doc):
+    rules, i = [], 0
+    for txt in sheet_texts(doc):
+        txt = re.sub(r'/\*.*?\*/', '', txt, flags=re.S)
+        for m in re.finditer(r'([^{}]+)\{([^}]*)\}', txt):
+            i += 1
+            decl = {}
+            for d in m.group(2).split(';'):
+                if ':' in d:
+                    k, v = d.split(':', 1)
+                    decl[k.strip()] = v.strip()
+            paint = {k: v for k, v in decl.items() if k in ('fill', 'stroke', 'stroke-width')}
+            if not paint:
+                continue
+            for sel in m.group(1).split(','):
+                sel = sel.strip()
+                if ':' in sel or not sel or sel.startswith('@'):
+                    continue   # :hover and friends: not in a still
+                comps = [parse_comp(c) for c in sel.split()]
+                spec = (sum(1 for c in comps if c[1]), sum(len(c[2]) for c in comps), sum(1 for c in comps if c[0]))
+                rules.append((spec, i, comps, paint))
+    rules.sort(key=lambda r: (r[0], r[1]))
+    return rules
+
+
+def node_of(s):
+    tm = re.match(r'^[\w-]+', s)
+    idm = re.search(r'#([\w-]+)', s)
+    return (tm.group(0) if tm else '', idm.group(1) if idm else None, set(re.findall(r'\.([\w-]+)', s)))
+
+
+def comp_ok(comp, node):
+    tag, idv, cls = comp
+    return (tag is None or tag == node[0]) and (idv is None or idv == node[1]) and cls <= node[2]
+
+
+def matches(comps, chain):
+    if not chain or not comp_ok(comps[-1], chain[-1]):
+        return False
+    j = len(chain) - 2
+    for comp in reversed(comps[:-1]):
+        while j >= 0 and not comp_ok(comp, chain[j]):
+            j -= 1
+        if j < 0:
+            return False
+        j -= 1
+    return True
+
+
+def paint_of(rules, chain_strs, current):
+    chain = [node_of(s) for s in chain_strs]
+    out = {'fill': current, 'stroke': None, 'stroke-width': '1dp'}
+    for _, _, comps, paint in rules:
+        if matches(comps, chain):
+            out.update(paint)
+    return out
+
+
+def path_polys(d):
+    """M / L / H / V / Z subpaths (absolute or relative) as point lists, each with its closed flag"""
+    polys, cur, pen = [], None, (0.0, 0.0)
+    for cmd, args in re.findall(r'([MLHVZmlhvz])([^MLHVZmlhvz]*)', d):
+        nums = [float(x) for x in re.findall(r'-?\d*\.?\d+(?:e-?\d+)?', args)]
+        rel = cmd.islower()
+        c = cmd.upper()
+        if c == 'M' and len(nums) >= 2:
+            pen = (pen[0] + nums[0], pen[1] + nums[1]) if rel else (nums[0], nums[1])
+            cur = [pen]
+            polys.append([cur, False])
+            nums = nums[2:]
+            c = 'L'
+        if c == 'L' and cur is not None:
+            for k in range(0, len(nums) - 1, 2):
+                pen = (pen[0] + nums[k], pen[1] + nums[k + 1]) if rel else (nums[k], nums[k + 1])
+                cur.append(pen)
+        elif c == 'H' and cur is not None:
+            for v in nums:
+                pen = (pen[0] + v if rel else v, pen[1])
+                cur.append(pen)
+        elif c == 'V' and cur is not None:
+            for v in nums:
+                pen = (pen[0], pen[1] + v if rel else v)
+                cur.append(pen)
+        elif c == 'Z' and polys:
+            polys[-1][1] = True
+            pen = polys[-1][0][0]
+    return polys
+
+
+# ---- gradients as RmlUi prints them back (approximate, enough for a preview)
+COL = re.compile(r'#([0-9a-fA-F]{8}|[0-9a-fA-F]{6})\s*([-\d.]+)?(%|dp|px)?')
+
+
+def gradient(w, h, deco, op):
+    w, h = max(1, int(round(w))), max(1, int(round(h)))
+    st = [('#' + m.group(1), float(m.group(2)) if m.group(2) else None, m.group(3)) for m in COL.finditer(deco)]
+    if not st:
+        return None
+    img = Image.new('RGBA', (w, h))
+    px = img.load()
+    ang = 180.0
+    m = re.search(r'([-\d.]+)deg', deco)
+    if m:
+        ang = float(m.group(1))
+    if deco.startswith('repeating-linear-gradient'):
+        period = max(1.0, st[-1][1] or 4)
+        segs = [(v or 0, rgba(c, op)) for c, v, _ in st]
+        for y in range(h):
+            for x in range(w):
+                t = y % period if ang % 180 == 0 else (x % period if ang % 180 == 90 else ((x + y) / math.sqrt(2)) % period)
+                c = segs[0][1]
+                for v, cc in segs:
+                    if t >= v:
+                        c = cc
+                px[x, y] = c
+        return img
+    pos, n = [], len(st)
+    for i, (c, v, unit) in enumerate(st):
+        if v is not None and unit == '%':
+            t = v / 100
+        elif v is not None and unit in ('dp', 'px'):
+            t = v / (w if ang % 180 == 90 else h)
+        else:
+            t = i / max(1, n - 1)
+        pos.append((t, rgba(c, op)))
+
+    def at(t):
+        if t <= pos[0][0]:
+            return pos[0][1]
+        for (t0, c0), (t1, c1) in zip(pos, pos[1:]):
+            if t <= t1:
+                k = 0 if t1 == t0 else (t - t0) / (t1 - t0)
+                return tuple(int(c0[j] + (c1[j] - c0[j]) * k) for j in range(4))
+        return pos[-1][1]
+    if ang % 180 == 90:
+        row = [at((x / w) if ang % 360 == 90 else 1 - x / w) for x in range(w)]
+        for y in range(h):
+            for x in range(w):
+                px[x, y] = row[x]
+    else:
+        for y in range(h):
+            c = at(y / h if ang % 360 == 180 else 1 - y / h)
+            for x in range(w):
+                px[x, y] = c
+    return img
+
+
+class Painter:
+    def __init__(self, faces, fallback, root, rules, hook):
+        self.faces, self.fallback, self.root, self.rules, self.hook = faces, fallback, root, rules, hook
+        self.fonts, self.imgs = {}, {}
+
+    def font(self, family, weight, size, italic=False):
+        family = (family or '').lower()
+        path = (italic and self.faces.get(f'{family}|{weight}|i')) or self.faces.get(f'{family}|{weight}') \
+            or self.faces.get(f'{family}|400') or self.faces.get(f'{family}|500') \
+            or next((p for k, p in self.faces.items() if k.startswith(family + '|')), None) or self.fallback
+        k = (path, round(size * 2))
+        if k not in self.fonts:
+            self.fonts[k] = ImageFont.truetype(path, max(1, int(round(size))))
+        return self.fonts[k]
+
+    def image(self, ref):
+        path = os.path.join(self.root, ref.lstrip('/'))
+        if not os.path.exists(path):
+            return None
+        if path not in self.imgs:
+            self.imgs[path] = Image.open(path).convert('RGBA')
+        return self.imgs[path]
+
+    def composite(self, img, layer, clip):
+        W, H = img.size
+        x0, y0, x1, y1 = [int(round(v)) for v in clip]
+        if (x0, y0, x1, y1) != (0, 0, W, H):
+            x0, y0, x1, y1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+            if x1 <= x0 or y1 <= y0:
+                return
+            cut = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            cut.paste(layer.crop((x0, y0, x1, y1)), (x0, y0))
+            layer = cut
+        img.alpha_composite(layer)
+
+    def paint(self, els, bg, case, missing):
+        img = bg.copy().convert('RGBA')
+        W, H = img.size
+        for e in els:
+            clip = e.get('clip') or [0, 0, W, H]
+            clip = [max(-1e6, min(1e6, v)) for v in clip]
+            if 'text' in e:
+                if e['op'] <= 0:
+                    continue
+                f = self.font(e['family'], e['weight'], e['size'], e.get('italic'))
+                layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                d = ImageDraw.Draw(layer)
+                x, col = e['x'], rgba(e['color'], e['op'])
+                text = e['text'].upper() if e.get('upper') else e['text']
+                for ch in text:
+                    d.text((x, e['y']), ch, font=f, fill=col, anchor='ls')
+                    x += f.getlength(ch) + e['ls']
+                self.composite(img, layer, clip)
+                continue
+            if e['op'] <= 0 or e['w'] <= 0 or e['h'] <= 0:
+                continue
+            x, y, w, h = e['x'], e['y'], e['w'], e['h']
+            box = (int(x), int(y), int(x + w), int(y + h))
+            if 'blur' in (e.get('backdrop') or '') and w > 4 and h > 4:
+                m = re.search(r'blur\(\s*([\d.]+)', e['backdrop'])
+                img.paste(img.crop(box).filter(ImageFilter.GaussianBlur(float(m.group(1)) if m else 10)), box)
+            layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            d = ImageDraw.Draw(layer)
+            bgc = rgba(e['bg'], e['op'])
+            mask = e.get('mask') or ''
+            if mask.startswith('image(') and bgc[3] > 0:
+                src = self.image(re.match(r'image\(\s*([^\s)]+)', mask).group(1))
+                if src is None:
+                    missing.add(mask)
+                else:
+                    m = src.resize((max(1, int(w)), max(1, int(h)))).split()[3].point(lambda a: a * bgc[3] // 255)
+                    layer.paste(Image.new('RGBA', m.size, bgc[:3] + (255,)), (int(x), int(y)), m)
+            elif bgc[3] > 0:
+                d.rectangle([x, y, x + w - 1, y + h - 1], fill=bgc)
+            deco = e.get('deco') or ''
+            if 'gradient' in deco:
+                g = gradient(w, h, deco, e['op'])
+                if g:
+                    layer.alpha_composite(g, (int(x), int(y)))
+            elif deco.startswith('image('):
+                mm = re.match(r'image\(\s*([^\s)]+)\s*([^)]*)\)', deco)
+                src = self.image(mm.group(1)) if mm else None
+                if src is None:
+                    missing.add(deco)
+                else:
+                    fit = mm.group(2)
+                    if 'contain' in fit:
+                        k = min(w / src.width, h / src.height)
+                    elif 'cover' in fit:
+                        k = max(w / src.width, h / src.height)
+                    elif 'fill' in fit:
+                        k = None
+                    else:
+                        k = 1
+                    iw, ih = (max(1, int(w)), max(1, int(h))) if k is None else (max(1, int(src.width * k)), max(1, int(src.height * k)))
+                    im = src.resize((iw, ih), Image.LANCZOS)
+                    if e['op'] < 1:
+                        im.putalpha(im.split()[3].point(lambda a: int(a * e['op'])))
+                    tile = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                    tile.alpha_composite(im, (int(x + (w - iw) / 2), int(y + (h - ih) / 2)))
+                    # the decorator never leaves its own box
+                    layer.alpha_composite(Image.composite(tile, Image.new('RGBA', img.size, (0, 0, 0, 0)), _box_mask(img.size, box)))
+            for side, wd, c in (('t', e['bt'], e['btc']), ('r', e['br'], e['brc']), ('b', e['bb'], e['bbc']), ('l', e['bl'], e['blc'])):
+                if wd <= 0:
+                    continue
+                cc = rgba(c, e['op'])
+                if side == 't':
+                    d.rectangle([x, y, x + w - 1, y + wd - 1], fill=cc)
+                elif side == 'b':
+                    d.rectangle([x, y + h - wd, x + w - 1, y + h - 1], fill=cc)
+                elif side == 'l':
+                    d.rectangle([x, y, x + wd - 1, y + h - 1], fill=cc)
+                else:
+                    d.rectangle([x + w - wd, y, x + w - 1, y + h - 1], fill=cc)
+            if e['tag'] == 'path' and e.get('d'):
+                pt = paint_of(self.rules, e.get('chain') or [], e.get('color', '#000000ff'))
+                vb = [float(v) for v in (e.get('viewbox') or '0 0 %f %f' % (w, h)).split()]
+                k = min(w / vb[2], h / vb[3]) if vb[2] and vb[3] else 1
+                ox, oy = x + (w - vb[2] * k) / 2 - vb[0] * k, y + (h - vb[3] * k) / 2 - vb[1] * k
+                swm = re.match(r'[\d.]+', pt['stroke-width'] or '')
+                sw = float(swm.group(0)) if swm else 1.0
+                for pts, closed in path_polys(e['d']):
+                    P = [(ox + px_ * k, oy + py_ * k) for px_, py_ in pts]
+                    fill = pt['fill']
+                    if closed and fill and fill != 'none' and len(P) > 2:
+                        d.polygon(P, fill=rgba(fill, e['op']))
+                    if pt['stroke'] and pt['stroke'] != 'none' and len(P) > 1:
+                        d.line(P + ([P[0]] if closed else []), fill=rgba(pt['stroke'], e['op']), width=max(1, int(round(sw))), joint='curve')
+            if self.hook and hasattr(self.hook, 'paint'):
+                self.hook.paint(d, e, case, rgba)
+            self.composite(img, layer, clip)
+        return img.convert('RGB')
+
+
+def _box_mask(size, box):
+    m = Image.new('L', size, 0)
+    ImageDraw.Draw(m).rectangle([box[0], box[1], box[2] - 1, box[3] - 1], fill=255)
+    return m
+
+
+def model_name(doc):
+    m = re.search(r'data-model\s*=\s*"([^"]+)"', open(doc, encoding='utf-8').read())
+    return m.group(1) if m else 'model'
+
+
+def load_cases(arg):
+    txt = sys.stdin.read() if arg == '-' else open(arg, encoding='utf-8').read()
+    cases = json.loads(txt)
+    if not isinstance(cases, list) or not all(isinstance(c, dict) and 'name' in c for c in cases):
+        die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
+    return cases
+
+
+def host():
+    r = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+    if r.returncode != 0:
+        die('building the host failed:\n' + r.stderr)
+    return r.stdout.strip().splitlines()[-1]
+
+
+def main():
+    ap = argparse.ArgumentParser(prog='rml-preview', description=__doc__.split('\n')[0])
+    ap.add_argument('doc')
+    ap.add_argument('cases')
+    ap.add_argument('--font', action='append', default=[], required=True)
+    ap.add_argument('--model')
+    ap.add_argument('--out', default='rml-preview-out')
+    ap.add_argument('--bg')
+    ap.add_argument('--root', default='.')
+    ap.add_argument('--compare')
+    ap.add_argument('--hook')
+    ap.add_argument('--sheet-crop', help='X0,Y0,X1,Y1 of each case shown in sheet.png / compare.png (default: all)')
+    a = ap.parse_args()
+    if not os.path.exists(a.doc):
+        die(f'document not found: {a.doc}')
+    hook = None
+    if a.hook:
+        spec = importlib.util.spec_from_file_location('rml_preview_hook', a.hook)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+    faces, fallback = parse_fonts(a.font)
+    cases = load_cases(a.cases)
+    if hook and hasattr(hook, 'place'):
+        for c in cases:
+            c['place'] = dict(c.get('place') or {}, **(hook.place(c) or {}))
+    os.makedirs(a.out, exist_ok=True)
+    fj = os.path.join(a.out, '.fonts.json')
+    fonts_json(faces, fj)
+    res = subprocess.run([host(), 'layout', a.doc, a.model or model_name(a.doc), fj], input=json.dumps(cases),
+                         capture_output=True, text=True)
+    if res.returncode != 0:
+        die('layout failed:\n' + res.stderr)
+    shots = json.loads(res.stdout)
+    painter = Painter(faces, fallback, a.root, sheet_rules(a.doc), hook)
+    names = []
+    for c, s in zip(cases, shots):
+        size = tuple(c.get('size') or (1920, 1080))
+        if a.bg and os.path.exists(a.bg):
+            bg = Image.open(a.bg).convert('RGB').resize(size)
+        else:
+            bg = Image.new('RGB', size, (20, 26, 32))
+        missing = set()
+        img = painter.paint(s['els'], bg, c, missing)
+        p = os.path.join(a.out, s['name'] + '.png')
+        img.save(p)
+        names.append(s['name'])
+        print('ok  ', p, len(s['els']), 'boxes', ('MISSING ' + ', '.join(sorted(missing))) if missing else '')
+    crop = [int(v) for v in a.sheet_crop.split(',')] if a.sheet_crop else None
+    lab = painter.font('', 600, 26)
+
+    def cut(im):
+        return im.crop(crop) if crop else im
+    # every case on one sheet, two columns at half size
+    tiles = [cut(Image.open(os.path.join(a.out, n + '.png'))) for n in names]
+    if tiles:
+        tw, th = max(t.width for t in tiles) // 2, max(t.height for t in tiles) // 2
+        sheet = Image.new('RGB', (tw * 2 + 30, (th + 40) * ((len(tiles) + 1) // 2) + 10), (10, 10, 16))
+        d = ImageDraw.Draw(sheet)
+        for i, (n, t) in enumerate(zip(names, tiles)):
+            x, y = 10 + (i % 2) * (tw + 10), (i // 2) * (th + 40)
+            sheet.paste(t.resize((t.width // 2, t.height // 2), Image.LANCZOS), (x, y + 36))
+            d.text((x + 2, y + 6), n, font=lab, fill=(94, 246, 255))
+        sheet.save(os.path.join(a.out, 'sheet.png'))
+        print('sheet', os.path.join(a.out, 'sheet.png'))
+    if a.compare:
+        rows = [(n, t) for n, t in zip(names, tiles)]
+        cw, ch = max(t.width for _, t in rows), max(t.height for _, t in rows)
+        cmp_ = Image.new('RGB', (cw * 2 + 30, (ch + 44) * len(rows)), (10, 10, 16))
+        d = ImageDraw.Draw(cmp_)
+        for i, (n, t) in enumerate(rows):
+            y = i * (ch + 44)
+            ref = os.path.join(a.compare, n + '.png')
+            if os.path.exists(ref):
+                cmp_.paste(cut(Image.open(ref).convert('RGB')), (10, y + 44))
+            cmp_.paste(t, (cw + 20, y + 44))
+            d.text((14, y + 6), n.upper() + ('  -  REFERENCE' if os.path.exists(ref) else '  -  (no reference shot)'), font=lab, fill=(255, 97, 89))
+            d.text((cw + 24, y + 6), n.upper() + '  -  RmlUi layout preview', font=lab, fill=(94, 246, 255))
+        cmp_ = cmp_.resize((cmp_.width // 2, cmp_.height // 2), Image.LANCZOS)
+        cmp_.save(os.path.join(a.out, 'compare.png'))
+        print('compare', os.path.join(a.out, 'compare.png'))
+
+
+if __name__ == '__main__':
+    main()

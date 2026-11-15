@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""rml-check: load an RmlUi document in real RmlUi for every case and fail on anything RmlUi complains about.
+
+For every case (a name + the data model your client code builds for that state) the document is parsed, styled,
+bound and laid out by real RmlUi (the kit's host, `check` mode). Fails when:
+  - RmlUi logs a warning or error that is not on the allowed list (unknown property, bad value, a binding to a model
+    member that does not exist, an XML error, a data-for over a non-array, ...);
+  - a click listed in the case does not call the model event it should (dispatched on the first VISIBLE element
+    the selector matches, with real RmlUi event handling).
+Allowed by default: "No font face defined" (the check runs without fonts) and the properties Open77's NativeUI adds
+to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
+
+  rml-check DOC.rml CASES.json|- [--model NAME] [--allow REGEX ...] [--outline FILE] [--quiet]
+
+  --model    the data model name the cases' "model" binds to (default: the document's data-model attribute)
+  --outline  where to write the element outline of every case (default: <tmp>/rml-check-outline.txt)
+Exit status: 0 clean, 1 warnings or failed clicks, 2 usage or build problem.
+"""
+import argparse, json, os, re, subprocess, sys, tempfile
+
+KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Properties and values Open77's NativeUI understands and vanilla RmlUi does not: <path>/<shape> paint, the extra
+# filters and the fx() decorator. Vanilla RmlUi reports them as syntax errors; they are fine in the game.
+ALLOWED_OPEN77 = [
+    r"^Syntax error parsing (inline )?property declaration '(fill|stroke|stroke-width|stroke-linejoin|stroke-linecap"
+    r"|stroke-dasharray|stroke-dashoffset|trim-start|trim-end|trim-offset): ",
+    r"^Syntax error parsing (inline )?property declaration 'filter: [^']*\b(glow|chromatic|scanlines)\(",
+    r"^Syntax error parsing (inline )?property declaration 'decorator: [^']*\bfx\(",
+    r"^(Filter|Decorator) type '(glow|chromatic|scanlines|fx)' not found",
+]
+ALLOWED_BASE = [r'^No font face defined']
+
+
+def die(msg, code=2):
+    print('rml-check: ' + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def model_name(doc):
+    m = re.search(r'data-model\s*=\s*"([^"]+)"', open(doc, encoding='utf-8').read())
+    return m.group(1) if m else None
+
+
+def main():
+    ap = argparse.ArgumentParser(prog='rml-check', description=__doc__.split('\n')[0])
+    ap.add_argument('doc')
+    ap.add_argument('cases')
+    ap.add_argument('--model')
+    ap.add_argument('--allow', action='append', default=[])
+    ap.add_argument('--outline')
+    ap.add_argument('--quiet', action='store_true')
+    a = ap.parse_args()
+    if not os.path.exists(a.doc):
+        die(f'document not found: {a.doc}')
+    txt = sys.stdin.read() if a.cases == '-' else open(a.cases, encoding='utf-8').read()
+    try:
+        cases = json.loads(txt)
+    except ValueError as e:
+        die(f'cases are not JSON: {e}')
+    if not isinstance(cases, list) or not all(isinstance(c, dict) and isinstance(c.get('name'), str) for c in cases):
+        die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
+    model = a.model or model_name(a.doc)
+    if not model and any('model' in c for c in cases):
+        die('no --model given and the document has no data-model attribute')
+    b = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+    if b.returncode != 0:
+        die('building the host failed:\n' + b.stderr)
+    host = b.stdout.strip().splitlines()[-1]
+    r = subprocess.run([host, 'check', a.doc, model or 'model'], input=json.dumps(cases), capture_output=True, text=True)
+    if r.returncode != 0:
+        die(f'host failed ({r.returncode}):\n{r.stderr}')
+    out = a.outline or os.path.join(tempfile.gettempdir(), 'rml-check-outline.txt')
+    with open(out, 'w') as fh:
+        fh.write(r.stdout)
+    allowed = [re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77 + a.allow]
+    bad, fails, loadfail, case = {}, [], [], None
+    states = clicks = 0
+    for line in r.stdout.splitlines():
+        if line.startswith('=== case '):
+            case, states = line[9:], states + 1
+        elif line == 'LOAD FAILED':
+            loadfail.append(case)
+        elif line.startswith('CLICK ok'):
+            clicks += 1
+        elif line.startswith('CLICK FAIL'):
+            fails.append(f'{case}: {line[11:]}')
+        elif line.startswith('WARN'):
+            msg = re.sub(r'^WARN x\d+: ', '', line)
+            if not any(p.search(msg) for p in allowed):
+                bad.setdefault(msg, []).append(case)
+    if not a.quiet:
+        print(f'cases: {states}  clicks ok: {clicks}  outline: {out}')
+    for msg, where in sorted(bad.items()):
+        print(f'WARN  {msg}  [{", ".join(where[:4])}{" ..." if len(where) > 4 else ""}]')
+    for f in fails:
+        print('CLICK FAIL ' + f)
+    for c in loadfail:
+        print(f'LOAD FAILED {c}')
+    if bad or fails or loadfail:
+        print('rml-check: FAIL')
+        sys.exit(1)
+    if not a.quiet:
+        print('rml-check: ok')
+
+
+if __name__ == '__main__':
+    main()
