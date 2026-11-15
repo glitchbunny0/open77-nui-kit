@@ -77,9 +77,7 @@ static J* walk(J* root, const std::string& path) {
 }
 
 int run() {
-	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
-	P parser{input.c_str()};
-	J cases = parser.val();
+	J cases = readCases();
 
 	NullRender render;
 	Sys sys;

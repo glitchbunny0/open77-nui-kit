@@ -8,7 +8,10 @@
 // place?: { selector: [left, top] }, size?: [w, h] }. See docs/cases.md.
 #include <algorithm>
 #include <fstream>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/DataVariable.h>
 #include <RmlUi/Core/ElementText.h>
@@ -42,83 +45,154 @@ struct J {
 	}
 };
 
+// Bad input (malformed JSON, a case field of the wrong shape): main() prints the message and exits 2.
+struct BadInput : std::runtime_error {
+	using std::runtime_error::runtime_error;
+};
+[[noreturn]] static void badInput(const std::string& msg) { throw BadInput(msg); }
+
+// A strict JSON parser: every read is bounds-checked, errors name the byte offset. \uXXXX surrogate pairs become one
+// 4-byte UTF-8 sequence (json.dumps writes every astral character, an emoji, that way); a lone surrogate becomes U+FFFD.
+// Integers outside int64 are kept as doubles, as Lua would hold them.
 struct P {
+	const char* b;
 	const char* p;
-	void ws() { while (*p == ' ' || *p == '\n' || *p == '\t' || *p == '\r') p++; }
-	std::string str() {
-		std::string out;
-		p++;
-		while (*p && *p != '"') {
-			if (*p == '\\') {
-				p++;
-				switch (*p) {
-				case 'n': out += '\n'; break;
-				case 't': out += '\t'; break;
-				case 'u': {
-					unsigned cp = std::stoul(std::string(p + 1, 4), nullptr, 16);
-					p += 4;
-					if (cp < 0x80) out += char(cp);
-					else if (cp < 0x800) { out += char(0xC0 | (cp >> 6)); out += char(0x80 | (cp & 0x3F)); }
-					else { out += char(0xE0 | (cp >> 12)); out += char(0x80 | ((cp >> 6) & 0x3F)); out += char(0x80 | (cp & 0x3F)); }
-				}
-				break;
-				default: out += *p;
-				}
-			}
-			else
-				out += *p;
-			p++;
+	const char* e;
+	std::string what;
+	int depth = 0;
+	P(const std::string& s, std::string what) : b(s.data()), p(s.data()), e(s.data() + s.size()), what(std::move(what)) {}
+	[[noreturn]] void fail(const std::string& msg) { badInput(what + ": not valid JSON: " + msg + " at offset " + std::to_string(p - b)); }
+	void ws() { while (p < e && (*p == ' ' || *p == '\n' || *p == '\t' || *p == '\r')) p++; }
+	bool at(char c) const { return p < e && *p == c; }
+	static void put(std::string& out, unsigned cp) {
+		if (cp < 0x80) out += char(cp);
+		else if (cp < 0x800) { out += char(0xC0 | (cp >> 6)); out += char(0x80 | (cp & 0x3F)); }
+		else if (cp < 0x10000) { out += char(0xE0 | (cp >> 12)); out += char(0x80 | ((cp >> 6) & 0x3F)); out += char(0x80 | (cp & 0x3F)); }
+		else { out += char(0xF0 | (cp >> 18)); out += char(0x80 | ((cp >> 12) & 0x3F)); out += char(0x80 | ((cp >> 6) & 0x3F)); out += char(0x80 | (cp & 0x3F)); }
+	}
+	unsigned hex4() {
+		if (e - p < 4) fail("truncated \\u escape");
+		unsigned v = 0;
+		for (int i = 0; i < 4; i++) {
+			char c = p[i];
+			v <<= 4;
+			if (c >= '0' && c <= '9') v |= unsigned(c - '0');
+			else if (c >= 'a' && c <= 'f') v |= unsigned(c - 'a' + 10);
+			else if (c >= 'A' && c <= 'F') v |= unsigned(c - 'A' + 10);
+			else fail("bad \\u escape");
 		}
+		p += 4;
+		return v;
+	}
+	std::string str() {
+		if (!at('"')) fail("expected a string");
 		p++;
-		return out;
+		std::string out;
+		for (;;) {
+			if (p >= e) fail("unterminated string");
+			char c = *p++;
+			if (c == '"') return out;
+			if (c != '\\') { out += c; continue; }
+			if (p >= e) fail("unterminated string");
+			switch (*p++) {
+			case '"': out += '"'; break;
+			case '\\': out += '\\'; break;
+			case '/': out += '/'; break;
+			case 'n': out += '\n'; break;
+			case 't': out += '\t'; break;
+			case 'r': out += '\r'; break;
+			case 'b': out += '\b'; break;
+			case 'f': out += '\f'; break;
+			case 'u': {
+				unsigned cp = hex4();
+				if (cp >= 0xD800 && cp < 0xDC00) {
+					const char* save = p;
+					unsigned lo = 0;
+					if (e - p >= 6 && p[0] == '\\' && p[1] == 'u') { p += 2; lo = hex4(); }
+					if (lo >= 0xDC00 && lo < 0xE000) cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+					else { p = save; cp = 0xFFFD; }
+				}
+				else if (cp >= 0xDC00 && cp < 0xE000) cp = 0xFFFD;
+				put(out, cp);
+				break;
+			}
+			default: p--; fail("bad escape");
+			}
+		}
+	}
+	void digits() {
+		if (!(p < e && *p >= '0' && *p <= '9')) fail("bad number");
+		while (p < e && *p >= '0' && *p <= '9') p++;
+	}
+	bool word(const char* w) {
+		size_t n = strlen(w);
+		if (size_t(e - p) >= n && !strncmp(p, w, n)) { p += n; return true; }
+		return false;
 	}
 	J val() {
 		ws();
+		if (p >= e) fail("unexpected end");
 		J j;
-		if (*p == '{') {
-			j.t = J::Obj;
+		if (*p == '{' || *p == '[') {
+			if (++depth > 256) fail("nested deeper than 256");
+			bool obj = *p == '{';
+			char close = obj ? '}' : ']';
+			j.t = obj ? J::Obj : J::Arr;
 			p++;
 			ws();
-			if (*p == '}') { p++; return j; }
-			for (;;) {
-				ws();
-				std::string k = str();
-				ws(); p++;   // :
-				j.o.emplace_back(k, val());
-				ws();
-				if (*p == ',') { p++; continue; }
-				p++;
-				break;
-			}
-		}
-		else if (*p == '[') {
-			j.t = J::Arr;
-			p++;
-			ws();
-			if (*p == ']') { p++; return j; }
-			for (;;) {
-				j.a.push_back(val());
-				ws();
-				if (*p == ',') { p++; continue; }
-				p++;
-				break;
-			}
+			if (at(close)) p++;
+			else
+				for (;;) {
+					if (obj) {
+						ws();
+						std::string k = str();
+						ws();
+						if (!at(':')) fail("expected ':'");
+						p++;
+						j.o.emplace_back(k, val());
+					}
+					else j.a.push_back(val());
+					ws();
+					if (at(',')) { p++; continue; }
+					if (at(close)) { p++; break; }
+					fail(std::string("expected ',' or '") + close + "'");
+				}
+			depth--;
 		}
 		else if (*p == '"') { j.t = J::Str; j.s = str(); }
-		else if (!strncmp(p, "true", 4)) { j.t = J::Bool; j.b = true; p += 4; }
-		else if (!strncmp(p, "false", 5)) { j.t = J::Bool; p += 5; }
-		else if (!strncmp(p, "null", 4)) { p += 4; }
-		else {
+		else if (word("true")) { j.t = J::Bool; j.b = true; }
+		else if (word("false")) { j.t = J::Bool; }
+		else if (word("null")) {}
+		else if (*p == '-' || (*p >= '0' && *p <= '9')) {
 			const char* start = p;
 			bool frac = false;
-			while (*p && strchr("+-0123456789.eE", *p)) { if (strchr(".eE", *p)) frac = true; p++; }
+			if (at('-')) p++;
+			digits();
+			if (at('.')) { p++; digits(); frac = true; }
+			if (at('e') || at('E')) { p++; if (at('+') || at('-')) p++; digits(); frac = true; }
 			std::string num(start, p);
-			if (frac) { j.t = J::Num; j.n = atof(num.c_str()); }
-			else { j.t = J::Int; j.i = atoll(num.c_str()); }
+			errno = 0;
+			long long v = frac ? 0 : strtoll(num.c_str(), nullptr, 10);
+			if (frac || errno == ERANGE) { j.t = J::Num; j.n = strtod(num.c_str(), nullptr); }
+			else { j.t = J::Int; j.i = v; }
 		}
+		else fail("unexpected character");
+		return j;
+	}
+	J all() {
+		J j = val();
+		ws();
+		if (p != e) fail("trailing characters");
 		return j;
 	}
 };
+static J parseJson(const std::string& text, const std::string& what) { return P(text, what).all(); }
+static J readCases() {
+	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
+	J cases = parseJson(input, "the cases");
+	if (cases.t != J::Arr) badInput("the cases must be a JSON array");
+	return cases;
+}
 
 static std::string q(const std::string& s) {
 	std::string o = "\"";

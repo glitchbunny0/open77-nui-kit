@@ -128,9 +128,9 @@ static void emit(Element* el, std::ostringstream& out, bool& first, float, Clip 
 int run(const std::string& docPath, const std::string& modelName, const std::string& fontsPath) {
 	{
 		std::ifstream fj(fontsPath);
+		if (!fj) badInput("cannot read " + fontsPath);
 		std::string ftxt((std::istreambuf_iterator<char>(fj)), std::istreambuf_iterator<char>());
-		P fp{ftxt.c_str()};
-		J fonts = fp.val();
+		J fonts = parseJson(ftxt, fontsPath);
 		for (auto& kv : fonts.o) {
 			Face f; f.key = kv.first;
 			if (J* a = kv.second.get("ascent")) f.ascent = a->t == J::Int ? a->i : a->n;
@@ -140,9 +140,7 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 			faces.push_back(f);
 		}
 	}
-	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
-	P parser{input.c_str()};
-	J cases = parser.val();
+	J cases = readCases();
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();

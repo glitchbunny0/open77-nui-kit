@@ -31,9 +31,7 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 }
 static std::vector<std::string> fired;
 int run(const std::string& docPath, const std::string& modelName) {
-	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
-	P parser{input.c_str()};
-	J cases = parser.val();
+	J cases = readCases();
 	NullRender render; Sys sys; NullFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
