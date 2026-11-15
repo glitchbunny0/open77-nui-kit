@@ -1,0 +1,31 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; font-family: kitraj; font-size: 24dp; color: #ffffff; }
+div { display: block; box-sizing: border-box; }
+.frame { position: absolute; width: 200dp; height: 120dp; overflow: hidden; background-color: #303040; }
+#f1 { left: 10dp; top: 10dp; }
+#f1 .big { margin-left: 40dp; margin-top: 30dp; width: 300dp; height: 300dp; background-color: #ff0000; }
+#f2 { left: 230dp; top: 10dp; }
+#f2 .line { white-space: nowrap; margin-left: 20dp; margin-top: 40dp; }
+#f3 { left: 450dp; top: 10dp; overflow: visible; }
+#f3 .big { margin-left: 120dp; margin-top: 60dp; width: 150dp; height: 100dp; background-color: #00ff00; }
+.stripes { position: absolute; left: 10dp; top: 200dp; width: 620dp; height: 190dp;
+    decorator: repeating-linear-gradient(90deg, #ffffff 0dp, #ffffff 10dp, #000000 10dp, #000000 20dp); }
+#f4 { left: 30dp; top: 220dp; height: 150dp; background-color: #00000000; }
+#f4 .glass { margin-left: 100dp; margin-top: 40dp; width: 200dp; height: 80dp; backdrop-filter: blur(6dp);
+    background-color: #0000ff40; }
+#f5 { left: 330dp; top: 220dp; width: 280dp; height: 150dp; background-color: #00000000; }
+#f5 .inner { margin: 20dp; height: 300dp; overflow: hidden; }
+#f5 .inner .big { width: 400dp; height: 60dp; margin-top: 50dp; background-color: #ffff00; }
+</style>
+</head>
+<body>
+<div class="frame" id="f1"><div class="big"/></div>
+<div class="frame" id="f2"><div class="line">a line much too long for its box</div></div>
+<div class="frame" id="f3"><div class="big"/></div>
+<div class="stripes"/>
+<div class="frame" id="f4"><div class="glass"/></div>
+<div class="frame" id="f5"><div class="inner"><div class="big"/></div></div>
+</body>
+</rml>

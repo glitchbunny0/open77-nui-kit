@@ -1,0 +1,24 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; }
+div { display: block; box-sizing: border-box; position: absolute; width: 140dp; height: 90dp; }
+#r1 { left: 10dp;  top: 10dp;  background-color: #ff8800; border-radius: 30dp; }
+#r2 { left: 170dp; top: 10dp;  background-color: #336699; border: 6dp #ffffff; border-radius: 24dp; }
+#r3 { left: 330dp; top: 10dp;  background-color: #222222; border-width: 10dp 20dp 10dp 4dp;
+    border-color: #ff0000 #00ff00 #0000ff #ffff00; }
+#r4 { left: 490dp; top: 10dp;  border-radius: 45dp; decorator: linear-gradient(90deg, #ff0000, #0000ff); }
+#m1 { left: 10dp;  top: 110dp; background-color: #ffffff; mask-image: linear-gradient(90deg, #ffffffff, #ffffff00); }
+#m2 { left: 170dp; top: 110dp; decorator: linear-gradient(#00ff00, #ff00ff); mask-image: image(/img/q.png); }
+#m3 { left: 330dp; top: 110dp; background-color: #00ffff; border: 8dp #ff0000;
+    mask-image: radial-gradient(circle 40dp, #000000ff 70%, #00000000 70%); }
+#s1 { left: 10dp;  top: 210dp; background-color: #444444; box-shadow: #ff00ff 0dp 0dp 10dp 4dp; }
+#u1 { left: 490dp; top: 110dp; background-color: #00ff00; decorator: tiled-horizontal(/img/q.png, /img/q.png, /img/q.png); }
+</style>
+</head>
+<body>
+<div id="r1"/><div id="r2"/><div id="r3"/><div id="r4"/>
+<div id="m1"/><div id="m2"/><div id="m3"/><div id="u1"/>
+<div id="s1"/>
+</body>
+</rml>

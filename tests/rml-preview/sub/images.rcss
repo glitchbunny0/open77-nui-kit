@@ -1,0 +1,2 @@
+/* a path relative to this sheet, as RmlUi resolves it: tests/rml-preview/img/q.png */
+#r1 { left: 170dp; top: 310dp; decorator: image(../img/q.png rotate-180 fill); }
