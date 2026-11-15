@@ -2,33 +2,38 @@
 """rml-check: load an RmlUi document in real RmlUi for every case and fail on anything RmlUi complains about.
 
 For every case (a name + the data model your client code builds for that state) the document is parsed, styled,
-bound and laid out by real RmlUi (the kit's host, `check` mode). Fails when:
+bound and laid out by real RmlUi (the kit's host, `check` mode; one host process per case, so a stylesheet warning
+is reported for every case that sees it). Fails when:
   - RmlUi logs a warning or error that is not on the allowed list (unknown property, bad value, a binding to a model
     member that does not exist, an XML error, a data-for over a non-array, ...);
   - a click listed in the case does not call the model event it should (dispatched on the first VISIBLE element
-    the selector matches, with real RmlUi event handling).
-Allowed by default: "No font face defined" (the check runs without fonts) and the properties Open77's NativeUI adds
-to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
+    the selector matches, with real RmlUi event handling), or names an event the case does not declare;
+  - the document calls a model event (any `data-event-*`, clicked or not) that a case's "events" does not declare;
+  - the document does not load, or there are no cases.
+Allowed by default: "No font face defined" (the check runs without fonts). The properties, filters and decorator
+Open77's NativeUI adds to RmlUi are known to the host, so they are validated like RmlUi's own. Add your own
+allowances with --allow REGEX.
 
   rml-check DOC.rml CASES.json|- [--model NAME] [--allow REGEX ...] [--outline FILE] [--quiet]
 
-  --model    the data model name the cases' "model" binds to (default: the document's data-model attribute)
-  --outline  where to write the element outline of every case (default: <tmp>/rml-check-outline.txt)
-Exit status: 0 clean, 1 warnings or failed clicks, 2 usage or build problem.
+  --model    the data model name the cases' "model" binds to (default: the document's first data-model attribute;
+             a note says so when the document has several)
+  --outline  where to write the element outline of every case (default: a fresh rml-check-*.outline.txt in the
+             temp dir; its path is printed)
+Click args: JSON numbers and bools are compared as RmlUi prints them (`pick(2)`, `toggle(1)`, three decimals at most,
+trailing zeros cut), so `"args": [2]` and `"args": ["2"]` both want `pick(2)`.
+Environment: NUIKIT_HOST=/path/to/rmlhost uses that host binary instead of building one with scripts/build.sh.
+Exit status: 0 clean, 1 warnings, failed clicks or undeclared events, 2 usage, input or build problem.
 """
-import argparse, json, os, re, subprocess, sys, tempfile
+import argparse, difflib, html, json, os, re, subprocess, sys, tempfile
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Properties and values Open77's NativeUI understands and vanilla RmlUi does not: <path>/<shape> paint, the extra
-# filters and the fx() decorator. Vanilla RmlUi reports them as syntax errors; they are fine in the game.
-ALLOWED_OPEN77 = [
-    r"^Syntax error parsing (inline )?property declaration '(fill|stroke|stroke-width|stroke-linejoin|stroke-linecap"
-    r"|stroke-dasharray|stroke-dashoffset|trim-start|trim-end|trim-offset): ",
-    r"^Syntax error parsing (inline )?property declaration 'filter: [^']*\b(glow|chromatic|scanlines)\(",
-    r"^Syntax error parsing (inline )?property declaration 'decorator: [^']*\bfx\(",
-    r"^(Filter|Decorator) type '(glow|chromatic|scanlines|fx)' not found",
-]
+# What Open77's NativeUI understands and vanilla RmlUi does not. Nothing is allowed on top: the host registers the
+# Open77 properties (fill, stroke*, trim-*) with real value parsers and stubs the extra filters (glow, chromatic,
+# scanlines) and the fx() decorator, so RmlUi itself validates every declaration that mentions them.
+ALLOWED_OPEN77 = []
 ALLOWED_BASE = [r'^No font face defined']
+CASE_KEYS = ['name', 'model', 'models', 'events', 'clicks', 'place', 'size']
 
 
 def die(msg, code=2):
@@ -36,9 +41,220 @@ def die(msg, code=2):
     sys.exit(code)
 
 
-def model_name(doc):
-    m = re.search(r'data-model\s*=\s*"([^"]+)"', open(doc, encoding='utf-8').read())
-    return m.group(1) if m else None
+def esc(s):
+    """A name for a one-line message: control characters shown as escapes."""
+    return ''.join(c if c.isprintable() else c.encode('unicode_escape').decode() for c in s)
+
+
+def read_text(path, what):
+    try:
+        with open(path, encoding='utf-8') as fh:
+            return fh.read()
+    except UnicodeDecodeError as e:
+        die(f'{what} {path} is not UTF-8: {e}')
+    except OSError as e:
+        die(f'cannot read {what} {path}: {e.strerror or e}')
+
+
+# ---- the document
+
+def mask(txt):
+    """Blank out comments, CDATA, <style> and <script> bodies (newlines kept, so offsets and lines still match)."""
+    def blank(s):
+        return re.sub(r'[^\n]', ' ', s)
+    txt = re.sub(r'<!--.*?(?:-->|\Z)', lambda m: blank(m.group()), txt, flags=re.S)
+    txt = re.sub(r'<!\[CDATA\[.*?(?:\]\]>|\Z)', lambda m: blank(m.group()), txt, flags=re.S)
+    return re.sub(r'(<(style|script)\b[^>]*>)(.*?)(?=</\2\s*>|\Z)',
+                  lambda m: m.group(1) + blank(m.group(3)), txt, flags=re.S | re.I)
+
+
+TAG = re.compile(r'<([A-Za-z_][\w:.-]*)((?:\s+[^\s=/<>"\']+(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'>]+))?)*)\s*/?>')
+ATTR = re.compile(r'([^\s=/<>"\']+)(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'>]+)))?')
+
+
+def tags(txt):
+    """(tag, {attribute: value}, line) of every start tag in the document's markup."""
+    txt = mask(txt)
+    for m in TAG.finditer(txt):
+        attrs = {}
+        for a in ATTR.finditer(m.group(2)):
+            v = next((g for g in a.groups()[1:] if g is not None), '')
+            attrs.setdefault(a.group(1), html.unescape(v))
+        yield m.group(1), attrs, txt.count('\n', 0, m.start()) + 1
+
+
+def model_names(txt):
+    out = []
+    for _, attrs, _ in tags(txt):
+        if attrs.get('data-model') and attrs['data-model'] not in out:
+            out.append(attrs['data-model'])
+    return out
+
+
+def event_calls(expr):
+    """Names of the model events a data-event expression calls: `a(1); b; c = 2` calls a and b (RmlUi's grammar:
+    statements separated by `;`, each `name(args)`, a bare `name`, or an assignment)."""
+    i, n, out = 0, len(expr), []
+
+    def skip_ws(i):
+        while i < n and expr[i].isspace():
+            i += 1
+        return i
+
+    def skip_to(i, stop):         # past the first `stop` outside quotes; a `;` stops before it
+        depth = 0
+        while i < n:
+            c = expr[i]
+            if c == "'":          # a string literal, \\ and \' escape
+                i += 1
+                while i < n and expr[i] != "'":
+                    i += 2 if expr[i] == '\\' else 1
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth <= 0 and stop == ')':
+                    return i + 1
+            elif c == ';' and depth <= 0 and stop == ';':
+                return i
+            i += 1
+        return i
+
+    while True:
+        i = skip_ws(i)
+        m = re.compile(r'[A-Za-z][A-Za-z0-9_.]*').match(expr, i)
+        if not m:
+            return out            # RmlUi reports what it cannot parse
+        name, i = m.group(), skip_ws(m.end())
+        if i < n and expr[i] == '=':
+            i = skip_to(i + 1, ';')
+        elif i < n and expr[i] == '(':
+            out.append(name)
+            i = skip_to(i, ')')
+        elif i >= n or expr[i] == ';':
+            out.append(name)
+        else:
+            return out
+        i = skip_ws(i)
+        if i < n and expr[i] == ';':
+            i += 1
+        elif i < n:
+            return out
+
+
+def doc_event_calls(doc):
+    """[(name, attribute, element, 'file:line')] for every data-event-* of the document and of the templates it
+    links (relative to it), whether or not a case clicks it."""
+    out, seen, todo = [], set(), [doc]
+    while todo:
+        path = todo.pop()
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            txt = open(path, encoding='utf-8').read()
+        except (OSError, UnicodeDecodeError):
+            continue                      # RmlUi reports what it cannot load
+        for tag, attrs, line in tags(txt):
+            if tag.lower() == 'link' and attrs.get('type') == 'text/template' and attrs.get('href'):
+                todo.append(os.path.join(os.path.dirname(path), attrs['href']))
+            el = tag + ('#' + attrs['id'] if attrs.get('id') else '') + ''.join('.' + c for c in attrs.get('class', '').split())
+            for k, v in attrs.items():
+                if k.startswith('data-event-') and len(k) > 11:
+                    for name in event_calls(v):
+                        out.append((name, k, el, f'{os.path.basename(path)}:{line}'))
+    return out
+
+
+# ---- the cases
+
+def fmt_arg(v):
+    """A click arg as RmlUi prints the Variant: ints as they are, bools 1/0, other numbers %.3f with the trailing
+    zeros cut (so `pick(2)`, `toggle(1)`, `scale(0.333)`); strings as they are."""
+    if isinstance(v, bool):
+        return '1' if v else '0'
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        s = '%.3f' % v
+        return s.rstrip('0').rstrip('.') if '.' in s else s
+    return v
+
+
+def validate(cases):
+    if not isinstance(cases, list):
+        die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
+    if not cases:
+        die('no cases: the JSON array is empty, so nothing would be loaded (see docs/cases.md)')
+    for n, c in enumerate(cases):
+        if not isinstance(c, dict) or not isinstance(c.get('name'), str):
+            die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
+        w = f'case {n} ({esc(c["name"])!r})'
+        for k in c:
+            near = difflib.get_close_matches(k, [x for x in CASE_KEYS if x not in c], 1, 0.8)
+            if k not in CASE_KEYS and near:
+                die(f'{w}: unknown key {k!r}, did you mean {near[0]!r}?')
+        if 'model' in c and not isinstance(c['model'], dict):
+            die(f'{w}: "model" must be an object')
+        if 'models' in c and not (isinstance(c['models'], dict) and all(isinstance(m, dict) for m in c['models'].values())):
+            die(f'{w}: "models" must be an object of objects')
+        if 'events' in c and not (isinstance(c['events'], list) and all(isinstance(e, str) and e for e in c['events'])):
+            die(f'{w}: "events" must be an array of event names')
+        if 'size' in c and not (isinstance(c['size'], list) and len(c['size']) == 2
+                                and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in c['size'])):
+            die(f'{w}: "size" must be [width, height]')
+        if 'clicks' in c:
+            if not isinstance(c['clicks'], list):
+                die(f'{w}: "clicks" must be an array of {{"sel", "event", "args"}} objects')
+            for k in c['clicks']:
+                if not (isinstance(k, dict) and all(isinstance(k.get(f), str) and k[f] and '\n' not in k[f] and '\r' not in k[f]
+                                                    for f in ('sel', 'event'))):
+                    die(f'{w}: every click needs a one-line string "sel" and "event": {json.dumps(k)[:80]}')
+                a = k.get('args', [])
+                if not (isinstance(a, list) and all(isinstance(x, (str, int, float, bool)) for x in a)):
+                    die(f'{w}: click args must be an array of strings, numbers and bools: {json.dumps(k)[:80]}')
+
+
+# ---- the host
+
+def host_input(idx, c):
+    """The one-case JSON the host reads. The case is renamed to its index (a name with a newline cannot forge host
+    output lines), click args become the text RmlUi prints for them, and the text is plain UTF-8 instead of \\u
+    escapes: the host never sees a surrogate pair."""
+    c = dict(c, name=str(idx), clicks=[dict(k, args=[fmt_arg(x) for x in k.get('args', [])]) for k in c.get('clicks', [])])
+    txt = json.dumps([c], ensure_ascii=False)
+    # \r \f \b as \u00XX: the host's string reader knows \n \t \uXXXX only
+    txt = re.sub(r'\\(.)', lambda m: {'r': '\\u000d', 'f': '\\u000c', 'b': '\\u0008'}.get(m.group(1), m.group()), txt)
+    try:
+        return txt.encode('utf-8')
+    except UnicodeEncodeError:
+        die(f'case {idx} ({esc(c["name"])!r}): a text has an unpaired surrogate (\\ud800-\\udfff), not valid Unicode')
+
+
+def parse_host(idx, text):
+    """The host's output for case idx: outline lines, clicks ok count, failed clicks, warnings, load failure."""
+    lines = text.split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
+    if not lines or lines[0] != f'=== case {idx}':
+        die(f'the host printed no "=== case {idx}" header; its output starts: {text[:120]!r}')
+    r = {'outline': lines, 'ok': 0, 'fails': [], 'warns': [], 'load': False}
+    for line in lines[1:]:
+        if r['warns']:
+            m = re.match(r'WARN x\d+: ', line)
+            if m:
+                r['warns'].append(line[m.end():])
+            else:                         # the rest of a multi-line message
+                r['warns'][-1] += '\n' + line
+        elif line == 'LOAD FAILED':
+            r['load'] = True
+        elif line.startswith('CLICK ok'):
+            r['ok'] += 1
+        elif line.startswith('CLICK FAIL'):
+            r['fails'].append(line[11:])
+        elif re.match(r'WARN x\d+: ', line):
+            r['warns'].append(re.sub(r'^WARN x\d+: ', '', line))
+    return r
 
 
 def main():
@@ -50,53 +266,108 @@ def main():
     ap.add_argument('--outline')
     ap.add_argument('--quiet', action='store_true')
     a = ap.parse_args()
-    if not os.path.exists(a.doc):
+    if not os.path.isfile(a.doc):
         die(f'document not found: {a.doc}')
-    txt = sys.stdin.read() if a.cases == '-' else open(a.cases, encoding='utf-8').read()
+    doc_txt = read_text(a.doc, 'document')
+    if not doc_txt.strip():
+        die(f'document is empty: {a.doc}')
+    if a.cases == '-':
+        try:
+            txt = sys.stdin.buffer.read().decode('utf-8')
+        except UnicodeDecodeError as e:
+            die(f'cases on stdin are not UTF-8: {e}')
+    else:
+        txt = read_text(a.cases, 'cases file')
+
+    def no_const(c):
+        raise ValueError(f'{c} is not JSON')
     try:
-        cases = json.loads(txt)
+        cases = json.loads(txt, parse_constant=no_const)
     except ValueError as e:
         die(f'cases are not JSON: {e}')
-    if not isinstance(cases, list) or not all(isinstance(c, dict) and isinstance(c.get('name'), str) for c in cases):
-        die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
-    model = a.model or model_name(a.doc)
+    validate(cases)
+    try:
+        allowed = [re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77 + a.allow]
+    except re.error as e:
+        die(f'--allow is not a regular expression: {e}')
+
+    names = model_names(doc_txt)
+    model = a.model or (names[0] if names else None)
     if not model and any('model' in c for c in cases):
         die('no --model given and the document has no data-model attribute')
-    b = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
-    if b.returncode != 0:
-        die('building the host failed:\n' + b.stderr)
-    host = b.stdout.strip().splitlines()[-1]
-    r = subprocess.run([host, 'check', a.doc, model or 'model'], input=json.dumps(cases), capture_output=True, text=True)
-    if r.returncode != 0:
-        die(f'host failed ({r.returncode}):\n{r.stderr}')
-    out = a.outline or os.path.join(tempfile.gettempdir(), 'rml-check-outline.txt')
-    with open(out, 'w') as fh:
-        fh.write(r.stdout)
-    allowed = [re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77 + a.allow]
-    bad, fails, loadfail, case = {}, [], [], None
-    states = clicks = 0
-    for line in r.stdout.splitlines():
-        if line.startswith('=== case '):
-            case, states = line[9:], states + 1
-        elif line == 'LOAD FAILED':
-            loadfail.append(case)
-        elif line.startswith('CLICK ok'):
-            clicks += 1
-        elif line.startswith('CLICK FAIL'):
-            fails.append(f'{case}: {line[11:]}')
-        elif line.startswith('WARN'):
-            msg = re.sub(r'^WARN x\d+: ', '', line)
+    notes = []
+    if not a.model and len(names) > 1:
+        notes.append(f'note: the document has several data-model roots ({", ".join(names)}); the cases\' "model" binds '
+                     f'to {model} (--model NAME to change it, "models" for the others)')
+
+    host = os.environ.get('NUIKIT_HOST')
+    if not host:
+        b = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+        if b.returncode != 0 or not b.stdout.strip():
+            die('building the host failed:\n' + b.stderr)
+        host = b.stdout.strip().splitlines()[-1]
+
+    bad, fails, loadfail, outline = {}, [], [], []
+    clicks = 0
+    # every case in its own host process: RmlUi caches parsed stylesheets, so one process would report a
+    # stylesheet warning for the first case only
+    for idx, c in enumerate(cases):
+        name = esc(c['name'])
+        events = c.get('events', [])
+        for k in c.get('clicks', []):
+            if k['event'] not in events:
+                fails.append(f'{name}: {k["sel"]} -> the case\'s "events" do not list {k["event"]!r}')
+        c = dict(c, clicks=[k for k in c.get('clicks', []) if k['event'] in events])
+        try:
+            r = subprocess.run([host, 'check', a.doc, model or 'model'], input=host_input(idx, c), capture_output=True)
+        except OSError as e:
+            die(f'cannot run the host {host}: {e.strerror or e}')
+        if r.returncode != 0:
+            die(f'host failed on case {idx} ({name}) with {r.returncode}:\n' + r.stderr.decode('utf-8', 'replace'))
+        res = parse_host(idx, r.stdout.decode('utf-8', 'replace'))
+        outline += [f'=== case {name}'] + res['outline'][1:]
+        clicks += res['ok']
+        fails += [f'{name}: {f}' for f in res['fails']]
+        if res['load']:
+            loadfail.append(name)
+        for msg in res['warns']:
             if not any(p.search(msg) for p in allowed):
-                bad.setdefault(msg, []).append(case)
+                bad.setdefault(msg, []).append(name)
+
+    # a data-event-* that calls a name no case declares is wrong whether or not a case clicks it
+    undeclared = {}
+    for ev, attr, el, at in doc_event_calls(a.doc):
+        miss = [esc(c['name']) for c in cases if ev not in c.get('events', [])]
+        if miss:
+            undeclared.setdefault((ev, attr, el, at), []).extend(miss)
+
+    out = a.outline
+    try:
+        if out:
+            fh = open(out, 'w', encoding='utf-8')
+        else:
+            fd, out = tempfile.mkstemp(prefix='rml-check-', suffix='.outline.txt')
+            fh = os.fdopen(fd, 'w', encoding='utf-8')
+        with fh:
+            fh.write('\n'.join(outline) + '\n')
+    except OSError as e:
+        die(f'cannot write the outline: {e.strerror or e}')
     if not a.quiet:
-        print(f'cases: {states}  clicks ok: {clicks}  outline: {out}')
-    for msg, where in sorted(bad.items()):
-        print(f'WARN  {msg}  [{", ".join(where[:4])}{" ..." if len(where) > 4 else ""}]')
+        for n in notes:
+            print(n)
+        print(f'cases: {len(cases)}  clicks ok: {clicks}  model: {model or "-"}  outline: {out}')
+
+    def where(names):
+        return f'[{", ".join(names[:4])}{" ..." if len(names) > 4 else ""}]'
+    for msg, names in sorted(bad.items()):
+        print(f'WARN  {msg}  {where(names)}')
+    for (ev, attr, el, at), names in sorted(undeclared.items()):
+        print(f'EVENT {ev}  {attr} on <{el}> at {at} calls an event that is not in the "events" of {where(names)}')
     for f in fails:
         print('CLICK FAIL ' + f)
-    for c in loadfail:
-        print(f'LOAD FAILED {c}')
-    if bad or fails or loadfail:
+    for n in loadfail:
+        print(f'LOAD FAILED {n}')
+    if bad or undeclared or fails or loadfail:
         print('rml-check: FAIL')
         sys.exit(1)
     if not a.quiet:
