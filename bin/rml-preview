@@ -16,7 +16,8 @@ game draws them. A --hook module can paint those for your screen.
               usWeightClass and the italic flags, as RmlUi does). Two files with the same family, weight and style
               are an error. Text RmlUi has no face for (unknown family, italic without an italic face) is not
               painted, as in the game. The first file given labels the sheet.
-  --root      where `image(/path)` and `src="/path"` resolve (default: the current directory)
+  --root      where `image(/path)` resolves (default: the current directory); `image(rel/path)` resolves against
+              the sheet that declares it, as in RmlUi
   --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview right
   --hook      a Python file with optional `place(case) -> {selector: [left, top]}` (positions your client code writes
               at run time) and `paint(draw, el, case, rgba)` (called for every box after the built-in paint)
@@ -192,18 +193,25 @@ def split_top(s, sep=','):
     return [p.strip() for p in out if p.strip()]
 
 
-# ---- the sheets' fill/stroke for <path> (vanilla RmlUi drops these properties, so they are read from the RCSS)
-def sheet_texts(doc):
+# ---- the sheets: fill/stroke for <path> (vanilla RmlUi drops these properties, so they are read from the RCSS)
+# and the declaring sheet of an image() (RmlUi resolves relative paths against it)
+def resolve_ref(href, base, root):
+    return os.path.join(root, href.lstrip('/')) if href.startswith('/') else os.path.join(base, href)
+
+
+def sheet_texts(doc, root='.'):
+    """[(path or None for the document itself, text)] of every linked .rcss and inline <style>"""
     src = open(doc, encoding='utf-8').read()
     base = os.path.dirname(doc)
     out = []
     for m in re.finditer(r'<link\b[^>]*>', src):
         href = re.search(r'href\s*=\s*"([^"]+)"', m.group(0))
         if href and 'rcss' in m.group(0):
-            p = os.path.join(base, href.group(1))
+            p = resolve_ref(href.group(1), base, root)
             if os.path.exists(p):
-                out.append(open(p, encoding='utf-8').read())
-    out += re.findall(r'<style[^>]*>(.*?)</style>', src, flags=re.S)
+                out.append((p, open(p, encoding='utf-8').read()))
+    out += [(None, t) for t in re.findall(r'<style[^>]*>(.*?)</style>', src, flags=re.S)]
+    out += [(None, t) for t in re.findall(r'\bstyle\s*=\s*"([^"]*)"', src)]
     return out
 
 
@@ -213,9 +221,9 @@ def parse_comp(c):
     return (tag.group(0) if tag else None, idm.group(1) if idm else None, set(re.findall(r'\.([\w-]+)', c)))
 
 
-def sheet_rules(doc):
+def sheet_rules(texts):
     rules, i = [], 0
-    for txt in sheet_texts(doc):
+    for _, txt in texts:
         txt = re.sub(r'/\*.*?\*/', '', txt, flags=re.S)
         for m in re.finditer(r'([^{}]+)\{([^}]*)\}', txt):
             i += 1
@@ -636,6 +644,93 @@ def gradient(kind, args, w, h, op, ctx):
     return None
 
 
+FITS = ('fill', 'contain', 'cover', 'scale-none', 'scale-down', 'repeat', 'repeat-x', 'repeat-y')
+ORIENT = ('none', 'flip-horizontal', 'flip-vertical', 'rotate-180')
+
+
+def image_props(args):
+    """image(src, orientation, fit, align-x, align-y) FallThrough shorthand -> dict, None when RmlUi rejects it"""
+    toks = split_top(args, ' ')
+    if not toks:
+        return None
+    out = {'src': toks[0].strip('"\''), 'orientation': 'none', 'fit': 'fill', 'align': [('%', 50.0), ('%', 50.0)]}
+    props = ['orientation', 'fit', 'x', 'y']
+    k = 0
+    for tok in toks[1:]:
+        while k < len(props):
+            p = props[k]
+            k += 1
+            if p == 'orientation' and tok in ORIENT:
+                out['orientation'] = tok
+                break
+            if p == 'fit' and tok in FITS:
+                out['fit'] = tok
+                break
+            if p in ('x', 'y'):
+                kw = {'left': 0, 'center': 50, 'right': 100} if p == 'x' else {'top': 0, 'center': 50, 'bottom': 100}
+                i = 0 if p == 'x' else 1
+                if tok in kw:
+                    out['align'][i] = ('%', float(kw[tok]))
+                    break
+                nu = num_unit(tok)
+                if nu and nu[1] in ('%', 'px', 'dp', None):
+                    out['align'][i] = ('%', nu[0]) if nu[1] == '%' else ('px', nu[0])
+                    break
+        else:
+            return None
+    return out
+
+
+def image_layer(src, props, w, h, op):
+    """DecoratorTiled::Tile::GenerateGeometry for an image over a surface of w x h -> (RGBA image, (dx, dy))"""
+    W, H = max(1, int(round(w))), max(1, int(round(h)))
+    tw, th = src.width, src.height
+    o = props['orientation']
+    if o in ('flip-horizontal', 'rotate-180'):
+        src = src.transpose(Image.FLIP_LEFT_RIGHT)
+    if o in ('flip-vertical', 'rotate-180'):
+        src = src.transpose(Image.FLIP_TOP_BOTTOM)
+    fit = props['fit']
+    offset_and_clip = fit != 'fill' and fit != 'repeat'
+    if fit == 'fill':
+        fw, fh = w, h
+    elif fit in ('contain', 'cover', 'scale-down'):
+        k = (min if fit != 'cover' else max)(w / tw, h / th)
+        if fit == 'scale-down':
+            k = min(k, 1.0)
+        fw, fh = tw * k, th * k
+    elif fit == 'scale-none':
+        fw, fh = tw, th
+    elif fit == 'repeat':
+        fw, fh = w, h
+    elif fit == 'repeat-x':
+        fw, fh = w, th
+    else:
+        fw, fh = tw, h
+    if fit.startswith('repeat'):
+        tile = Image.new('RGBA', (max(1, int(round(fw))), max(1, int(round(fh)))))
+        for yy in range(0, tile.height, th):
+            for xx in range(0, tile.width, tw):
+                tile.paste(src, (xx, yy))
+        im = tile
+    else:
+        im = src.resize((max(1, int(round(fw))), max(1, int(round(fh)))), Image.LANCZOS)
+    dx = dy = 0
+    if offset_and_clip:
+        offs = []
+        for (u, v), surf, fin in zip(props['align'], (w, h), (fw, fh)):
+            offs.append(rnd(v if u == 'px' else (surf - fin) * v / 100))
+        dx, dy = offs
+    if op < 1:
+        im.putalpha(im.split()[3].point(lambda a: int(a * op)))
+    # the tile never leaves the surface: whatever overshoots either side is cut off
+    out = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    sx, sy = max(0, -int(dx)), max(0, -int(dy))
+    if sx < im.width and sy < im.height:
+        out.alpha_composite(im.crop((sx, sy, im.width, im.height)), (max(0, int(dx)), max(0, int(dy))))
+    return out
+
+
 # ---- shapes
 def rnd(v):
     """Math::Round: halves go up"""
@@ -643,8 +738,8 @@ def rnd(v):
 
 
 class Painter:
-    def __init__(self, faces, root, rules, hook):
-        self.faces, self.root, self.rules, self.hook = faces, root, rules, hook
+    def __init__(self, faces, root, texts, rules, hook):
+        self.faces, self.root, self.texts, self.rules, self.hook = faces, root, texts, rules, hook
         self.fonts, self.imgs = {}, {}
 
     def font(self, path, size):
@@ -654,9 +749,18 @@ class Painter:
         return self.fonts[k]
 
 
-    def image(self, ref):
-        path = os.path.join(self.root, ref.lstrip('/'))
-        if not os.path.exists(path):
+    def image_path(self, ref, doc_dir):
+        """RmlUi's JoinPath: '/x' from the root, 'x' from the sheet that declares it (else the document)"""
+        if ref.startswith('/'):
+            return os.path.join(self.root, ref.lstrip('/'))
+        for path, txt in self.texts:
+            if path and ref in txt:
+                return os.path.join(os.path.dirname(path), ref)
+        return os.path.join(doc_dir, ref)
+
+    def image(self, ref, doc_dir):
+        path = self.image_path(ref, doc_dir)
+        if not os.path.isfile(path):
             return None
         if path not in self.imgs:
             self.imgs[path] = Image.open(path).convert('RGBA')
@@ -674,9 +778,41 @@ class Painter:
             layer = cut
         img.alpha_composite(layer)
 
-    def paint(self, els, bg, case, missing):
+    def effect(self, deco, area, e, op, ctx, notes, kind='decorator'):
+        """one decorator / mask value over its paint area (x0, y0, x1, y1) -> (RGBA image, (x, y)) or None"""
+        m = re.match(r'^\s*([\w-]+)\s*\((.*)\)\s*([\w-]*)\s*$', deco, flags=re.S)
+        if not m:
+            notes.add(f'NOT PAINTED {kind} {deco!r} (a named @decorator)')
+            return None
+        typ, args = m.group(1), m.group(2)
+        w, h = area[2] - area[0], area[3] - area[1]
+        if w <= 0 or h <= 0:
+            return None
+        if typ.endswith('gradient'):
+            g = gradient(typ, args, w, h, op, ctx)
+            if g is None:
+                notes.add(f'NOT PAINTED {kind} {deco!r} (RmlUi rejects it, or a colour form rml-preview does not read)')
+            return (g, area[:2]) if g else None
+        if typ == 'image':
+            props = image_props(args)
+            if props is None:
+                notes.add(f'NOT PAINTED {kind} {deco!r} (RmlUi rejects it)')
+                return None
+            src = self.image(props['src'], ctx.doc_dir)
+            if src is None:
+                notes.add(f'MISSING image {props["src"]} ({self.image_path(props["src"], ctx.doc_dir)}; sprite names are not resolved)')
+                return None
+            if props['fit'].startswith('repeat'):
+                notes.add(f'NOTE image({props["src"]} {props["fit"]}): Open77 cannot tile an image() decorator')
+            return image_layer(src, props, w, h, op), area[:2]
+        notes.add(f'NOT PAINTED {kind} {typ}()' + (' (Open77)' if typ == 'fx' else ''))
+        return None
+
+    def paint(self, els, bg, case, missing, doc_dir):
         img = bg.copy().convert('RGBA')
         W, H = img.size
+        ctx = Ctx(img.size, missing)
+        ctx.doc_dir = doc_dir
         for e in els:
             clip = e.get('clip') or [0, 0, W, H]
             clip = [max(-1e6, min(1e6, v)) for v in clip]
@@ -710,7 +846,7 @@ class Painter:
             bgc = rgba(e['bg'], e['op'])
             mask = e.get('mask') or ''
             if mask.startswith('image(') and bgc[3] > 0:
-                src = self.image(re.match(r'image\(\s*([^\s)]+)', mask).group(1))
+                src = self.image(re.match(r'image\(\s*([^\s)]+)', mask).group(1), doc_dir)
                 if src is None:
                     missing.add('MISSING ' + mask)
                 else:
@@ -719,36 +855,11 @@ class Painter:
             elif bgc[3] > 0:
                 d.rectangle([x, y, x + w - 1, y + h - 1], fill=bgc)
             deco = e.get('deco') or ''
-            dm = re.match(r'^\s*([\w-]+)\s*\((.*)\)\s*$', deco, flags=re.S)
-            if dm and dm.group(1).endswith('gradient'):
-                g = gradient(dm.group(1), dm.group(2), w, h, e['op'], Ctx(img.size, missing))
-                if g:
-                    layer.alpha_composite(g, (int(x), int(y)))
-                else:
-                    missing.add(f'NOT PAINTED decorator {deco!r} (RmlUi rejects it, or a colour form rml-preview does not read)')
-            elif deco.startswith('image('):
-                mm = re.match(r'image\(\s*([^\s)]+)\s*([^)]*)\)', deco)
-                src = self.image(mm.group(1)) if mm else None
-                if src is None:
-                    missing.add('MISSING ' + deco)
-                else:
-                    fit = mm.group(2)
-                    if 'contain' in fit:
-                        k = min(w / src.width, h / src.height)
-                    elif 'cover' in fit:
-                        k = max(w / src.width, h / src.height)
-                    elif 'fill' in fit:
-                        k = None
-                    else:
-                        k = 1
-                    iw, ih = (max(1, int(w)), max(1, int(h))) if k is None else (max(1, int(src.width * k)), max(1, int(src.height * k)))
-                    im = src.resize((iw, ih), Image.LANCZOS)
-                    if e['op'] < 1:
-                        im.putalpha(im.split()[3].point(lambda a: int(a * e['op'])))
-                    tile = Image.new('RGBA', img.size, (0, 0, 0, 0))
-                    tile.alpha_composite(im, (int(x + (w - iw) / 2), int(y + (h - ih) / 2)))
-                    # the decorator never leaves its own box
-                    layer.alpha_composite(Image.composite(tile, Image.new('RGBA', img.size, (0, 0, 0, 0)), _box_mask(img.size, box)))
+            if deco and deco != 'none':
+                for one in reversed(split_top(deco, ',')):   # RmlUi paints a decorator list back to front
+                    res = self.effect(one, box, e, e['op'], ctx, missing)
+                    if res:
+                        layer.alpha_composite(res[0], (int(res[1][0]), int(res[1][1])))
             for side, wd, c in (('t', e['bt'], e['btc']), ('r', e['br'], e['brc']), ('b', e['bb'], e['bbc']), ('l', e['bl'], e['blc'])):
                 if wd <= 0:
                     continue
@@ -779,12 +890,6 @@ class Painter:
                 self.hook.paint(d, e, case, rgba)
             self.composite(img, layer, clip)
         return img.convert('RGB')
-
-
-def _box_mask(size, box):
-    m = Image.new('L', size, 0)
-    ImageDraw.Draw(m).rectangle([box[0], box[1], box[2] - 1, box[3] - 1], fill=255)
-    return m
 
 
 def model_name(doc):
@@ -841,7 +946,8 @@ def main():
     if res.returncode != 0:
         die('layout failed:\n' + res.stderr.decode('utf-8', 'replace'))
     shots = json.loads(res.stdout.decode('utf-8', 'replace'))
-    painter = Painter(faces, a.root, sheet_rules(a.doc), hook)
+    texts = sheet_texts(a.doc, a.root)
+    painter = Painter(faces, a.root, texts, sheet_rules(texts), hook)
     names = []
     for c, s in zip(cases, shots):
         size = tuple(c.get('size') or (1920, 1080))
@@ -850,7 +956,7 @@ def main():
         else:
             bg = Image.new('RGB', size, (20, 26, 32))
         missing = set()
-        img = painter.paint(s['els'], bg, c, missing)
+        img = painter.paint(s['els'], bg, c, missing, os.path.dirname(a.doc))
         p = os.path.join(a.out, s['name'] + '.png')
         img.save(p)
         names.append(s['name'])
