@@ -250,7 +250,9 @@ mutant real "real: a script of the page that throws" "window.addEventListener('e
 mutant real "real: ... and the shot of a failed case is kept" "                print(f'FAIL {c[\"name\"]}: {why} (shot kept: {png})')" "                os.remove(png); print(f'FAIL {c[\"name\"]}: {why} (shot kept: {png})')"
 
 wait
-for r in $(ls "$tmp"/mut*/result 2>/dev/null | sort -V); do cat "$r"; done
+for r in $(ls "$tmp"/mut*/result 2>/dev/null | sort -V); do grep -v '^ok ' "$r"; done
+reds=$(cat "$tmp"/mut*/result 2>/dev/null | grep -c '^ok   mutant -> red')
+echo "html-shot: $reds of $i mutants turn their check red (the rest skipped without Chromium)"
 grep -q '^FAIL' "$tmp"/mut*/result 2>/dev/null && fail=1
 
 exit $fail

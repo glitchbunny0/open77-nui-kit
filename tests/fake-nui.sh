@@ -16,7 +16,7 @@ if [ "$rc" != 0 ]; then echo "FAIL: fake-nui checks on the real file"; fail=1; f
 echo "fake-nui: $n checks ok on the real file"
 
 # mutant CHECK OLD NEW: one edit to a copy of fake_nui.lua; the check whose name starts with CHECK must go red
-i=0
+i=0; reds=0
 mutant() {
     local name="$1" old="$2" new="$3"
     i=$((i + 1))
@@ -31,7 +31,7 @@ PY
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     local o
     o=$("$lua" "$checks" "$f" 2>&1) && rc=0 || rc=$?
-    if [ "$rc" != 0 ] && echo "$o" | grep -q "^FAIL $name"; then echo "ok   mutant -> red: $name"
+    if [ "$rc" != 0 ] && echo "$o" | grep -q "^FAIL $name"; then reds=$((reds + 1))
     else echo "FAIL: mutant $i did not turn '$name' red (rc $rc)"; echo "$o" | grep -v '^ok ' | head -5; fail=1; fi
 }
 
@@ -120,4 +120,6 @@ mutant "json: NaN and infinity" 'if v ~= v or v == math.huge or v == -math.huge 
 mutant "json: a table mixing" 'if count ~= #v then error(' 'if false then error('
 mutant "json: a function" '    error("F.json: a " .. t .. " at " .. path .. " is not JSON", 0)' '    return "null"'
 
+echo "fake-nui: $reds of $i mutants turn their check red"
+[ "$reds" = "$i" ] || fail=1
 exit $fail

@@ -39,7 +39,7 @@ echo "example: $(grep -c '^ok ' <<<"$out") checks ok"
 grep -q '^FAIL' <<<"$out" && fail=1
 
 # mutant NAME FILE OLD NEW: one edit to a copy of the example; the check starting with NAME must go red
-i=0
+i=0; reds=0
 mutant() {
     local name="$1" file="$2" old="$3" new="$4"
     i=$((i + 1))
@@ -56,7 +56,7 @@ PY
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     local o
     o=$(evaluate "$d")
-    if grep -q "^FAIL $name" <<<"$o"; then echo "ok   mutant -> red: $name"
+    if grep -q "^FAIL $name" <<<"$o"; then reds=$((reds + 1))
     else echo "FAIL: mutant $i did not turn '$name' red"; grep -v '^ok ' <<<"$o" | head -4; fail=1; fi
 }
 
@@ -85,4 +85,6 @@ mutant "budget: one resume or event" client/menu.lua 'function Menu.open(s, cash
 '
 mutant "budget: one resume or event" models.lua 'io.stderr:write(("max instructions in one resume or event: %d (%s)\n"):format(F.maxInstr, F.maxWhere))' ''
 
+echo "example: $reds of $i mutants turn their check red"
+[ "$reds" = "$i" ] || fail=1
 exit $fail
