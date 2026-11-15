@@ -12,21 +12,20 @@ game draws them. A --hook module can paint those for your screen.
   rml-preview DOC.rml CASES.json|- --font FAMILY=a.ttf,b.ttf [--font ...] [--model NAME] [--out DIR]
               [--bg IMAGE] [--root DIR] [--compare DIR] [--hook hook.py] [--sheet-crop X0,Y0,X1,Y1]
 
-  FAMILY      the font-family name your sheet uses; each TTF's weight is read from its style name
-              (Regular 400, Medium 500, SemiBold 600, Bold 700, ...). The first font given is the fallback.
+  FAMILY      the font-family name your sheet uses; each TTF's weight and style are read from the font (OS/2
+              usWeightClass and the italic flags, as RmlUi does). Two files with the same family, weight and style
+              are an error. Text RmlUi has no face for (unknown family, italic without an italic face) is not
+              painted, as in the game. The first file given labels the sheet.
   --root      where `image(/path)` and `src="/path"` resolve (default: the current directory)
   --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview right
   --hook      a Python file with optional `place(case) -> {selector: [left, top]}` (positions your client code writes
               at run time) and `paint(draw, el, case, rgba)` (called for every box after the built-in paint)
 Writes <out>/<case>.png, <out>/sheet.png (every case) and, with --compare, <out>/compare.png. Needs Pillow.
 """
-import argparse, importlib.util, json, math, os, re, subprocess, sys
+import argparse, importlib.util, json, math, os, re, struct, subprocess, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEIGHTS = {'thin': 100, 'extralight': 200, 'ultralight': 200, 'light': 300, 'regular': 400, 'normal': 400, 'book': 400,
-           'medium': 500, 'semibold': 600, 'demibold': 600, 'bold': 700, 'extrabold': 800, 'ultrabold': 800,
-           'black': 900, 'heavy': 900}
 # measured besides ASCII: Latin-1, general punctuation, currency, arrows, a few symbols
 EXTRA = list(range(0xA0, 0x180)) + list(range(0x2010, 0x2040)) + list(range(0x20A0, 0x20C0)) + \
     list(range(0x2190, 0x21A0)) + [0x3A3, 0x2122, 0x2212, 0x2022, 0x25B2, 0x25B6, 0x25BC, 0x25C0]
@@ -36,14 +35,37 @@ def die(msg):
     sys.exit('rml-preview: ' + msg)
 
 
-def weight_of(path):
-    style = ImageFont.truetype(path, 10).getname()[1] or 'Regular'
-    key = re.sub(r'[^a-z]', '', style.lower().replace('italic', '').replace('oblique', '')) or 'regular'
-    return WEIGHTS.get(key, 400), 'italic' in style.lower() or 'oblique' in style.lower()
+# ---- fonts: weight and style as RmlUi's FreeType engine reads them (FreeTypeInterface.cpp GetFaceStyle)
+def font_style(path):
+    """(weight, italic) from the OS/2 usWeightClass / fsSelection and head macStyle tables, like FreeType + RmlUi"""
+    with open(path, 'rb') as fh:
+        data = fh.read()
+    base = 0
+    if data[:4] == b'ttcf':
+        base = struct.unpack('>I', data[12:16])[0]   # first face of a collection, like face_index 0
+    n = struct.unpack('>H', data[base + 4:base + 6])[0]
+    tables = {}
+    for i in range(n):
+        tag, _, off, ln = struct.unpack('>4sIII', data[base + 12 + 16 * i:base + 28 + 16 * i])
+        tables[tag] = (off, ln)
+    weight, italic, bold = 0, False, False
+    if b'head' in tables:
+        mac = struct.unpack('>H', data[tables[b'head'][0] + 44:tables[b'head'][0] + 46])[0]
+        bold, italic = bool(mac & 1), bool(mac & 2)
+    if b'OS/2' in tables:
+        off = tables[b'OS/2'][0]
+        weight = struct.unpack('>H', data[off + 4:off + 6])[0]
+        sel = struct.unpack('>H', data[off + 62:off + 64])[0]
+        italic = italic or bool(sel & 1) or bool(sel & 0x200)
+        bold = bold or bool(sel & 0x20)
+    if not weight:
+        weight = 700 if bold else 400
+    return weight, italic
 
 
 def parse_fonts(specs):
-    faces, first = {}, None
+    """--font FAMILY=a.ttf,b.ttf ... -> [(family, weight, italic, path)] in the order given"""
+    faces, seen = [], {}
     for spec in specs:
         if '=' not in spec:
             die(f'--font wants FAMILY=file.ttf[,file.ttf], got {spec!r}')
@@ -51,17 +73,32 @@ def parse_fonts(specs):
         for p in files.split(','):
             if not os.path.exists(p):
                 die(f'font file not found: {p}')
-            w, it = weight_of(p)
-            faces[f'{fam.lower()}|{w}' + ('|i' if it else '')] = p
-            first = first or p
-    return faces, first
+            w, it = font_style(p)
+            key = (fam.lower(), w, it)
+            if key in seen:
+                die(f'{seen[key]} and {p} are both {fam} weight {w}' + (' italic' if it else '') +
+                    ': RmlUi keeps one of them, give one')
+            seen[key] = p
+            faces.append((fam.lower(), w, it, p))
+    return faces
+
+
+def pick_face(faces, family, weight, italic):
+    """RmlUi's FontFamily::GetFaceHandle: same family and style, nearest weight (the first loaded wins a tie); None
+    when the family has no face of that style (RmlUi then draws no text)"""
+    best, dist = None, None
+    for fam, w, it, p in faces:
+        if fam == (family or '').lower() and it == bool(italic):
+            dd = abs(w - weight)
+            if dist is None or dd < dist:
+                best, dist = p, dd
+    return best
 
 
 def fonts_json(faces, path):
+    """the host's fonts.json: '<family>|<weight>' (upright faces first), '<family>|<weight>|i' for italic ones"""
     out = {}
-    for key, p in faces.items():
-        if key.endswith('|i'):
-            continue   # the host keys faces by family and weight; italic faces are only used for painting
+    for fam, w, it, p in sorted(faces, key=lambda f: f[2]):
         f = ImageFont.truetype(p, 1000)
         a, d = f.getmetrics()
         adv = {}
@@ -70,7 +107,7 @@ def fonts_json(faces, path):
                 adv[str(c)] = f.getlength(chr(c))
             except (RuntimeError, OSError):
                 pass   # a code point the shaper refuses: the host uses the font's default advance
-        out[key] = {'ascent': a, 'descent': d, 'def': f.getlength('n'), 'adv': adv}
+        out[f'{fam}|{w}' + ('|i' if it else '')] = {'ascent': a, 'descent': d, 'def': f.getlength('n'), 'adv': adv}
     with open(path, 'w') as fh:
         json.dump(out, fh)
 
@@ -253,19 +290,16 @@ def gradient(w, h, deco, op):
 
 
 class Painter:
-    def __init__(self, faces, fallback, root, rules, hook):
-        self.faces, self.fallback, self.root, self.rules, self.hook = faces, fallback, root, rules, hook
+    def __init__(self, faces, root, rules, hook):
+        self.faces, self.root, self.rules, self.hook = faces, root, rules, hook
         self.fonts, self.imgs = {}, {}
 
-    def font(self, family, weight, size, italic=False):
-        family = (family or '').lower()
-        path = (italic and self.faces.get(f'{family}|{weight}|i')) or self.faces.get(f'{family}|{weight}') \
-            or self.faces.get(f'{family}|400') or self.faces.get(f'{family}|500') \
-            or next((p for k, p in self.faces.items() if k.startswith(family + '|')), None) or self.fallback
+    def font(self, path, size):
         k = (path, round(size * 2))
         if k not in self.fonts:
             self.fonts[k] = ImageFont.truetype(path, max(1, int(round(size))))
         return self.fonts[k]
+
 
     def image(self, ref):
         path = os.path.join(self.root, ref.lstrip('/'))
@@ -296,7 +330,13 @@ class Painter:
             if 'text' in e:
                 if e['op'] <= 0:
                     continue
-                f = self.font(e['family'], e['weight'], e['size'], e.get('italic'))
+                weight = int(e.get('weight') or 400)
+                path = pick_face(self.faces, e.get('family'), weight, e.get('italic'))
+                if path is None:
+                    missing.add(f"NO FONT FACE {e.get('family')!r} {weight}" + (' italic' if e.get('italic') else '') +
+                                ': RmlUi draws no text in it (not painted)')
+                    continue
+                f = self.font(path, e['size'])
                 layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
                 d = ImageDraw.Draw(layer)
                 x, col = e['x'], rgba(e['color'], e['op'])
@@ -432,7 +472,7 @@ def main():
         spec = importlib.util.spec_from_file_location('rml_preview_hook', a.hook)
         hook = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(hook)
-    faces, fallback = parse_fonts(a.font)
+    faces = parse_fonts(a.font)
     cases = load_cases(a.cases)
     if hook and hasattr(hook, 'place'):
         for c in cases:
@@ -445,7 +485,7 @@ def main():
     if res.returncode != 0:
         die('layout failed:\n' + res.stderr.decode('utf-8', 'replace'))
     shots = json.loads(res.stdout.decode('utf-8', 'replace'))
-    painter = Painter(faces, fallback, a.root, sheet_rules(a.doc), hook)
+    painter = Painter(faces, a.root, sheet_rules(a.doc), hook)
     names = []
     for c, s in zip(cases, shots):
         size = tuple(c.get('size') or (1920, 1080))
@@ -464,7 +504,7 @@ def main():
         for m in sorted(missing):
             print(' ', m)
     crop = [int(v) for v in a.sheet_crop.split(',')] if a.sheet_crop else None
-    lab = painter.font('', 600, 26)
+    lab = ImageFont.truetype(faces[0][3], 26)
 
     def cut(im):
         return im.crop(crop) if crop else im
