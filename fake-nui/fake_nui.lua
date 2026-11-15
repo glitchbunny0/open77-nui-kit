@@ -82,8 +82,9 @@ function F.install()
     Open77.ui = {
         create = function(opts)
             if F.refuse then return nil, F.refuse end
-            assert(type(opts) == "table" and type(opts.document) == "string", "create needs a document")
-            if not exists(opts.document) then return nil, "undeclared_file:" .. opts.document end
+            assert(type(opts) == "table" and (type(opts.document) == "string") ~= (type(opts.source) == "string"),
+                "create needs exactly one of document / source")
+            if opts.document and not exists(opts.document) then return nil, "undeclared_file:" .. opts.document end
             local d = F.newDoc(opts)
             F.docs[#F.docs + 1] = d
             F.last = d
@@ -98,28 +99,89 @@ function F.install()
     return F
 end
 
+-- "items[2].stock" -> the table that holds the value and the key of it ({ items = { {}, { stock = 5 } } } gives the
+-- second entry and "stock"); indices in brackets are 1-based. mustExist: the last key has to be there already
+function F.locate(model, path, mustExist)
+    assert(type(path) == "string" and path ~= "", "a model path is a non-empty string")
+    local keys, i = {}, 1
+    while i <= #path do
+        local idx, nexti = path:match("^%[(%d+)%]()", i)
+        if idx then keys[#keys + 1] = math.tointeger(tonumber(idx)); i = nexti
+        else
+            local name
+            name, nexti = path:match("^%.?([^.%[%]]+)()", i)
+            assert(name, "bad model path " .. path)
+            keys[#keys + 1] = name; i = nexti
+        end
+    end
+    local t = model
+    for n = 1, #keys - 1 do
+        t = t[keys[n]]
+        assert(type(t) == "table", "model path " .. path .. " leads nowhere at " .. tostring(keys[n]))
+    end
+    local last = keys[#keys]
+    assert(not mustExist or t[last] ~= nil, "model path " .. path .. " leads nowhere at " .. tostring(last))
+    return t, last
+end
+
 -- the fake document: the calls the adapter makes, the model as the document would hold it
 function F.newDoc(opts)
     local d = { opts = opts, calls = {}, ev = {}, modelH = {}, dom = {}, visible = opts.visible ~= false, focused = false,
-        destroyed = false, merges = 0 }
-    local name, model = next(opts.models or {})
-    d.modelName, d.model = name, model or {}
+        destroyed = false, merges = 0, models = {} }
+    -- every model by name, by reference; d.model / d.modelName are the first by name (the one a single-model case uses)
+    local names = {}
+    for n, m in pairs(opts.models or {}) do
+        assert(type(m) == "table", "the model " .. tostring(n) .. " must be a table of fields")
+        d.models[n] = m
+        names[#names + 1] = n
+    end
+    table.sort(names)
+    d.modelName = names[1]
+    d.model = d.models[names[1]] or {}
     local function rec(m, ...) d.calls[#d.calls + 1] = { m = m, args = table.pack(...) } end
     local function live(m) if d.destroyed then error("NativeUI: " .. m .. " on a destroyed document", 2) end end
     function d:onEvent(kind, fn) live("onEvent"); rec("onEvent", kind); self.ev[kind] = fn; return true end
     function d:onModel(n, fn) live("onModel"); rec("onModel", n); self.modelH[n] = fn; return #self.calls end
     function d:on(t, sel, fn) live("on"); if fn == nil then fn, sel = sel, nil end rec("on", t, sel); self.dom[t] = fn; return #self.calls end
+    local function modelOf(mn, m)
+        local model = d.models[mn]
+        assert(model, m .. " into an unknown model " .. tostring(mn))
+        return model
+    end
     function d:merge(mn, t)
         live("merge"); rec("merge", mn)
-        assert(mn == self.modelName, "merge into an unknown model " .. tostring(mn))
+        local model = modelOf(mn, "merge")
         for k, v in pairs(t) do
-            assert(self.model[k] ~= nil, "merge of a field the first model lacks: " .. tostring(k))
-            self.model[k] = v   -- by reference
+            assert(model[k] ~= nil, "merge of a field the model " .. mn .. " lacks: " .. tostring(k))
+            model[k] = v   -- by reference
         end
         self.merges = self.merges + 1
         return true
     end
-    function d:set(mn, path, v) live("set"); rec("set", mn, path); self.model[path] = v; return true end
+    -- set / push / removeAt take the documented path form: "items[2].stock", array indices 1-based. A path that leads
+    -- nowhere asserts, as merge does (the game would report it as an error event)
+    function d:set(mn, path, v)
+        live("set"); rec("set", mn, path, v)
+        local t, key = F.locate(modelOf(mn, "set"), path, true)
+        t[key] = v
+        return true
+    end
+    function d:push(mn, path, v)
+        live("push"); rec("push", mn, path, v)
+        local t, key = F.locate(modelOf(mn, "push"), path, true)
+        assert(type(t[key]) == "table", "push to " .. path .. ": not an array")
+        t[key][#t[key] + 1] = v
+        return true
+    end
+    function d:removeAt(mn, path, i)
+        live("removeAt"); rec("removeAt", mn, path, i)
+        local t, key = F.locate(modelOf(mn, "removeAt"), path, true)
+        local arr = t[key]
+        assert(type(arr) == "table" and math.type(i) == "integer" and i >= 1 and i <= #arr,
+            "removeAt " .. tostring(i) .. " of " .. path .. ": no such entry")
+        table.remove(arr, i)
+        return true
+    end
     function d:batch(fn) live("batch"); rec("batch"); fn(); return true end
     function d:show() live("show"); rec("show"); self.visible = true; return true end
     function d:hide() live("hide"); rec("hide"); self.visible = false; return true end
@@ -207,6 +269,10 @@ function F.case(name, doc, clicks, events)
         ev = {}
         for _, list in pairs(doc.opts.events or {}) do for _, e in ipairs(list) do ev[#ev + 1] = e end end
     end
-    return { name = name, model = doc.model, clicks = cs, events = ev }
+    local c = { name = name, model = doc.model, clicks = cs, events = ev }
+    for n, m in pairs(doc.models) do   -- a document with several models: the others go under "models"
+        if m ~= doc.model then c.models = c.models or {}; c.models[n] = m end
+    end
+    return c
 end
 return F

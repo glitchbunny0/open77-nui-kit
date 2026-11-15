@@ -59,4 +59,25 @@ mutant "budget: 1,500,000" 'budget = 1500000 }' 'budget = 150000 }'
 mutant "budget: a resume past it" 'if limit and n > limit then error("Open77 script execution budget exceeded", 0) end' ''
 mutant "counted: the hook is restored" 'table.pack(pcall(fn, ...))' 'table.pack(true, fn(...))'
 
+# documents and models
+mutant "set: a documented path" '        t[key] = v
+' '        d.model[path] = v
+'
+mutant "set: a path that leads nowhere" 'assert(not mustExist or t[last] ~= nil,' 'assert(true or t[last] ~= nil,'
+mutant "set: a path that leads nowhere" 'assert(type(t) == "table", "model path "' 'assert(true, "model path "'
+mutant "set, push, merge: an unknown model" 'assert(model, m .. " into an unknown model " .. tostring(mn))' 'model = model or d.model'
+mutant "push appends" 't[key][#t[key] + 1] = v' 'table.insert(t[key], 1, v)'
+mutant "push appends" 'assert(type(t[key]) == "table", "push to "' 'assert(true, "push to "'
+mutant "removeAt removes" 'table.remove(arr, i)' 'table.remove(arr)'
+mutant "removeAt removes" 'i <= #arr,' 'i <= #arr + 1,'
+mutant "removeAt removes" 'i >= 1 and' 'i >= 0 and'
+mutant "models: every model" '        d.models[n] = m
+' '        if not next(d.models) then d.models[n] = m end
+'
+mutant "models: every model" 'assert(model[k] ~= nil, "merge of a field the model "' 'assert(true, "merge of a field the model "'
+mutant "F.case: a document with several models" 'if m ~= doc.model then' 'if false then'
+mutant "create accepts source" 'if opts.document and not exists(opts.document)' 'if not exists(opts.document)'
+mutant "create accepts source" '(type(opts.document) == "string") ~= (type(opts.source) == "string")' '(type(opts.document) == "string") or (type(opts.source) == "string")'
+mutant "create: a document file that does not exist" 'return nil, "undeclared_file:" .. opts.document' 'return nil, "undeclared"'
+
 exit $fail

@@ -147,4 +147,110 @@ check("counted: the hook is restored and the error re-raised when the counted fu
     eq(debug.gethook(), nil, "the hook still set")
 end)
 
+-- ---- documents and models ----
+
+-- a document on the fake (document files must exist: the checks file itself will do)
+local function newdoc(F, models, opts)
+    opts = opts or {}
+    opts.document = opts.document or path
+    opts.models = models
+    return assert(Open77.ui.create(opts))
+end
+
+local function errors(fn, needle, what)
+    local ok, err = pcall(fn)
+    if ok then error((what or "call") .. ": expected an error containing '" .. needle .. "', got none", 2) end
+    if not tostring(err):find(needle, 1, true) then error((what or "call") .. ": error was: " .. tostring(err), 2) end
+end
+
+check("set: a documented path (items[2].stock, 1-based) updates the model and adds no stray key", function()
+    local F = fresh()
+    local m = { items = { { stock = 3 }, { stock = 4 } }, money = 9 }
+    local d = newdoc(F, { shop = m })
+    eq(d:set("shop", "items[2].stock", 0), true)
+    eq(m.items[2].stock, 0, "items[2].stock")
+    eq(m.items[1].stock, 3, "items[1].stock")
+    d:set("shop", "money", 1250)
+    eq(m.money, 1250, "money")
+    local n = 0
+    for _ in pairs(m) do n = n + 1 end
+    eq(n, 2, "keys of the model")
+end)
+
+check("set: a path that leads nowhere is an error and writes nothing", function()
+    local F = fresh()
+    local m = { items = { { stock = 3 } }, money = 9 }
+    local d = newdoc(F, { shop = m })
+    errors(function() d:set("shop", "items[5].stock", 1) end, "leads nowhere", "items[5].stock")
+    errors(function() d:set("shop", "items[0].stock", 1) end, "leads nowhere", "items[0].stock")
+    errors(function() d:set("shop", "items[1].price", 1) end, "leads nowhere", "an unknown field")
+    errors(function() d:set("shop", "nope", 1) end, "leads nowhere", "an unknown top-level field")
+    eq(m.nope, nil)
+    eq(m.items[1].price, nil)
+end)
+
+check("set, push, merge: an unknown model name is an error", function()
+    local F = fresh()
+    local m = { money = 9 }
+    local d = newdoc(F, { shop = m })
+    errors(function() d:set("other", "money", 1) end, "unknown model", "set")
+    errors(function() d:push("other", "money", 1) end, "unknown model", "push")
+    errors(function() d:merge("other", { money = 1 }) end, "unknown model", "merge")
+    eq(m.money, 9, "the only model was written")
+end)
+
+check("push appends an entry to the array at the path", function()
+    local F = fresh()
+    local m = { items = { { id = 1 } } }
+    local d = newdoc(F, { shop = m })
+    d:push("shop", "items", { id = 9 })
+    eq(#m.items, 2); eq(m.items[2].id, 9, "the new entry is last")
+    errors(function() d:push("shop", "items[1].id", 1) end, "not an array", "push to a number")
+end)
+
+check("removeAt removes the 1-based entry; an index out of range is an error", function()
+    local F = fresh()
+    local m = { items = { { id = 1 }, { id = 2 }, { id = 3 } } }
+    local d = newdoc(F, { shop = m })
+    d:removeAt("shop", "items", 1)
+    eq(#m.items, 2); eq(m.items[1].id, 2, "the first entry is gone")
+    errors(function() d:removeAt("shop", "items", 3) end, "no such entry", "past the end")
+    errors(function() d:removeAt("shop", "items", 0) end, "no such entry", "index 0")
+    eq(#m.items, 2)
+end)
+
+check("models: every model of the document is kept by name and can be merged into", function()
+    local F = fresh()
+    local a, b = { x = 1 }, { y = 2 }
+    local d = newdoc(F, { a = a, b = b })
+    d:merge("a", { x = 10 }); d:merge("b", { y = 20 })
+    eq(a.x, 10); eq(b.y, 20)
+    errors(function() d:merge("b", { z = 1 }) end, "lacks", "a field the model lacks")
+    errors(function() d:merge("c", { x = 1 }) end, "unknown model", "an unknown model")
+end)
+
+check("F.case: a document with several models writes the others under models", function()
+    local F = fresh()
+    local d = newdoc(F, { a = { x = 1 }, b = { y = 2 } })
+    local c = F.case("two", d)
+    eq(c.model.x, 1, "model is the first by name")
+    eq(c.models.b.y, 2, "models.b")
+    eq(c.models.a, nil, "models.a (it is model)")
+    eq(F.case("one", newdoc(F, { a = { x = 1 } })).models, nil, "a single-model case has no models")
+end)
+
+check("create accepts source (inline RML) and needs exactly one of document / source", function()
+    local F = fresh()
+    local d = assert(Open77.ui.create({ source = "<rml/>", models = { m = { a = 1 } } }))
+    eq(d.opts.source, "<rml/>")
+    errors(function() Open77.ui.create({ models = {} }) end, "exactly one", "neither")
+    errors(function() Open77.ui.create({ document = path, source = "<rml/>" }) end, "exactly one", "both")
+end)
+
+check("create: a document file that does not exist is nil, undeclared_file", function()
+    fresh()
+    local d, why = Open77.ui.create({ document = "no/such.rml" })
+    eq(d, nil); eq(why, "undeclared_file:no/such.rml")
+end)
+
 if failed > 0 then say(failed .. " check(s) failed"); os.exit(1) end
