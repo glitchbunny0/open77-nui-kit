@@ -31,3 +31,20 @@ mutant host host/common.hpp "json: a bare word is an error" \
     'else fail("unexpected character");' 'else p++;'
 mutant host host/common.hpp "json: an integer past int64 is kept as a double" \
     'if (frac || errno == ERANGE)' 'if (frac)'
+
+# case shapes
+mutant host host/common.hpp "input: a click without sel or event is an error" \
+    'if (!sel || sel->t != J::Str) badInput(kw + ".sel must be a string");' ''
+mutant host host/common.hpp "input: a parity step without its fields is an error" \
+    '(set->t != J::Str || !st.get("value"))' '(set->t != J::Str)'
+mutant host host/common.hpp "input: a parity case without a model is an error" \
+    'need("model", J::Obj, "an object", mode == Mode::Parity);' 'need("model", J::Obj, "an object", false);'
+mutant host host/common.hpp "input: a place that is not [left, top] is an error" \
+    'if (kv.second.t != J::Arr || kv.second.a.size() != 2 || !isNum(&kv.second.a[0]) || !isNum(&kv.second.a[1]))' \
+    'if (kv.second.t != J::Arr)'
+mutant host host/mode_parity.inc "input: a bad set path is an error, not a hang or a crash" \
+    'if (close == std::string::npos) badInput' 'if (false) badInput'
+mutant host host/common.hpp "input: a model bound twice is an error" \
+    'if (!ctor) badInput(' 'if (false) badInput('
+mutant host host/mode_layout.inc "input: a fonts.json without faces is an error" \
+    'if (faces.empty()) badInput(' 'if (false) badInput('

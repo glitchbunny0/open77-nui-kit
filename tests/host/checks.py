@@ -52,6 +52,17 @@ def doc(name, body, rcss='', head=''):
     return path
 
 
+PROBE_FONT = {'ascent': 800, 'descent': 200, 'def': 500, 'adv': {}}
+
+
+def fonts(faces=None, name='fonts'):
+    """Write a fonts.json (default: one face, family "probe" weight 400, every glyph 500/1000 em); return its path."""
+    path = os.path.join(WORK, name + '.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump({'probe|400': PROBE_FONT} if faces is None else faces, f)
+    return path
+
+
 def parity(rml, model, steps=(), events=()):
     """One parity case: the dumps (one per step) of the document <body data-model="m">rml</body>."""
     r = host('parity', cases=[{'name': 'p', 'rml': f'<body data-model="m">{rml}</body>', 'model': model,
@@ -120,6 +131,54 @@ def _():
     r = host('check', doc('big', '<p>{{n}}</p>'), 'm', cases='[{"name":"b","model":{"n":123456789012345678901234567890}}]')
     expect(r.rc == 0, f'rc {r.rc}: {r.err[:200]}')
     expect('9223372036854775807' not in r.out and '"123456789012345' in r.out, 'outline: ' + r.out[:300])
+
+
+# ---- case shapes: an error naming the field, never a crash
+def bad_case(mode, args, cases, msg):
+    r = host(mode, *args, cases=cases, timeout=4)
+    expect(r.rc == 2 and msg in r.err, f'rc {r.rc}, stderr {r.err[:300]!r}, want {msg!r}')
+
+
+@check('input: a click without sel or event is an error')
+def _():
+    d = doc('plain', '<p>x</p>')
+    bad_case('check', [d, 'm'], [{'name': 'a', 'clicks': [{'event': 'x'}]}], 'clicks[0].sel must be a string')
+    bad_case('check', [d, 'm'], [{'name': 'a', 'clicks': [{'sel': 'p'}]}], 'clicks[0].event must be a string')
+
+
+@check('input: a parity step without its fields is an error')
+def _():
+    case = {'name': 'a', 'rml': '<body data-model="m"></body>', 'model': {}}
+    bad_case('parity', [], [dict(case, steps=[{'set': 'x'}])], '"set" needs a path string and a "value"')
+    bad_case('parity', [], [dict(case, steps=[{'event': 'x'}])], '"event" needs an element id and a "type"')
+
+
+@check('input: a parity case without a model is an error')
+def _():
+    bad_case('parity', [], [{'name': 'a', 'rml': '<body data-model="m"></body>'}], '"model" is missing')
+
+
+@check('input: a place that is not [left, top] is an error')
+def _():
+    bad_case('layout', [doc('plain', '<p id="t">x</p>'), 'm', fonts()], [{'name': 'a', 'place': {'#t': [5]}}],
+             'place["#t"] must be [left, top]')
+
+
+@check('input: a bad set path is an error, not a hang or a crash')
+def _():
+    for path in ['items[1', 'items[-1]', 'items[x]']:
+        bad_case('parity', [], [{'name': 'a', 'rml': '<body data-model="m"></body>', 'model': {'items': [1, 2]},
+                                 'steps': [{'set': path, 'value': 3}]}], 'set path "' + path + '"')
+
+
+@check('input: a model bound twice is an error')
+def _():
+    bad_case('check', [doc('plain', '<p>x</p>'), 'm'], [{'name': 'a', 'model': {}, 'models': {'m': {}}}], 'bound twice')
+
+
+@check('input: a fonts.json without faces is an error')
+def _():
+    bad_case('layout', [doc('plain', '<p>x</p>'), 'm', fonts({}, 'empty')], [{'name': 'a', 'model': {}}], 'no font faces')
 
 
 def main():

@@ -66,8 +66,12 @@ static J* walk(J* root, const std::string& path) {
 			if (!tok.empty()) member(tok);
 			tok.clear();
 			size_t close = path.find(']', i);
-			int idx = std::stoi(path.substr(i + 1, close - i - 1));
-			cur = (cur && cur->t == J::Arr && idx < (int)cur->a.size()) ? &cur->a[idx] : nullptr;
+			if (close == std::string::npos) badInput("set path \"" + path + "\": '[' without ']'");
+			std::string digits = path.substr(i + 1, close - i - 1);
+			if (digits.empty() || digits.find_first_not_of("0123456789") != std::string::npos)
+				badInput("set path \"" + path + "\": the index must be a number >= 0");
+			size_t idx = strtoul(digits.c_str(), nullptr, 10);
+			cur = (cur && cur->t == J::Arr && idx < cur->a.size()) ? &cur->a[idx] : nullptr;
 			i = close + 1;
 		}
 		else { tok += c; i++; }
@@ -77,7 +81,7 @@ static J* walk(J* root, const std::string& path) {
 }
 
 int run() {
-	J cases = readCases();
+	J cases = readCases(Mode::Parity);
 
 	NullRender render;
 	Sys sys;

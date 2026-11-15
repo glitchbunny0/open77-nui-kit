@@ -131,16 +131,25 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 		if (!fj) badInput("cannot read " + fontsPath);
 		std::string ftxt((std::istreambuf_iterator<char>(fj)), std::istreambuf_iterator<char>());
 		J fonts = parseJson(ftxt, fontsPath);
+		if (fonts.t != J::Obj) badInput(fontsPath + ": must be an object of faces");
 		for (auto& kv : fonts.o) {
 			Face f; f.key = kv.first;
-			if (J* a = kv.second.get("ascent")) f.ascent = a->t == J::Int ? a->i : a->n;
-			if (J* d = kv.second.get("descent")) f.descent = d->t == J::Int ? d->i : d->n;
-			if (J* d = kv.second.get("def")) f.def = d->t == J::Int ? d->i : d->n;
-			if (J* adv = kv.second.get("adv")) for (auto& c : adv->o) f.adv[std::stoul(c.first)] = c.second.t == J::Int ? c.second.i : c.second.n;
+			if (kv.second.t != J::Obj) badInput(fontsPath + ": face \"" + kv.first + "\" must be an object");
+			if (J* a = kv.second.get("ascent"); isNum(a)) f.ascent = num(*a);
+			if (J* d = kv.second.get("descent"); isNum(d)) f.descent = num(*d);
+			if (J* d = kv.second.get("def"); isNum(d)) f.def = num(*d);
+			if (J* adv = kv.second.get("adv"))
+				for (auto& c : adv->o) {
+					char* end = nullptr;
+					unsigned long cp = strtoul(c.first.c_str(), &end, 10);
+					if (c.first.empty() || *end || !isNum(&c.second)) badInput(fontsPath + ": face \"" + kv.first + "\": bad advance \"" + c.first + "\"");
+					f.adv[(unsigned)cp] = num(c.second);
+				}
 			faces.push_back(f);
 		}
+		if (faces.empty()) badInput(fontsPath + ": no font faces (rml-preview writes one per --font that is not italic)");
 	}
-	J cases = readCases();
+	J cases = readCases(Mode::Layout);
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
@@ -162,8 +171,8 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 					ElementList list;
 					doc->QuerySelectorAll(list, kv.first);
 					for (Element* e : list) {
-						e->SetProperty("left", fnum(kv.second.a[0].t == J::Int ? kv.second.a[0].i : kv.second.a[0].n) + "dp");
-						e->SetProperty("top", fnum(kv.second.a[1].t == J::Int ? kv.second.a[1].i : kv.second.a[1].n) + "dp");
+						e->SetProperty("left", fnum(num(kv.second.a[0])) + "dp");
+						e->SetProperty("top", fnum(num(kv.second.a[1])) + "dp");
 					}
 				}
 			context->Update();

@@ -187,10 +187,80 @@ struct P {
 	}
 };
 static J parseJson(const std::string& text, const std::string& what) { return P(text, what).all(); }
-static J readCases() {
+static double num(const J& j) { return j.t == J::Int ? (double)j.i : j.n; }
+static bool isNum(const J* j) { return j && (j->t == J::Int || j->t == J::Num); }
+
+// The case fields every mode reads, checked before anything runs: a wrong shape is an error naming the case and the
+// field (exit 2), never a crash or a silently skipped click. parity: the cases of lrbind/tests/parity/cases.mjs.
+enum class Mode { Check, Layout, Parity };
+static void validateCases(J& cases, Mode mode) {
+	for (size_t ci = 0; ci < cases.a.size(); ci++) {
+		J& c = cases.a[ci];
+		std::string where = "case " + std::to_string(ci);
+		if (c.t != J::Obj) badInput(where + " is not an object");
+		J* name = c.get("name");
+		if (!name || name->t != J::Str) badInput(where + ": \"name\" must be a string");
+		where += " (\"" + name->s + "\")";
+		auto need = [&](const char* key, J::T type, const char* what, bool required) -> J* {
+			J* f = c.get(key);
+			if (!f) { if (required) badInput(where + ": \"" + key + "\" is missing"); return nullptr; }
+			if (f->t != type) badInput(where + ": \"" + key + "\" must be " + what);
+			return f;
+		};
+		need("model", J::Obj, "an object", mode == Mode::Parity);
+		if (J* ms = need("models", J::Obj, "an object of models", false))
+			for (auto& kv : ms->o)
+				if (kv.second.t != J::Obj) badInput(where + ": models." + kv.first + " must be an object");
+		if (J* evs = need("events", J::Arr, "an array of names", false))
+			for (J& e : evs->a)
+				if (e.t != J::Str) badInput(where + ": \"events\" must hold strings");
+		if (J* size = need("size", J::Arr, "[width, height]", false))
+			if (size->a.size() != 2 || !isNum(&size->a[0]) || !isNum(&size->a[1]) || num(size->a[0]) < 1 || num(size->a[1]) < 1)
+				badInput(where + ": \"size\" must be [width, height], both positive");
+		if (mode == Mode::Check)
+			if (J* clicks = need("clicks", J::Arr, "an array", false))
+				for (size_t i = 0; i < clicks->a.size(); i++) {
+					J& k = clicks->a[i];
+					std::string kw = where + ": clicks[" + std::to_string(i) + "]";
+					if (k.t != J::Obj) badInput(kw + " must be an object");
+					J* sel = k.get("sel");
+					J* ev = k.get("event");
+					J* args = k.get("args");
+					if (!sel || sel->t != J::Str) badInput(kw + ".sel must be a string");
+					if (!ev || ev->t != J::Str) badInput(kw + ".event must be a string");
+					if (args && args->t != J::Arr) badInput(kw + ".args must be an array");
+				}
+		if (mode == Mode::Layout)
+			if (J* place = need("place", J::Obj, "an object", false))
+				for (auto& kv : place->o)
+					if (kv.second.t != J::Arr || kv.second.a.size() != 2 || !isNum(&kv.second.a[0]) || !isNum(&kv.second.a[1]))
+						badInput(where + ": place[\"" + kv.first + "\"] must be [left, top]");
+		if (mode == Mode::Parity) {
+			need("rml", J::Str, "a string", true);
+			if (J* steps = need("steps", J::Arr, "an array", false))
+				for (size_t i = 0; i < steps->a.size(); i++) {
+					J& st = steps->a[i];
+					std::string sw = where + ": steps[" + std::to_string(i) + "]";
+					if (st.t != J::Obj) badInput(sw + " must be an object");
+					J* set = st.get("set");
+					J* ev = st.get("event");
+					if (!set && !ev) badInput(sw + " needs \"set\" or \"event\"");
+					if (set && (set->t != J::Str || !st.get("value"))) badInput(sw + ": \"set\" needs a path string and a \"value\"");
+					if (ev) {
+						J* type = st.get("type");
+						J* params = st.get("params");
+						if (ev->t != J::Str || !type || type->t != J::Str) badInput(sw + ": \"event\" needs an element id and a \"type\" string");
+						if (params && params->t != J::Obj) badInput(sw + ": \"params\" must be an object");
+					}
+				}
+		}
+	}
+}
+static J readCases(Mode mode) {
 	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
 	J cases = parseJson(input, "the cases");
 	if (cases.t != J::Arr) badInput("the cases must be a JSON array");
+	validateCases(cases, mode);
 	return cases;
 }
 
@@ -289,6 +359,7 @@ static void bindModels(Context* context, J& c, const std::string& defName,
                        const std::function<void(DataModelConstructor&)>& extra = nullptr) {
 	auto bindOne = [&](const std::string& name, J* m) {
 		DataModelConstructor ctor = context->CreateDataModel(name);
+		if (!ctor) badInput("case \"" + c.get("name")->s + "\": the data model '" + name + "' is bound twice (\"model\" binds it under that name too)");
 		if (m && m->t == J::Obj)
 			for (auto& kv : m->o) ctor.BindCustomDataVariable(kv.first, DataVariable(&dyn_def, &kv.second));
 		if (extra) extra(ctor);
@@ -298,7 +369,6 @@ static void bindModels(Context* context, J& c, const std::string& defName,
 		for (auto& kv : ms->o) bindOne(kv.first, &kv.second);
 }
 static Vector2i sizeOf(J& c) {
-	if (J* s = c.get("size"))
-		if (s->t == J::Arr && s->a.size() == 2) return {(int)(s->a[0].t == J::Int ? s->a[0].i : s->a[0].n), (int)(s->a[1].t == J::Int ? s->a[1].i : s->a[1].n)};
+	if (J* s = c.get("size")) return {(int)num(s->a[0]), (int)num(s->a[1])};
 	return {1920, 1080};
 }

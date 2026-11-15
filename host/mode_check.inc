@@ -31,7 +31,7 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 }
 static std::vector<std::string> fired;
 int run(const std::string& docPath, const std::string& modelName) {
-	J cases = readCases();
+	J cases = readCases(Mode::Check);
 	NullRender render; Sys sys; NullFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
