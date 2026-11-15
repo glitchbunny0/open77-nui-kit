@@ -83,7 +83,7 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
 
 | What | Where | Run |
 |---|---|---|
-| Parity: 50 cases, every snapshot compared with real RmlUi 6.3 | `tests/parity/` (`cases.mjs`, `golden.json`) | `bin/lrbind-parity` |
+| Parity: every snapshot of every case compared with real RmlUi 6.3, form controls included (the harness drops only the classes and local styles RmlUi's controls give themselves) | `tests/parity/` (`cases.mjs`, `golden.json`) | `bin/lrbind-parity` |
 | Page protocol, form controls, mockup mode | `tests/protocol.test.mjs` | `node lrbind/tests/protocol.test.mjs` |
 | Lua facade | `tests/lrbind_lua.lua` | `cd lrbind && lua5.4 tests/lrbind_lua.lua` |
 | All of the above, plus the golden regenerated through real RmlUi and compared, and one planted bug per check | `tests/suite.py` (the kit's `tests/lrbind.sh`) | `scripts/test.sh` |

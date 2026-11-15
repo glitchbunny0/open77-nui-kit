@@ -246,6 +246,29 @@ MUTANTS += [
      'change path back to 1-based'),
 ]
 
+# ==== the review's planted bugs that the kit's suites missed, caught by the cases merged from it (form controls compared
+# with RmlUi's own control styling ignored, event params handed to the DOM event as RmlUi numbers them)
+MUTANTS += [
+    ('<= evaluates as <', 'lrbind.js', 'case I.LessEq: R = toNum(L) <= toNum(R);', 'case I.LessEq: R = toNum(L) < toNum(R);',
+     'parity', 'relational eq-forms'),
+    ('>= evaluates as >', 'lrbind.js', 'case I.GreaterEq: R = toNum(L) >= toNum(R);',
+     'case I.GreaterEq: R = toNum(L) > toNum(R);', 'parity', 'relational eq-forms'),
+    ('string != compares as ==', 'lrbind.js', 'case I.NotEqual: R = anyString(L, R) ? toStr(L) !== toStr(R)',
+     'case I.NotEqual: R = anyString(L, R) ? toStr(L) === toStr(R)', 'parity', 'relational eq-forms'),
+    ('CastToInt rounds instead of truncating', 'lrbind.js', 'return Number.isFinite(v) ? Math.trunc(v) | 0 : null;',
+     'return Number.isFinite(v) ? Math.round(v) | 0 : null;', 'parity', 'dynamic index edges'),
+    ('data-rml content is not bound', 'lrbind.js', 'view.children = bindChildren(view.model, el);', 'view.children = [];',
+     'parity', 'rml view binds what it inserts'),
+    ('modifier keys dropped from ev.*', 'lrbind.js', 'if ("ctrlKey" in e) {', 'if (false) {', 'parity',
+     'event modifier keys and mouse button'),
+    ('mouse button not renumbered (RmlUi: 1 = right)', 'lrbind.js',
+     'p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;', 'p.button = e.button;', 'parity',
+     'event modifier keys and mouse button'),
+    ('data-checked writes no checked attribute', 'lrbind.js',
+     'if (el.hasAttribute("checked") !== on) { if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked"); }',
+     '', 'parity', 'click a checkbox'),
+]
+
 
 # ==== the run
 

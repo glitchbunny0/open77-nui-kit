@@ -55,17 +55,55 @@ function dump(node) {
   for (const c of node.childNodes) {
     if (c.nodeType === 3 && collapse(c.nodeValue) === "") continue;
     if (c.nodeType !== 1 && c.nodeType !== 3) continue;
-    if (c.nodeType === 1 && c.tagName === "STYLE") continue;
+    if (c.nodeType === 1 && c.tagName.toUpperCase() === "STYLE") continue;
     children.push(dump(c));
   }
   return { tag: node.tagName.toLowerCase(), attrs, classes: Array.from(node.classList).sort(), style, children };
 }
 
+// What RmlUi's form controls add to themselves, and nothing else: ElementFormControl sets a local `tab-index: auto`,
+// ElementFormControlInput sets a class named after its type ("text" when the type is unknown), and the text widget
+// (text/password inputs, textarea) sets seven local properties. Dropped on both sides, so the rest of an <input> (its
+// attributes, other classes and styles) is still compared.
+const INPUT_TYPES = new Set(["password", "radio", "checkbox", "range", "submit", "button"]);
+const TEXT_WIDGET = { "white-space": ["pre"], "overflow-x": ["hidden"], "overflow-y": ["hidden"], drag: ["drag"],
+  "word-break": ["break-word"], "text-transform": ["none"], clip: ["auto", "always"] };
+function formNoise(d) {
+  if (!d.tag) return d;
+  d = { ...d, children: d.children.map(formNoise) };
+  if (d.tag !== "input" && d.tag !== "textarea" && d.tag !== "select") return d;
+  const style = { ...d.style };
+  if (style["tab-index"] === "auto") delete style["tab-index"];
+  let classes = d.classes;
+  const type = INPUT_TYPES.has(d.attrs.type) ? d.attrs.type : "text";
+  if (d.tag === "input") classes = classes.filter((c) => c !== type);
+  if (d.tag === "textarea" || (d.tag === "input" && (type === "text" || type === "password"))) {
+    for (const [k, vs] of Object.entries(TEXT_WIDGET)) if (vs.includes(style[k])) delete style[k];
+  }
+  return { ...d, classes, style };
+}
+
 // RmlUi's own warnings that have nothing to do with bindings (no font engine in the reference host)
 const dataWarnings = (list) => list.filter((w) => !w.startsWith("No font face") && !w.startsWith("  ") && !/^\s*\^$/.test(w));
 
+// A step's event as the DOM fires it. params are RmlUi's (button 1 = right, modifiers 0/1, wheel in notches); the shim
+// must turn the DOM's form back into exactly those.
+const DOM_TYPE = { mousescroll: "wheel", textinput: "input" };
+function domEvent(w, type, p) {
+  const mods = { ctrlKey: !!p.ctrl_key, shiftKey: !!p.shift_key, altKey: !!p.alt_key, metaKey: !!p.meta_key };
+  const mouse = { clientX: p.mouse_x || 0, clientY: p.mouse_y || 0, button: p.button === 1 ? 2 : p.button === 2 ? 1 : p.button || 0 };
+  const t = DOM_TYPE[type] || type;
+  if (/^key/.test(type)) return new w.KeyboardEvent(t, { bubbles: true, ...mods });
+  if (type === "mousescroll") return new w.WheelEvent(t, { bubbles: true, ...mods, ...mouse, deltaX: (p.wheel_delta_x || 0) * 100, deltaY: (p.wheel_delta_y || 0) * 100 });
+  if (/^(mouse|click|dblclick)/.test(type)) return new w.MouseEvent(t, { bubbles: true, ...mods, ...mouse });
+  return new w.Event(t, { bubbles: true });
+}
+
 async function runCase(c) {
-  const dom = new JSDOM(`<!doctype html><html><head></head>${c.rml}</html>`, { runScripts: "outside-only" });
+  // xhtml: the page parsed as XML, as RmlUi parses a document (attribute names keep their case)
+  const dom = c.xhtml
+    ? new JSDOM(`<html xmlns="http://www.w3.org/1999/xhtml"><head></head>${c.rml}</html>`, { runScripts: "outside-only", contentType: "application/xhtml+xml" })
+    : new JSDOM(`<!doctype html><html><head></head>${c.rml}</html>`, { runScripts: "outside-only" });
   const w = dom.window;
   const emitted = [];
   const handlers = {};
@@ -92,8 +130,7 @@ async function runCase(c) {
     if (s.set !== undefined) handlers["lrbind:set"]({ model: "m", path: s.set, value: structuredClone(s.value) });
     if (s.event !== undefined) {
       const el = w.document.getElementById(s.event);
-      const p = s.params || {};
-      if (el) el.dispatchEvent(new w.MouseEvent(s.type, { bubbles: true, clientX: p.mouse_x || 0, clientY: p.mouse_y || 0 }));
+      if (el) el.dispatchEvent(domEvent(w, s.type, s.params || {}));
     }
     await tick();
     snap();
@@ -101,7 +138,7 @@ async function runCase(c) {
   return snaps;
 }
 
-function stripRoot(dom) { return { ...dom, style: {} }; }
+function stripRoot(dom) { return formNoise({ ...dom, style: {} }); }
 
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
