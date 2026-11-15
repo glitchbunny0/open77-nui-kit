@@ -350,6 +350,33 @@ def _():
                 'decorator: linear-gradient(90dge, #f00, #00f), fx(border-flow 1 2)'])
 
 
+# ---- layout mode
+def layout(body, rcss='', cases=None, faces=None, name='lay'):
+    """The layout of a probe document: a list (one per case) of {name, els, ...}."""
+    r = host('layout', doc(name, body, rcss), 'm', fonts(faces), cases=cases or [{'name': 'c', 'model': {}}])
+    expect(r.rc == 0, f'layout rc {r.rc}: {r.err[:300]}')
+    return json.loads(r.out)
+
+
+def els(body, rcss='', **kw):
+    return layout(body, rcss, **kw)[0]['els']
+
+
+def texts(es):
+    return [e['text'] for e in es if 'text' in e]
+
+
+def ids(es):
+    return [e['id'] for e in es if 'tag' in e and e['id']]
+
+
+@check('layout: a hidden element drops its text and its whole subtree')
+def _():
+    es = els('<div id="h">HIDDEN<div id="hc">child</div><div id="vis">shown?</div></div><div id="ok">OK</div>',
+             '#h { visibility: hidden; } #vis { visibility: visible; } div { display: block; }')
+    expect(texts(es) == ['OK'] and ids(es) == ['ok'], f'texts {texts(es)}, boxes {ids(es)}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

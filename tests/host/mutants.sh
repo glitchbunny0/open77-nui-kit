@@ -96,3 +96,7 @@ mutant host host/common.hpp "open77: fx() takes an effect name, numbers and a co
     "if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;" "if (!(isalnum((unsigned char)c) || c == '_')) return false;"
 mutant host host/common.hpp "open77: fx() without an effect name or with units is an error" \
     'if (!effect || effect->Get<String>().empty()) {' 'if (!effect) {'
+
+# layout mode
+mutant host host/mode_layout.inc "layout: a hidden element drops its text and its whole subtree" \
+    'if (!el->IsVisible()) return;' 'if (cv.display() == Style::Display::None) return;'

@@ -37,11 +37,14 @@ static void emit(Element* el, std::ostringstream& out, bool& first, float, Clip 
 		return;
 	}
 	const auto& cv = el->GetComputedValues();
-	if (cv.display() == Style::Display::None) return;
-	float op = cv.opacity();   // RmlUi's computed opacity already carries the ancestors'
+	// RmlUi drops an element that is not visible (display: none or visibility: hidden) from the stacking context with
+	// its whole subtree (Element::AddToStackingContext): neither it, its text nor any descendant is drawn, even one
+	// that sets visibility: visible again
+	if (!el->IsVisible()) return;
+	float op = cv.opacity();   // opacity is inherited (not multiplied), and RmlUi draws with the computed value
 	Vector2f off = el->GetAbsoluteOffset(BoxArea::Border);
 	Vector2f sz = el->GetBox().GetSize(BoxArea::Border);
-	if (cv.visibility() == Style::Visibility::Visible) {
+	{
 		auto& box = el->GetBox();
 		std::string mask, deco, back;
 		if (auto* pm = el->GetProperty("mask-image")) mask = pm->ToString();
