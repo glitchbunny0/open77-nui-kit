@@ -47,6 +47,13 @@ MUTANTS = [
     ('gradient-tiled-origin', 'css_props.py', 'if out[0][1] > 0:', 'if False:', 'fixture 13-values'),
     ('gradient-sized-report', 'css_props.py', "issues.append(Issue(f'{what} {name}() sized {size}'",
      "(lambda *a: None)(Issue(f'{what} {name}() sized {size}'", 'fixture 13-values'),
+    ('lab-pass', 'css_values.py', '        return _cielab(t)', "        raise ValueIssue('lab')", 'unit lab'),
+    ('lab-pass-gradient', 'css_values.py', "if re.match(r'^(ok)?(lab|lch)\\(', n):", 'if False:', 'fixture 13-values'),
+    ('lch-hue-rad', 'css_values.py', "math.degrees(x[1]) if x[2] == 'rad' else x[1]", 'x[1]', 'unit lch hue'),
+    ('hsl-hue-rad', 'css_values.py', 'hh = math.degrees(hh)', 'hh = hh', 'unit hsl hue'),
+    ('hsl-half-up', 'css_values.py', 'int(math.floor(x + 0.5 + 1e-7))', 'int(round(x))', 'unit hsl half'),
+    ('colour-name-unknown', 'css_props.py', "        if bad:\n            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour",
+     "        if False:\n            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour", 'fixture 13-values'),
 ]
 
 

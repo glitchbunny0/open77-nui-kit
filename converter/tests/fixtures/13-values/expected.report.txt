@@ -9,3 +9,5 @@ css      v.css:22  background position 5dp  =>  RmlUi's image alignment takes px
 css      v.css:25  background linear-gradient() sized 50% 50% at 0 0  =>  RmlUi's gradient decorators fill the box: written filling it (give the gradient an element of that size and place, or use a repeating gradient)
 css      v.css:26  background repeat round  =>  RmlUi tiles at the natural size: written as repeat
 css      v.css:29  background position 1dp 2dp 3dp  =>  RmlUi aligns with two values (x y): centred instead; write it as two values
+css      v.css:33  color: canvastext  =>  RmlUi has no colour named canvastext: write the colour as hex
+css      v.css:34  border-color: #FF0000 buttonface  =>  RmlUi has no colour named buttonface: write the colour as hex

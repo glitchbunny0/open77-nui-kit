@@ -417,7 +417,8 @@ class _Calc:
 
 # ---- colours
 def _hex(r, g, b, a=1.0):
-    r, g, b = [max(0, min(255, int(round(x)))) for x in (r, g, b)]
+    # half rounds up, as browsers do (round() rounds half to even, and float noise lands 59.5 at 59.4999...)
+    r, g, b = [max(0, min(255, int(math.floor(x + 0.5 + 1e-7)))) for x in (r, g, b)]
     al = max(0, min(255, int(a * 255 + 0.5)))
     return '#%02X%02X%02X' % (r, g, b) + ('' if al == 255 else '%02X' % al)
 
@@ -463,6 +464,8 @@ def color_of(t):
             return 'transparent'
         if n in NAMED:
             return NAMED[n]
+        if re.match(r'^(ok)?(lab|lch)\(', n):
+            return t[1]   # a lab/lch colour convert_colors already wrote in RmlUi's form
         return None
     if t[0] == 'func' and t[1] in ('rgb', 'rgba'):
         ch, al = _func_args(t[2])
@@ -475,9 +478,40 @@ def color_of(t):
         s, l = _chan(ch[1], 100) / 100, _chan(ch[2], 100) / 100
         r, g, b = colorsys.hls_to_rgb((hh % 360) / 360, l, s)
         return _hex(r * 255, g * 255, b * 255, a=_alpha(al) if al else 1.0)
-    if t[0] == 'func' and t[1] in ('hwb', 'lab', 'lch', 'oklab', 'oklch', 'color', 'color-mix'):
+    if t[0] == 'func' and t[1] in ('lab', 'lch', 'oklab', 'oklch'):
+        return _cielab(t)
+    if t[0] == 'func' and t[1] in ('hwb', 'color', 'color-mix', 'light-dark', 'device-cmyk'):
         raise ValueIssue(f'colour function {t[1]}()', 'write the colour as #RRGGBBAA')
     return None
+
+
+def _cielab(t):
+    """lab()/lch()/oklab()/oklch(): RmlUi 6.3 parses them itself (PropertyParserColour.cpp), space syntax only, the hue
+    as a plain number of degrees (it reads the number and ignores a unit) -> the function as RmlUi reads it"""
+    flat = [x for x in t[2] if x[0] != 'ws']
+    if any(x[0] == 'comma' for x in flat) or any(x[0] == 'ident' and x[1].lower() == 'from' for x in flat):
+        raise ValueIssue(f'colour function {t[1]}() ' + ser(t[2]), 'write it with spaces (no commas, no relative '
+                         'colour), or as #RRGGBBAA')
+    alpha = None
+    if any(x[0] == 'slash' for x in flat):
+        k = [i for i, x in enumerate(flat) if x[0] == 'slash'][0]
+        alpha, flat = flat[k + 1:], flat[:k]
+        if len(alpha) != 1:
+            raise ValueIssue(f'colour function {t[1]}() alpha', 'write the colour as #RRGGBBAA')
+    if len(flat) != 3 or any(not (x[0] == 'num' or (x[0] == 'ident' and x[1].lower() == 'none')) for x in flat):
+        raise ValueIssue(f'colour function {t[1]}() ' + ser(t[2]), 'write the colour as #RRGGBBAA')
+    vals = []
+    for k, x in enumerate(flat):
+        if x[0] == 'ident':
+            vals.append('none')
+        elif k == 2 and t[1] in ('lch', 'oklch'):
+            vals.append(fmt(math.degrees(x[1]) if x[2] == 'rad' else x[1]))
+        else:
+            vals.append(fmt(x[1]) + (x[2] if x[2] == '%' else ''))
+    if alpha:
+        a = alpha[0]
+        vals += ['/', 'none' if a[0] == 'ident' else fmt(a[1]) + (a[2] if a[2] == '%' else '')]
+    return '%s(%s)' % (t[1], ' '.join(vals))
 
 
 def convert_colors(toks, current=None):

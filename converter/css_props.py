@@ -644,14 +644,25 @@ def map_decl(d, ctx, issues):
         return []
     if n in PROPERTIES:
         return check_keywords(n, s, ws, issues)
+    if n in COLOUR_SHORTHANDS:
+        return check_keywords(n, s, ws, issues)
     if n in SHORTHANDS:
         return [(n, s)]
     issues.append(Issue(f'{n}: {s}', 'RmlUi 6.3 has no %s property' % n))
     return []
 
 
+COLOUR_SHORTHANDS = {'border-color'}
+
+
 def check_keywords(n, s, ws, issues):
-    kinds, kws = PROPERTIES[n]
+    kinds, kws = PROPERTIES[n] if n in PROPERTIES else (('color',), ())
+    if 'color' in kinds:   # a name the colour table does not know (CSS system colours, typos): RmlUi refuses it
+        bad = [t[1] for w in ws for t in w if t[0] == 'ident' and t[1].lower() not in tuple(kws or ()) + ('transparent',)
+               and not V.is_color(t)]
+        if bad:
+            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour named {bad[0]}: write the colour as hex'))
+            return []
     if len(ws) == 1 and len(ws[0]) == 1 and ws[0][0][0] == 'ident' and 'string' not in kinds and kws is not None:
         if ws[0][0][1] not in kws and not (kinds and ws[0][0][1] in ('transparent',) and 'color' in kinds):
             if 'color' in kinds or 'transform' in kinds or 'filter' in kinds or 'box_shadow' in kinds \
