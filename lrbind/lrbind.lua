@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT
--- lrbind.lua, part of open77-nui-kit (https://github.com/glitchbunny0/open77-nui-kit).
--- Copyright (c) 2026 glitchbunny0 and contributors
+-- lrbind.lua, part of open77-nui-kit.
+-- Copyright (c) 2026 the open77-nui-kit authors
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 -- documentation files (the "Software"), to deal in the Software without restriction, including without limitation

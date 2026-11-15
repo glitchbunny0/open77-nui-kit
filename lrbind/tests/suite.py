@@ -119,12 +119,12 @@ CHECKS.update(parity=check_parity, protocol=check_protocol, lua=check_lua)
 
 # ==== header: the MIT notice travels with every copy (lrbind-sync writes these files into resources that ship)
 HEADER = {
-    'js': ['// SPDX-License-Identifier: MIT', 'Copyright (c) 2026 glitchbunny0 and contributors',
+    'js': ['// SPDX-License-Identifier: MIT', 'Copyright (c) 2026 the open77-nui-kit authors',
            'ported from RmlUi', 'Copyright (c) 2008-2014 CodePoint Ltd, Shift Technology Ltd, and contributors',
            'Copyright (c) 2019-2026 The RmlUi Team, and contributors',
            'The above copyright notice and this permission notice shall be included in all copies',
            'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'],
-    'lua': ['-- SPDX-License-Identifier: MIT', 'Copyright (c) 2026 glitchbunny0 and contributors',
+    'lua': ['-- SPDX-License-Identifier: MIT', 'Copyright (c) 2026 the open77-nui-kit authors',
             'The above copyright notice and this permission notice shall be included in all copies',
             'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'],
 }
@@ -139,6 +139,8 @@ def check_header(js=JS, lua=LUA):
         if not text.startswith(HEADER[kind][0] + '\n'):
             missing.append(f'{os.path.basename(path)}: first line is not {HEADER[kind][0]!r}')
         missing += [f'{os.path.basename(path)}: no {s!r}' for s in HEADER[kind][1:] if s not in notice]
+        # copies ship to players (a server's client files are public): no account name (nor the repo URL that holds it)
+        missing += [f'{os.path.basename(path)}: names the account {w!r}' for w in ('glitchbunny',) if w in text.lower()]
     return not missing, ('MIT notice on lrbind.js (the kit, and RmlUi for the ported parts) and lrbind.lua (the kit)'
                          if not missing else 'FAIL header: ' + '; '.join(missing))
 
@@ -156,6 +158,8 @@ MUTANTS += [
     ('lrbind.js without the RmlUi copyright', 'lrbind.js', '// Copyright (c) 2019-2026 The RmlUi Team, and contributors\n',
      '', 'header', 'The RmlUi Team'),
     ('lrbind.lua without its SPDX line', 'lrbind.lua', '-- SPDX-License-Identifier: MIT\n', '', 'header', 'first line'),
+    ('lrbind.js names the repository', 'lrbind.js', '// lrbind.js, part of open77-nui-kit.\n',
+     '// lrbind.js, part of open77-nui-kit (https://github.com/glitchbunny0/open77-nui-kit).\n', 'header', 'names the account'),
     ('the kit file changes, the example copy does not', 'lrbind.js', '"use strict";', '"use strict"; ', 'example',
      'FAIL example'),
 ]

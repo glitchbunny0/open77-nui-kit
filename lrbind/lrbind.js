@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// lrbind.js, part of open77-nui-kit (https://github.com/glitchbunny0/open77-nui-kit).
-// Copyright (c) 2026 glitchbunny0 and contributors
+// lrbind.js, part of open77-nui-kit.
+// Copyright (c) 2026 the open77-nui-kit authors
 // The expression parser, interpreter and data views are ported from RmlUi (https://github.com/mikke89/RmlUi):
 // Copyright (c) 2008-2014 CodePoint Ltd, Shift Technology Ltd, and contributors
 // Copyright (c) 2019-2026 The RmlUi Team, and contributors
