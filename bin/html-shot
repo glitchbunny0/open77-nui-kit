@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""html-shot: screenshot a WebUI page (lrbind bindings) once per case, with the case's models injected, so that
+`rml-preview --compare <out>` puts the WebUI page next to its NativeUI twin.
+
+  html-shot PAGE.html CASES.json|- --out DIR [--model NAME] [--serve-root DIR] [--bg COLOR] [--wait MS]
+  html-shot --find          print the Chromium it would use (exit 2 when there is none)
+
+For every case the page is served over a local HTTP server (127.0.0.1, an ephemeral port, only while it runs) with
+one script added before </body>: LrBind.init({ models: { <model>: case.model, ...case.models },
+events: { <model>: case.events } }). Chromium's headless shell takes the shot at the case's size (default 1920x1080).
+  --model       the model name (default: the page's data-model attribute)
+  --serve-root  the folder served (default: the page's parent folder, so ../fonts and ../assets resolve)
+  --bg          a backdrop colour behind the page (default #141A20, rml-preview's own backdrop; 'none' for white)
+  --wait        virtual time budget for fonts and images, ms (default 2500)
+Chromium: $NUIKIT_CHROME, else Playwright's headless shell under ~/.cache/ms-playwright, else chromium/google-chrome
+on PATH. Exit status 2 when none is found (the tool is optional; nothing else in the kit needs it).
+"""
+import argparse, glob, http.server, json, os, re, shutil, socketserver, subprocess, sys, tempfile, threading
+
+
+def die(msg, code=2):
+    print('html-shot: ' + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def find_chrome():
+    env = os.environ.get('NUIKIT_CHROME')
+    if env:
+        return env if os.path.exists(env) else None
+    shells = sorted(glob.glob(os.path.expanduser(
+        '~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell')),
+        key=lambda p: int(re.search(r'-(\d+)/', p).group(1)) if re.search(r'-(\d+)/', p) else 0)
+    if shells:
+        return shells[-1]
+    for name in ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
+def model_name(html):
+    m = re.search(r'data-model\s*=\s*"([^"]+)"', html)
+    return m.group(1) if m else None
+
+
+def wrapper(html, page_url_dir, case, model, bg):
+    models = dict(case.get('models') or {})
+    if 'model' in case:
+        models[model] = case['model']
+    events = {model: case.get('events') or []}
+    for k in (case.get('models') or {}):
+        events.setdefault(k, [])
+    spec = json.dumps({'models': models, 'events': events}).replace('</', '<\\/')
+    inject = '<script>LrBind.init(%s);</script>' % spec
+    style = '' if bg == 'none' else '<style>html { background: %s; }</style>' % bg
+    base = '<base href="%s">' % page_url_dir
+    if re.search(r'<head[^>]*>', html, re.I):
+        html = re.sub(r'(<head[^>]*>)', lambda m: m.group(1) + base + style, html, count=1, flags=re.I)
+    else:
+        html = base + style + html
+    if re.search(r'</body>', html, re.I):
+        k = [m.start() for m in re.finditer(r'</body>', html, re.I)][-1]
+        return html[:k] + inject + html[k:]
+    return html + inject
+
+
+def main():
+    if sys.argv[1:] == ['--find']:
+        c = find_chrome()
+        print(c or 'none')
+        sys.exit(0 if c else 2)
+    ap = argparse.ArgumentParser(prog='html-shot', description=__doc__.split('\n')[0])
+    ap.add_argument('page')
+    ap.add_argument('cases')
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--model')
+    ap.add_argument('--serve-root')
+    ap.add_argument('--bg', default='#141A20')
+    ap.add_argument('--wait', type=int, default=2500)
+    a = ap.parse_args()
+    if not os.path.exists(a.page):
+        die(f'page not found: {a.page}')
+    chrome = find_chrome()
+    if not chrome:
+        die('no Chromium found: set NUIKIT_CHROME to a chrome/chrome-headless-shell binary '
+            '(npx playwright install chromium-headless-shell gives one)')
+    txt = sys.stdin.read() if a.cases == '-' else open(a.cases, encoding='utf-8').read()
+    cases = json.loads(txt)
+    if not isinstance(cases, list) or not all(isinstance(c, dict) and isinstance(c.get('name'), str) for c in cases):
+        die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
+    page = os.path.abspath(a.page)
+    html = open(page, encoding='utf-8').read()
+    model = a.model or model_name(html) or 'model'
+    root = os.path.abspath(a.serve_root or os.path.dirname(os.path.dirname(page)))
+    if not page.startswith(root + os.sep):
+        die(f'the page is not under --serve-root {root}')
+    rel_dir = os.path.relpath(os.path.dirname(page), root).replace(os.sep, '/')
+    pages = {}
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kw):
+            super().__init__(*args, directory=root, **kw)
+
+        def do_GET(self):
+            path = self.path.split('?')[0]
+            if path in pages:
+                body = pages[path].encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            super().do_GET()
+
+        def log_message(self, *args):
+            pass
+
+    httpd = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Handler)
+    httpd.daemon_threads = True
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    os.makedirs(a.out, exist_ok=True)
+    prof = tempfile.mkdtemp(prefix='html-shot-')
+    ok = 0
+    try:
+        for c in cases:
+            w, h = (c.get('size') or [1920, 1080])[:2]
+            key = '/__html-shot__/%s.html' % re.sub(r'[^\w.-]', '_', c['name'])
+            pages[key] = wrapper(html, '/%s/' % rel_dir if rel_dir != '.' else '/', c, model, a.bg)
+            png = os.path.abspath(os.path.join(a.out, c['name'] + '.png'))
+            cmd = [chrome, '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
+                   '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
+                   '--virtual-time-budget=%d' % a.wait, '--screenshot=' + png, 'http://127.0.0.1:%d%s' % (port, key)]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0 or not os.path.exists(png):
+                print(f'FAIL {c["name"]}: {r.stderr.strip()[-400:]}')
+                continue
+            ok += 1
+            print('ok  ', png)
+    finally:
+        httpd.shutdown()
+        shutil.rmtree(prof, ignore_errors=True)
+    if ok != len(cases):
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

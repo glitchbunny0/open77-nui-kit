@@ -53,4 +53,12 @@ EOF
 else
     echo "== rml-preview skipped (no Pillow)"
 fi
+if bin/html-shot --find >/dev/null 2>&1; then
+    step "example: html-shot of the twin (Chromium found)"
+    shots="${TMPDIR:-/tmp}/nuikit-shots"
+    (cd examples/side-menu && ../../bin/html-shot web/index.html "${TMPDIR:-/tmp}/nuikit-cases.json" --out "$shots" >/dev/null) || fail=1
+    n=$(ls "$shots"/*.png | wc -l); echo "$n shots"; [ "$n" -ge 6 ] || fail=1
+else
+    echo "== html-shot skipped (no Chromium; optional)"
+fi
 [ $fail = 0 ] && echo "ALL OK" || { echo "FAILED"; exit 1; }
