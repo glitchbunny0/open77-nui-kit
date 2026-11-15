@@ -440,11 +440,11 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     fj = os.path.join(a.out, '.fonts.json')
     fonts_json(faces, fj)
-    res = subprocess.run([host(), 'layout', a.doc, a.model or model_name(a.doc), fj], input=json.dumps(cases),
-                         capture_output=True, text=True)
+    res = subprocess.run([host(), 'layout', a.doc, a.model or model_name(a.doc), fj],
+                         input=json.dumps(cases, ensure_ascii=False).encode('utf-8'), capture_output=True)
     if res.returncode != 0:
-        die('layout failed:\n' + res.stderr)
-    shots = json.loads(res.stdout)
+        die('layout failed:\n' + res.stderr.decode('utf-8', 'replace'))
+    shots = json.loads(res.stdout.decode('utf-8', 'replace'))
     painter = Painter(faces, fallback, a.root, sheet_rules(a.doc), hook)
     names = []
     for c, s in zip(cases, shots):
