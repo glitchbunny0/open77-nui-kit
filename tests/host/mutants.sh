@@ -60,3 +60,5 @@ mutant host host/mode_check.inc "click: number and boolean args compare as RmlUi
     'toVariant(args->a[i]).Get<String>()' 'args->a[i].s'
 mutant host host/common.hpp "input: click args that are not scalars are an error" \
     'if (a.t == J::Arr || a.t == J::Obj || a.t == J::Null) badInput' 'if (false) badInput'
+mutant host host/mode_check.inc "click: an event an ancestor also fires makes the click fail" \
+    'bool ok = fired.size() == 1 && fired[0] == want;' 'bool ok = !fired.empty() && fired[0] == want;'

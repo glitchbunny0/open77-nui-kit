@@ -3,7 +3,8 @@ namespace check {
 // element tree (tag#id.classes, [none] for display: none, @x,y WxH, inline style, text nodes). Each click is
 // dispatched on the first VISIBLE element the selector matches; the model event it must call (name + arguments as text) is
 // compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
-// (a JSON 2 and the markup's pick(2) both print 2, true prints 1).
+// (a JSON 2 and the markup's pick(2) both print 2, true prints 1). A click that bubbles into an ancestor's
+// data-event-click calls that event too, as in the game: the click passes only when the wanted event is the one call.
 static std::string collapse(const std::string& s) {
 	std::string o; bool sp = false;
 	for (char c : s) { if (c == ' ' || c == '\n' || c == '\t' || c == '\r') { sp = true; continue; } if (sp && !o.empty()) o += ' '; sp = false; o += c; }
@@ -71,8 +72,11 @@ int run(const std::string& docPath, const std::string& modelName) {
 					for (Element* e : list) if (e->IsVisible(true)) { el = e; break; }
 					fired.clear();
 					if (el) { el->Click(); context->Update(); }
-					std::string got = fired.empty() ? std::string(el ? "nothing" : "no element") : fired.back();
-					std::cout << (got == want ? "CLICK ok   " : "CLICK FAIL ") << k.get("sel")->s << " -> " << got << " (want " << want << ")\n";
+					// every event the click calls, in dispatch order: the target's first, then each ancestor's as it bubbles
+					std::string got = fired.empty() ? std::string(el ? "nothing" : "no element") : fired[0];
+					for (size_t i = 1; i < fired.size(); i++) got += ", then " + fired[i];
+					bool ok = fired.size() == 1 && fired[0] == want;
+					std::cout << (ok ? "CLICK ok   " : "CLICK FAIL ") << k.get("sel")->s << " -> " << got << " (want " << want << ")\n";
 				}
 		}
 		std::map<std::string, int> seen;

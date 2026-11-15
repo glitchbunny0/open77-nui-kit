@@ -223,6 +223,14 @@ def _():
     expect('#d -> pick() (want pick(2))' in got[3], got[3])
 
 
+@check('click: an event an ancestor also fires makes the click fail')
+def _():
+    body = '<div id="row" data-event-click="pick(1)"><div id="buy" data-event-click="buy(2)">buy</div></div>'
+    got = clicks(body, {}, ['pick', 'buy'], [{'sel': '#buy', 'event': 'buy', 'args': [2]},
+                                             {'sel': '#buy', 'event': 'pick', 'args': [1]}])
+    expect(len(got) == 2 and all(l.startswith('CLICK FAIL #buy -> buy(2), then pick(1)') for l in got), f'{got}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:
