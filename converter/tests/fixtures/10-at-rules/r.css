@@ -24,4 +24,5 @@ html, body { width: 100%; }
 #a[class~="x"] > span + span { margin-left: 2px; }
 .ic path, svg.ic { stroke: #fff; }
 #a span:hover, #a span:active { color: #ff0; }
+.n { color: #f00; &:hover { color: #00f; } .m { width: 1px; } @media (min-width: 100px) { height: 2px; } }
 @import "more.css";

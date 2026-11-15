@@ -181,6 +181,12 @@ MUTANTS = [
      'fixture 01-markup'),
     ('report-one-line', 'convert.py', "cell = lambda x: ' '.join(x.split()).replace('|', '/')",
      "cell = lambda x: x.replace('|', '/')", 'unit report'),
+    ('css-nesting', 'css_parse.py', '        items += _nested_rule(prelude.strip(), inner, r.line_at(istart), line, bad)',
+     '        items.append(Rule(prelude.strip(), parse_decls(inner, r.line_at(istart), bad), line))', 'fixture 10-at-rules'),
+    ('css-nesting-media', 'css_parse.py', "        if sub_pre.startswith('@'):   # @media", "        if False:   # @media",
+     'fixture 10-at-rules'),
+    ('css-nesting-decl-block', 'css_parse.py', "if r.i < r.n and inner[r.i] == '{' and re.match(", "if False and re.match(",
+     'fixture 13-values'),
 ]
 
 

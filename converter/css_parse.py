@@ -1,6 +1,9 @@
 """CSS structure: rules, at-rules and declarations, with the source line of each. Comments are dropped, strings and
 parentheses are respected (a ';' or '}' inside url(...) or a string does not end anything). A string ends at an
-unescaped newline, as in a browser (a "bad string": parse(..., issues) gets its line)."""
+unescaped newline, as in a browser (a "bad string": parse(..., bad) gets its line). Nested rules (CSS nesting) are
+flattened after their parent rule, `&` standing for the parent selector."""
+
+import re
 
 
 class Decl:
@@ -191,5 +194,55 @@ def _parse_items(text, line0, bad=None):
                 items.append(Rule(prelude.strip(), None, line))   # junk without a block
             continue
         inner, istart = r.block()
-        items.append(Rule(prelude.strip(), parse_decls(inner, r.line_at(istart), bad), line))
+        items += _nested_rule(prelude.strip(), inner, r.line_at(istart), line, bad)
     return items
+
+
+def _nested_rule(prelude, inner, iline, line, bad):
+    """a rule whose block holds nested rules (CSS nesting: `.a { color: red; &:hover { } .b { } }`) -> the rule and
+    the nested ones flattened after it, `&` standing for the parent (a nested selector without & is a descendant)"""
+    r = _Reader(inner, iline, bad)
+    decl_text, nested = list(inner), []
+    while True:
+        r.skip_ws()
+        if r.i >= r.n:
+            break
+        start = r.i
+        r.until(';{}')
+        if r.i < r.n and inner[r.i] == '{' and re.match(r'^\s*(--|[-\w]+\s*:[^:]*["\'])', inner[start:r.i]):
+            r.block()   # a declaration holding a {} block (a custom property, or a string a newline ended)
+        elif r.i < r.n and inner[r.i] == '{':
+            sub_pre = inner[start:r.i].strip()
+            sub_line = r.line_at(start)
+            body, bstart = r.block()
+            for k in range(start, r.i):   # blank the nested rule out of the declarations, lines kept
+                decl_text[k] = '\n' if inner[k] == '\n' else ' '
+            nested.append((sub_pre, body, r.line_at(bstart), sub_line))
+        elif r.i < r.n:
+            r.i += 1
+    out = [Rule(prelude, parse_decls(''.join(decl_text), iline, bad), line)]
+    parents = [p.strip() for p in _split_sel(prelude)]
+    for sub_pre, body, bline, sline in nested:
+        if sub_pre.startswith('@'):   # @media/@supports nested in a rule: the at-rule around the parent's selector
+            name, _, rest = sub_pre[1:].partition(' ')
+            out.append(AtRule(name.lower(), rest.strip(), _nested_rule(prelude, body, bline, sline, bad), sline, 'rules'))
+            continue
+        sels = []
+        for part in _split_sel(sub_pre):
+            part = part.strip()
+            for par in parents:
+                sels.append(part.replace('&', par) if '&' in part else f'{par} {part}')
+        out += _nested_rule(', '.join(sels), body, bline, sline, bad)
+    return out
+
+
+def _split_sel(text):
+    parts, depth, cur = [], 0, ''
+    for ch in text:
+        depth += {'(': 1, '[': 1, ')': -1, ']': -1}.get(ch, 0)
+        if ch == ',' and depth == 0:
+            parts.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    return parts + [cur] if cur.strip() else parts

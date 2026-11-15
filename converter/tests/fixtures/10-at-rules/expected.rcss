@@ -19,4 +19,8 @@ body { font-size: 16dp; }
 #a[class~="x"] > span + span { margin-left: 2dp; }
 path.ic { stroke: #fff; }
 #a span:hover, #a span:active { color: #ff0; }
+.n { color: #f00; }
+.n:hover { color: #00f; }
+.n .m { width: 1dp; }
+.n { height: 2dp; }
 #a span + span { color: #00ff00; }
