@@ -24,7 +24,7 @@ game draws them. A --hook module can paint those for your screen.
 Writes <out>/<case>.png, <out>/sheet.png (every case) and, with --compare, <out>/compare.png. Needs Pillow.
 """
 import argparse, importlib.util, json, math, os, re, struct, subprocess, sys
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # measured besides ASCII: Latin-1, general punctuation, currency, arrows, a few symbols
@@ -737,6 +737,40 @@ def rnd(v):
     return int(math.floor(v + 0.5))
 
 
+def corner_radii(e, w, h, inner_w, inner_h):
+    """[tl, tr, br, bl] outer radii: the host's `radii` when it gives them, else its single `radius`, scaled like
+    GeometryBackgroundBorder (by the padding size) and rounded"""
+    r = e.get('radii')
+    if not (isinstance(r, list) and len(r) == 4):
+        r = [float(e.get('radius') or 0)] * 4
+    r = [max(0.0, float(v)) for v in r]
+    if sum(r) <= 1:
+        return [0.0] * 4
+    f = 1.0
+    for a, b, side in ((r[0], r[1], inner_w), (r[1], r[2], inner_h), (r[2], r[3], inner_w), (r[3], r[0], inner_h)):
+        if a + b > 0:
+            f = min(f, side / (a + b))
+    return [rnd(v * f) for v in r]
+
+
+def rrect_mask(size, box, radii):
+    """an L mask of `size` with the rectangle `box` (x0, y0, x1, y1), corners rounded by radii [(rx, ry) x 4]"""
+    m = Image.new('L', size, 0)
+    d = ImageDraw.Draw(m)
+    x0, y0, x1, y1 = box
+    if x1 <= x0 or y1 <= y0:
+        return m
+    d.rectangle([x0, y0, x1 - 1, y1 - 1], fill=255)
+    for i, (rx, ry) in enumerate(radii):
+        if rx <= 0 or ry <= 0:
+            continue
+        cx, cy = (x0, y0) if i == 0 else (x1 - 2 * rx, y0) if i == 1 else (x1 - 2 * rx, y1 - 2 * ry) if i == 2 else (x0, y1 - 2 * ry)
+        qx, qy = (x0, y0) if i == 0 else (x1 - rx, y0) if i == 1 else (x1 - rx, y1 - ry) if i == 2 else (x0, y1 - ry)
+        d.rectangle([qx, qy, qx + rx - 1, qy + ry - 1], fill=0)
+        d.ellipse([cx, cy, cx + 2 * rx - 1, cy + 2 * ry - 1], fill=255)
+    return m
+
+
 class Painter:
     def __init__(self, faces, root, texts, rules, hook):
         self.faces, self.root, self.texts, self.rules, self.hook = faces, root, texts, rules, hook
@@ -766,17 +800,16 @@ class Painter:
             self.imgs[path] = Image.open(path).convert('RGBA')
         return self.imgs[path]
 
-    def composite(self, img, layer, clip):
+    def composite(self, img, layer, clip, region=None):
+        """layer onto img inside the clip rectangle (and the region the layer was painted in)"""
         W, H = img.size
-        x0, y0, x1, y1 = [int(round(v)) for v in clip]
-        if (x0, y0, x1, y1) != (0, 0, W, H):
-            x0, y0, x1, y1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
-            if x1 <= x0 or y1 <= y0:
-                return
-            cut = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            cut.paste(layer.crop((x0, y0, x1, y1)), (x0, y0))
-            layer = cut
-        img.alpha_composite(layer)
+        x0, y0, x1, y1 = (0, 0, W, H) if clip is None else [rnd(max(-1e6, min(1e6, v))) for v in clip]
+        if region:
+            x0, y0, x1, y1 = max(x0, region[0]), max(y0, region[1]), min(x1, region[2]), min(y1, region[3])
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+        if x1 <= x0 or y1 <= y0:
+            return
+        img.alpha_composite(layer, (x0, y0), (x0, y0, x1, y1))
 
     def effect(self, deco, area, e, op, ctx, notes, kind='decorator'):
         """one decorator / mask value over its paint area (x0, y0, x1, y1) -> (RGBA image, (x, y)) or None"""
@@ -808,88 +841,125 @@ class Painter:
         notes.add(f'NOT PAINTED {kind} {typ}()' + (' (Open77)' if typ == 'fx' else ''))
         return None
 
-    def paint(self, els, bg, case, missing, doc_dir):
-        img = bg.copy().convert('RGBA')
+    def text(self, img, e, notes):
+        if e['op'] <= 0:
+            return
+        weight = int(e.get('weight') or 400)
+        path = pick_face(self.faces, e.get('family'), weight, e.get('italic'))
+        if path is None:
+            notes.add(f"NO FONT FACE {e.get('family')!r} {weight}" + (' italic' if e.get('italic') else '') +
+                      ': RmlUi draws no text in it (not painted)')
+            return
+        f = self.font(path, e['size'])
+        layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        x, col = e['x'], rgba(e['color'], e['op'])
+        for ch in e['text']:   # the host's text is what RmlUi renders: text-transform already applied
+            d.text((x, e['y']), ch, font=f, fill=col, anchor='ls')
+            x += f.getlength(ch) + e['ls']
+        self.composite(img, layer, e.get('clip'))
+
+    def box(self, img, e, case, notes, ctx):
+        if e['op'] <= 0 or e['w'] <= 0 or e['h'] <= 0:
+            return
         W, H = img.size
-        ctx = Ctx(img.size, missing)
+        x, y, w, h, op = e['x'], e['y'], e['w'], e['h'], e['op']
+        clip = e.get('clip')
+        bt, br, bb, bl = (float(e.get(k) or 0) for k in ('bt', 'br', 'bb', 'bl'))
+        X0, Y0, X1, Y1 = rnd(x), rnd(y), rnd(x + w), rnd(y + h)   # RmlUi snaps the boxes to the pixel grid
+        P = (rnd(x + bl), rnd(y + bt), rnd(x + w - br), rnd(y + h - bb))
+        r = corner_radii(e, w, h, max(0.0, w - bl - br), max(0.0, h - bt - bb))
+        outer_r = [(v, v) for v in r]
+        inner_r = [(max(0, r[0] - bl), max(0, r[0] - bt)), (max(0, r[1] - br), max(0, r[1] - bt)),
+                   (max(0, r[2] - br), max(0, r[2] - bb)), (max(0, r[3] - bl), max(0, r[3] - bb))]
+        outer = rrect_mask(img.size, (X0, Y0, X1, Y1), outer_r)
+        inner = rrect_mask(img.size, P, inner_r)
+        back = e.get('backdrop') or ''
+        if 'blur' in back and w > 4 and h > 4:
+            m = re.search(r'blur\(\s*([\d.]+)', back)
+            rad = float(m.group(1)) if m else 10
+            pad = int(rad * 3) + 1
+            src_box = (max(0, X0 - pad), max(0, Y0 - pad), min(W, X1 + pad), min(H, Y1 + pad))
+            blurred = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            blurred.paste(img.crop(src_box).filter(ImageFilter.GaussianBlur(rad)), src_box[:2])
+            blurred.putalpha(outer)   # RmlUi composites the backdrop inside the border box (and its radius)
+            self.composite(img, blurred, clip, (X0, Y0, X1, Y1))
+        layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        bgc = rgba(e.get('bg'), op)
+        if bgc[3] > 0:
+            layer.paste(Image.new('RGBA', img.size, bgc), (0, 0), inner)
+        # borders: one trapezoid per side between the outer and the inner shape
+        ring = Image.composite(Image.new('L', img.size, 0), outer, inner)
+        for side, wd, c in (('t', bt, e.get('btc')), ('r', br, e.get('brc')), ('b', bb, e.get('bbc')), ('l', bl, e.get('blc'))):
+            cc = rgba(c, op)
+            if wd <= 0 or cc[3] == 0:
+                continue
+            poly = {'t': [(X0, Y0), (X1, Y0), (P[2], P[1]), (P[0], P[1])],
+                    'r': [(X1, Y0), (X1, Y1), (P[2], P[3]), (P[2], P[1])],
+                    'b': [(X1, Y1), (X0, Y1), (P[0], P[3]), (P[2], P[3])],
+                    'l': [(X0, Y1), (X0, Y0), (P[0], P[1]), (P[0], P[3])]}[side]
+            sm = Image.new('L', img.size, 0)
+            ImageDraw.Draw(sm).polygon(poly, fill=255)
+            sm = Image.composite(sm, Image.new('L', img.size, 0), ring)
+            layer.paste(Image.new('RGBA', img.size, cc), (0, 0), sm)
+        # decorators over background and border (Element::Render order): back to front, each in its paint area (default: padding box), clipped to its rounded shape
+        deco = e.get('deco') or ''
+        if deco and deco != 'none':
+            for one in reversed(split_top(deco, ',')):
+                area_kw = re.search(r'\)\s*(border-box|padding-box|content-box)\s*$', one)
+                area, amask = P, inner
+                if area_kw and area_kw.group(1) == 'border-box':
+                    area, amask = (X0, Y0, X1, Y1), outer
+                elif area_kw and area_kw.group(1) == 'content-box':
+                    notes.add('APPROXIMATED content-box decorator as padding-box (the host gives no padding)')
+                res = self.effect(one, area, e, op, ctx, notes)
+                if res:
+                    part, at = res
+                    tile = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                    tile.alpha_composite(part, (int(at[0]), int(at[1])))
+                    tile.putalpha(ImageChops.multiply(tile.split()[3], amask))
+                    layer.alpha_composite(tile)
+        if e.get('tag') == 'path' and e.get('d'):
+            pt = paint_of(self.rules, e.get('chain') or [], e.get('color', '#000000ff'))
+            vb = [float(v) for v in (e.get('viewbox') or '0 0 %f %f' % (w, h)).split()]
+            k = min(w / vb[2], h / vb[3]) if vb[2] and vb[3] else 1
+            ox, oy = x + (w - vb[2] * k) / 2 - vb[0] * k, y + (h - vb[3] * k) / 2 - vb[1] * k
+            swm = re.match(r'[\d.]+', pt['stroke-width'] or '')
+            sw = float(swm.group(0)) if swm else 1.0
+            for pts, closed in path_polys(e['d']):
+                pp = [(ox + px_ * k, oy + py_ * k) for px_, py_ in pts]
+                fill = pt['fill']
+                if closed and fill and fill != 'none' and len(pp) > 2:
+                    d.polygon(pp, fill=rgba(fill, op))
+                if pt['stroke'] and pt['stroke'] != 'none' and len(pp) > 1:
+                    d.line(pp + ([pp[0]] if closed else []), fill=rgba(pt['stroke'], op), width=max(1, int(round(sw))), joint='curve')
+        mask = e.get('mask') or ''
+        if mask and mask != 'none':
+            ml = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            for one in reversed(split_top(mask, ',')):
+                res = self.effect(one, (X0, Y0, X1, Y1), e, 1.0, ctx, notes, 'mask-image')
+                if res:
+                    ml.alpha_composite(res[0], (int(res[1][0]), int(res[1][1])))
+            notes.add('APPROXIMATED mask-image: it masks the box\'s own paint, not its children')
+            layer.putalpha(ImageChops.multiply(layer.split()[3], ml.split()[3]))
+        if self.hook and hasattr(self.hook, 'paint'):
+            self.hook.paint(d, e, case, rgba)
+            self.composite(img, layer, clip)
+        else:
+            self.composite(img, layer, clip, (X0 - 16, Y0 - 16, X1 + 16, Y1 + 16))   # strokes may overhang a little
+
+    def paint(self, els, bg, case, notes, doc_dir):
+        img = bg.copy().convert('RGBA')
+        ctx = Ctx(img.size, notes)
         ctx.doc_dir = doc_dir
         for e in els:
-            clip = e.get('clip') or [0, 0, W, H]
-            clip = [max(-1e6, min(1e6, v)) for v in clip]
             if 'text' in e:
-                if e['op'] <= 0:
-                    continue
-                weight = int(e.get('weight') or 400)
-                path = pick_face(self.faces, e.get('family'), weight, e.get('italic'))
-                if path is None:
-                    missing.add(f"NO FONT FACE {e.get('family')!r} {weight}" + (' italic' if e.get('italic') else '') +
-                                ': RmlUi draws no text in it (not painted)')
-                    continue
-                f = self.font(path, e['size'])
-                layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-                d = ImageDraw.Draw(layer)
-                x, col = e['x'], rgba(e['color'], e['op'])
-                for ch in e['text']:   # the host's text is what RmlUi renders: text-transform already applied
-                    d.text((x, e['y']), ch, font=f, fill=col, anchor='ls')
-                    x += f.getlength(ch) + e['ls']
-                self.composite(img, layer, clip)
-                continue
-            if e['op'] <= 0 or e['w'] <= 0 or e['h'] <= 0:
-                continue
-            x, y, w, h = e['x'], e['y'], e['w'], e['h']
-            box = (int(x), int(y), int(x + w), int(y + h))
-            if 'blur' in (e.get('backdrop') or '') and w > 4 and h > 4:
-                m = re.search(r'blur\(\s*([\d.]+)', e['backdrop'])
-                img.paste(img.crop(box).filter(ImageFilter.GaussianBlur(float(m.group(1)) if m else 10)), box)
-            layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            d = ImageDraw.Draw(layer)
-            bgc = rgba(e['bg'], e['op'])
-            mask = e.get('mask') or ''
-            if mask.startswith('image(') and bgc[3] > 0:
-                src = self.image(re.match(r'image\(\s*([^\s)]+)', mask).group(1), doc_dir)
-                if src is None:
-                    missing.add('MISSING ' + mask)
-                else:
-                    m = src.resize((max(1, int(w)), max(1, int(h)))).split()[3].point(lambda a: a * bgc[3] // 255)
-                    layer.paste(Image.new('RGBA', m.size, bgc[:3] + (255,)), (int(x), int(y)), m)
-            elif bgc[3] > 0:
-                d.rectangle([x, y, x + w - 1, y + h - 1], fill=bgc)
-            deco = e.get('deco') or ''
-            if deco and deco != 'none':
-                for one in reversed(split_top(deco, ',')):   # RmlUi paints a decorator list back to front
-                    res = self.effect(one, box, e, e['op'], ctx, missing)
-                    if res:
-                        layer.alpha_composite(res[0], (int(res[1][0]), int(res[1][1])))
-            for side, wd, c in (('t', e['bt'], e['btc']), ('r', e['br'], e['brc']), ('b', e['bb'], e['bbc']), ('l', e['bl'], e['blc'])):
-                if wd <= 0:
-                    continue
-                cc = rgba(c, e['op'])
-                if side == 't':
-                    d.rectangle([x, y, x + w - 1, y + wd - 1], fill=cc)
-                elif side == 'b':
-                    d.rectangle([x, y + h - wd, x + w - 1, y + h - 1], fill=cc)
-                elif side == 'l':
-                    d.rectangle([x, y, x + wd - 1, y + h - 1], fill=cc)
-                else:
-                    d.rectangle([x + w - wd, y, x + w - 1, y + h - 1], fill=cc)
-            if e['tag'] == 'path' and e.get('d'):
-                pt = paint_of(self.rules, e.get('chain') or [], e.get('color', '#000000ff'))
-                vb = [float(v) for v in (e.get('viewbox') or '0 0 %f %f' % (w, h)).split()]
-                k = min(w / vb[2], h / vb[3]) if vb[2] and vb[3] else 1
-                ox, oy = x + (w - vb[2] * k) / 2 - vb[0] * k, y + (h - vb[3] * k) / 2 - vb[1] * k
-                swm = re.match(r'[\d.]+', pt['stroke-width'] or '')
-                sw = float(swm.group(0)) if swm else 1.0
-                for pts, closed in path_polys(e['d']):
-                    P = [(ox + px_ * k, oy + py_ * k) for px_, py_ in pts]
-                    fill = pt['fill']
-                    if closed and fill and fill != 'none' and len(P) > 2:
-                        d.polygon(P, fill=rgba(fill, e['op']))
-                    if pt['stroke'] and pt['stroke'] != 'none' and len(P) > 1:
-                        d.line(P + ([P[0]] if closed else []), fill=rgba(pt['stroke'], e['op']), width=max(1, int(round(sw))), joint='curve')
-            if self.hook and hasattr(self.hook, 'paint'):
-                self.hook.paint(d, e, case, rgba)
-            self.composite(img, layer, clip)
+                self.text(img, e, notes)
+            else:
+                self.box(img, e, case, notes, ctx)
         return img.convert('RGB')
+
 
 
 def model_name(doc):
