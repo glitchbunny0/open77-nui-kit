@@ -77,11 +77,15 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
 | Parity: 50 cases, every snapshot compared with real RmlUi 6.3 | `tests/parity/` (`cases.mjs`, `golden.json`) | `bin/lrbind-parity` |
 | Page protocol, form controls, mockup mode | `tests/protocol.test.mjs` | `node lrbind/tests/protocol.test.mjs` |
 | Lua facade | `tests/lrbind_lua.lua` | `cd lrbind && lua5.4 tests/lrbind_lua.lua` |
+| All of the above, plus the golden regenerated through real RmlUi and compared, and one planted bug per check | `tests/suite.py` (the kit's `tests/lrbind.sh`) | `scripts/test.sh` |
 
 `npm ci` in `tests/` once (jsdom, pinned; `bin/lrbind-parity` does it for you). After adding or changing a parity case,
 `bin/lrbind-parity --regen` runs the cases through real RmlUi (the kit's `rmlhost parity`) and rewrites `golden.json`;
-commit both. A change to the shim's semantics that `golden.json` disagrees with is a shim bug unless RmlUi says
-otherwise. Mutation runs: `LRBIND_SHIM=<copy> node tests/parity/parity.test.mjs`.
+commit both. The kit's suite regenerates the golden the same way on every run and fails when it differs from the
+committed file, so a stale golden or a hand edit cannot pass. A change to the shim's semantics that `golden.json`
+disagrees with is a shim bug unless RmlUi says otherwise. Mutation runs: `LRBIND_SHIM=<copy>` for both node tests,
+`LRBIND_LUA=<copy>` for the Lua one; `tests/suite.py` keeps the table of planted bugs, each with the check it must turn
+red.
 
 Your own markup can get the same proof: write a cases file that imports `T` and `sharedBlock` from
 `lrbind/tests/parity/cases.mjs` (a block of your real document between `<!-- name: begin -->` and `<!-- name: end -->`

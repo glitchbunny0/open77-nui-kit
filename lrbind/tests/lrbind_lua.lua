@@ -1,5 +1,5 @@
 -- lrbind.lua offline: the WebUI facade speaks the page protocol of lrbind.js and keeps the NativeUI API.
--- Run from lrbind/: lua5.4 tests/lrbind_lua.lua
+-- Run from lrbind/: lua5.4 tests/lrbind_lua.lua   (LRBIND_LUA=<copy> tests a copy instead: mutation runs)
 local pass, fail = 0, 0
 local function check(cond, what)   -- io.write: print is captured below
     if cond then pass = pass + 1 else fail = fail + 1; io.write("FAIL " .. what .. "\n") end
@@ -21,7 +21,7 @@ local function fakePage()
     return p
 end
 
-dofile("lrbind.lua")
+dofile(os.getenv("LRBIND_LUA") or "lrbind.lua")
 check(type(LrBind) == "table" and type(LrBind.page) == "function", "LrBind.page exists")
 
 -- init on ready, with the current state (and again after a page reload)
