@@ -28,14 +28,14 @@ static void emit(Element* el, std::ostringstream& out, bool& first) {
 	if (auto* t = rmlui_dynamic_cast<ElementText*>(el)) {
 		const auto& cv = t->GetComputedValues();
 		Vector2f off = t->GetAbsoluteOffset(BoxArea::Border);
+		// each line as RmlUi laid it out and draws it: text-transform is already applied (ASCII only, as in RmlUi)
 		for (auto& line : t->GetLines()) {
 			if (line.text.empty()) continue;
 			out << (first ? "" : ",") << "{\"text\":" << q(line.text) << ",\"x\":" << fnum(off.x + line.position.x) << ",\"y\":" << fnum(off.y + line.position.y)
 			    << ",\"w\":" << line.width << ",\"size\":" << fnum(cv.font_size()) << ",\"weight\":" << (int)cv.font_weight()
 			    << ",\"family\":" << q(cv.font_family()) << ",\"color\":\"" << col(cv.color()) << "\",\"op\":" << fop(cv.opacity())
 			    << ",\"ls\":" << fnum(cv.letter_spacing()) << ",\"italic\":" << (cv.font_style() == Style::FontStyle::Italic ? "true" : "false")
-			    << ",\"clip\":" << clipOf(t)
-			    << ",\"upper\":" << (cv.text_transform() == Style::TextTransform::Uppercase ? "true" : "false") << "}";
+			    << ",\"clip\":" << clipOf(t) << "}";
 			first = false;
 		}
 		return;

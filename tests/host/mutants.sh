@@ -106,3 +106,5 @@ mutant host host/mode_layout.inc "layout: the clip follows the offset-parent cha
     'ElementUtilities::GetClippingRegion(el, r)' 'ElementUtilities::GetClippingRegion(el->GetParentNode() ? el->GetParentNode() : el, r, nullptr, el->GetParentNode() && el->GetParentNode()->GetParentNode())'
 mutant host host/mode_layout.inc "layout: nothing clips an unclipped box, whatever the context size" \
     'if (!ElementUtilities::GetClippingRegion(el, r)) return "null";' 'if (!ElementUtilities::GetClippingRegion(el, r)) return "[0.0,0.0,1920.0,1080.0]";'
+mutant host host/mode_layout.inc "layout: text comes as RmlUi draws it, text-transform applied, with no flag to apply it again" \
+    '<< ",\"clip\":" << clipOf(t) << "}";' '<< ",\"clip\":" << clipOf(t) << ",\"upper\":" << (cv.text_transform() == Style::TextTransform::Uppercase ? "true" : "false") << "}";'

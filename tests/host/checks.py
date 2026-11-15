@@ -411,6 +411,13 @@ def _():
     expect(c['far'] is None and c['c'] is None, f'{c}')
 
 
+@check('layout: text comes as RmlUi draws it, text-transform applied, with no flag to apply it again')
+def _():
+    es = els('<p id="u">stra\u00dfe caf\u00e9</p>', '#u { text-transform: uppercase; }')
+    run = next(e for e in es if 'text' in e)
+    expect(run['text'] == 'STRA\u00dfE CAF\u00e9' and 'upper' not in run, f'{run}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:
