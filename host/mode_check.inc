@@ -37,7 +37,8 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 static std::vector<std::string> fired;
 int run(const std::string& docPath, const std::string& modelName) {
 	J cases = readCases(Mode::Check);
-	faces = {Face{"stand-in", 800, 200, 500, {}}};
+	faces.assign(1, Face());
+	faces[0].ascent = 800, faces[0].descent = 200, faces[0].def = 500;
 	standIn = true;
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);

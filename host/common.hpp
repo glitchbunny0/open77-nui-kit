@@ -381,20 +381,35 @@ public:
 class NullFont : public FontEngineInterface {};
 
 // ---- a font engine with real advances (layout mode): bin/rml-preview measures the TTFs at 1000 units into fonts.json
-// { "<family>|<weight>": { "ascent", "descent", "adv": { "<codepoint>": width }, "def": width } }
+// { "<family>|<weight>[|i]": { "ascent", "descent", "adv": { "<codepoint>": width }, "def": width } }   (|i: italic)
+// A face is chosen as RmlUi's own font engine chooses it (FontProvider, FontFamily::GetFaceHandle): the family must be
+// loaded and the style (italic or not) must match, else there is no face and RmlUi draws no text ("No font face
+// defined"); of those, the nearest weight. A weight other than the one asked for adds a "font face substituted" warning.
 // Check mode runs it with one stand-in face for every family (every glyph half an em wide), so text gives its boxes a
 // size and a click can hit-test them as in the game.
-struct Face { std::string key; float ascent = 930, descent = 346, def = 500; std::map<unsigned, float> adv; };
+struct Face {
+	std::string key, family;
+	int weight = 400;
+	bool italic = false;
+	float ascent = 930, descent = 346, def = 500;
+	std::map<unsigned, float> adv;
+};
 static std::vector<Face> faces;
 struct Handle { int face; int size; FontMetrics m; };
 static std::vector<Handle> handles;
 static bool standIn = false;
-static int faceFor(const std::string& family, int weight) {
+static int faceFor(const std::string& family, int weight, bool italic) {
 	if (standIn) return 0;
-	std::string want = family + "|" + std::to_string(weight);
-	for (size_t i = 0; i < faces.size(); i++) if (faces[i].key == want) return (int)i;
-	for (size_t i = 0; i < faces.size(); i++) if (faces[i].key.rfind(family + "|", 0) == 0) return (int)i;
-	return 0;
+	int best = -1;
+	for (size_t i = 0; i < faces.size(); i++) {
+		const Face& f = faces[i];
+		if (f.family != family || f.italic != italic) continue;
+		if (best < 0 || std::abs(f.weight - weight) < std::abs(faces[best].weight - weight)) best = (int)i;
+	}
+	if (best >= 0 && faces[best].weight != weight)
+		Log::Message(Log::LT_WARNING, "Font face substituted: '%s' %s weight %d is drawn with weight %d, the nearest loaded face.",
+		             family.c_str(), italic ? "italic" : "regular", weight, faces[best].weight);
+	return best;
 }
 static std::vector<unsigned> utf8(StringView s) {
 	std::vector<unsigned> out;
@@ -411,9 +426,10 @@ static std::vector<unsigned> utf8(StringView s) {
 }
 class MeasureFont : public FontEngineInterface {
 public:
-	FontFaceHandle GetFontFaceHandle(const String& family, Style::FontStyle, Style::FontWeight weight, int size) override {
+	FontFaceHandle GetFontFaceHandle(const String& family, Style::FontStyle style, Style::FontWeight weight, int size) override {
 		int w = (int)weight; if (w == 0) w = 400;
-		int f = faceFor(family, w);
+		int f = faceFor(family, w, style == Style::FontStyle::Italic);
+		if (f < 0) return 0;
 		Handle h{f, size, {}};
 		h.m.size = size;
 		h.m.ascent = faces[f].ascent * size / 1000.f;

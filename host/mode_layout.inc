@@ -82,6 +82,18 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 		for (auto& kv : fonts.o) {
 			Face f; f.key = kv.first;
 			if (kv.second.t != J::Obj) badInput(fontsPath + ": face \"" + kv.first + "\" must be an object");
+			{
+				StringList parts;
+				StringUtilities::ExpandString(parts, kv.first, '|');
+				char* end = nullptr;
+				long weight = parts.size() >= 2 ? strtol(parts[1].c_str(), &end, 10) : 0;
+				if (parts.size() < 2 || parts.size() > 3 || parts[0].empty() || parts[1].empty() || *end || weight < 1 || weight > 1000 ||
+				    (parts.size() == 3 && parts[2] != "i"))
+					badInput(fontsPath + ": face \"" + kv.first + "\" is not \"family|weight\" or \"family|weight|i\"");
+				f.family = StringUtilities::ToLower(parts[0]);
+				f.weight = (int)weight;
+				f.italic = parts.size() == 3;
+			}
 			if (J* a = kv.second.get("ascent"); isNum(a)) f.ascent = num(*a);
 			if (J* d = kv.second.get("descent"); isNum(d)) f.descent = num(*d);
 			if (J* d = kv.second.get("def"); isNum(d)) f.def = num(*d);
@@ -94,7 +106,7 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 				}
 			faces.push_back(f);
 		}
-		if (faces.empty()) badInput(fontsPath + ": no font faces (rml-preview writes one per --font that is not italic)");
+		if (faces.empty()) badInput(fontsPath + ": no font faces");
 	}
 	J cases = readCases(Mode::Layout);
 	NullRender render; Sys sys; MeasureFont font;

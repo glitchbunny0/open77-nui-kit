@@ -435,6 +435,37 @@ def _():
     expect(len(per) == 2 and all('colr' in p for p in per), r.out[-400:])
 
 
+# ---- fonts: a face is chosen as RmlUi's font engine chooses one
+TWO_WEIGHTS = {'probe|400': PROBE_FONT, 'probe|600': dict(PROBE_FONT, **{'def': 600})}
+
+
+def word_box(rcss, faces):
+    out = layout('<span id="w">aaaa</span>', 'span { display: inline-block; } ' + rcss, faces=faces, name='font')[0]
+    return next(e for e in out['els'] if e.get('id') == 'w'), out['warnings']
+
+
+@check('font: an unknown family gets no face and no text, as in RmlUi')
+def _():
+    out = layout('<p id="t">hello</p>', '#t { font-family: nope; }', name='nofam')[0]
+    expect(not texts(out['els']), f'text runs {texts(out["els"])}')
+    expect(any('No font face defined' in w for w in out['warnings']), f'warnings {out["warnings"]}')
+
+
+@check('font: a missing weight takes the nearest loaded face, with a warning')
+def _():
+    box, warn = word_box('#w { font-weight: 700; }', TWO_WEIGHTS)
+    expect(box['w'] == 24.0, f'width {box["w"]} (4 glyphs of 0.6 em at 10 = 24 from weight 600)')
+    expect(any('Font face substituted' in w and 'weight 700' in w for w in warn), f'warnings {warn}')
+
+
+@check('font: italic text needs an italic face')
+def _():
+    box, warn = word_box('#w { font-style: italic; }', TWO_WEIGHTS)
+    expect(box['w'] == 0.0 and any('No font face defined' in w for w in warn), f'box {box["w"]}, warnings {warn}')
+    box, warn = word_box('#w { font-style: italic; }', dict(TWO_WEIGHTS, **{'probe|400|i': dict(PROBE_FONT, **{'def': 700})}))
+    expect(box['w'] == 28.0 and not warn, f'with an italic face: width {box["w"]}, warnings {warn}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

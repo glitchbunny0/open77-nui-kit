@@ -113,3 +113,15 @@ mutant host host/mode_layout.inc "layout: each case lists its own warnings" \
 		warnings.clear();' '	for (J& c : cases.a) {'
 mutant host host/mode_check.inc "check: a stylesheet warning shows in every case" \
     'Factory::ClearStyleSheetCache();' ''
+
+# fonts
+mutant host host/common.hpp "font: an unknown family gets no face and no text, as in RmlUi" \
+    '		if (f < 0) return 0;
+		Handle h{f' '		if (f < 0) f = 0;
+		Handle h{f'
+mutant host host/common.hpp "font: a missing weight takes the nearest loaded face, with a warning" \
+    'if (best < 0 || std::abs(f.weight - weight) < std::abs(faces[best].weight - weight)) best = (int)i;' 'if (best < 0) best = (int)i;'
+mutant host host/common.hpp "font: a missing weight takes the nearest loaded face, with a warning" \
+    'Log::Message(Log::LT_WARNING, "Font face substituted:' 'if (false) Log::Message(Log::LT_WARNING, "Font face substituted:'
+mutant host host/common.hpp "font: italic text needs an italic face" \
+    'if (f.family != family || f.italic != italic) continue;' 'if (f.family != family) continue;'
