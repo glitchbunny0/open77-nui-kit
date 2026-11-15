@@ -281,7 +281,7 @@ MUTANTS += [
      'if (tag === "textarea" || (tag === "input" && type !== "checkbox" && type !== "radio")) return "input";', '',
      'protocol', 'typing writes the model on every edit'),
     ('removeAt removes two entries', 'lrbind.js', 'a.splice(index, 1)', 'a.splice(index, 2)', 'protocol', 'removeAt 0'),
-    ('lua: change does not update the Lua copy', 'lrbind.lua', 'if parent then parent[key] = payload.value end', '',
+    ('lua: change does not update the Lua copy', 'lrbind.lua', 'if keys then parent[key] = payload.value end', '',
      'lua', 'change updates the Lua copy'),
     ('lua: toLua does not shift', 'lrbind.lua', '"[" .. (tonumber(n) + 1) .. "]"', '"[" .. n .. "]"', 'lua',
      'change path back to 1-based'),
@@ -509,6 +509,34 @@ MUTANTS += [
      'protocol', 'a camelCase data-alias resolves in an HTML page'),
     ('iterator names matched ignoring case', 'lrbind.js', 'fromAttr && fromAttr.has(lower) &&', 'names.has(lower) &&',
      'protocol', 'an iterator name is matched as written'),
+]
+
+# ==== lrbind.lua: a path is name, [n] (n >= 1) and .member, nothing else; no holes, no index on a struct, no member on
+# a list; set/push/removeAt refuse the rest before the copy or the page sees it; merge takes the model's top-level
+# fields and copies them; event arity follows n
+MUTANTS += [
+    ('lua: index 0 accepted', 'lrbind.lua', 'if not n or n < 1 then return nil end', 'if not n then return nil end', 'lua',
+     'set refuses the path rows[0]'),
+    ('lua: a path read up to its first stray character', 'lrbind.lua', '            if not member then return nil end',
+     '            if not member then return keys end', 'lua', 'set refuses the path rows[x]'),
+    ('lua: holes allowed', 'lrbind.lua', '        if last > #cur + 1 then return nil end\n', '', 'lua', 'set refuses the path rows[4]'),
+    ('lua: an index on a struct', 'lrbind.lua', '        for k in pairs(cur) do if type(k) ~= "number" then return nil end end\n', '',
+     'lua', 'set refuses the path rows[1][1]'),
+    ('lua: a member on a list', 'lrbind.lua', '    elseif #cur > 0 then\n        return nil\n', '', 'lua',
+     'set refuses the path rows.name'),
+    ('lua: a top-level name the model never had', 'lrbind.lua', ' or not fields[model][keys[1]] then return nil end',
+     ' then return nil end', 'lua', 'set refuses the path nope'),
+    ('lua: merge takes any key', 'lrbind.lua', 'if type(k) == "string" and fields[model][k] then', 'if true then', 'lua',
+     'merge keeps top-level fields the model has'),
+    ('lua: merge does not copy', 'lrbind.lua', '                m[k] = copy(v)', '                m[k] = v', 'lua',
+     'merge copies what it keeps'),
+    ('lua: merge without fields errors', 'lrbind.lua',
+     '        if type(values) ~= "table" then return bad("merge: no fields for", model, "") end\n', '', 'lua',
+     'merge without fields is refused'),
+    ('lua: removeAt takes a fractional index', 'lrbind.lua', 'local i = math.tointeger(index)',
+     'local i = type(index) == "number" and index or nil', 'lua', 'removeAt refuses a fractional index'),
+    ('lua: event arity ignores n', 'lrbind.lua', 'table.unpack(args, 1, tonumber(payload.n) or #args)', 'table.unpack(args)',
+     'lua', 'two empty arguments'),
 ]
 
 # ==== the run

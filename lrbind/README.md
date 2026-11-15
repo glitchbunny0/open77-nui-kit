@@ -49,6 +49,12 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
 walks the model's own members only, and an index may append at the end of a list but not leave a hole; `merge`
 takes top-level fields of the model.
 
+From Lua (`lrbind.lua`), a path is a field the model had at create, then `[n]` (1-based) and `.member` steps, nothing
+else: `rows[x]`, `rows[ 1 ]`, `rows[-1]`, `rows[1.5]`, `rows[0]`, an index on a struct or a member on a list are
+refused (a line in the client log, `false` back) before the Lua copy or the page changes. `set` may append at
+`#list + 1`, no further. `merge` takes top-level fields the model has and skips any other key; `removeAt` takes an
+integral index.
+
 ## Rules that come from RmlUi itself (all reproduced by the shim, all measured against RmlUi 6.3)
 
 - **Every field the markup names must be in the initial model.** An unknown name is a parse error: the binding is

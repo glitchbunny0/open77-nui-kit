@@ -30,43 +30,74 @@ local function copy(v)
     return out
 end
 
--- "items[2].name" (1-based, Lua) <-> "items[1].name" (0-based, the page)
-local function toPage(path)
-    local bad = false
-    local out = path:gsub("%[(%-?%d+)%]", function(n)
-        n = tonumber(n)
-        if n < 1 then bad = true end
-        return "[" .. (n - 1) .. "]"
-    end)
-    if bad then return nil end
+-- A path from Lua: a field name, then any run of [n] (1-based, n >= 1) and .member, e.g. "items[2].name" or
+-- "grid[1][3]". Returns its keys ({ "items", 2, "name" }), or nil for anything else (rows[x], rows[ 1 ], rows[-1],
+-- rows[1.5], a.b..c), so the Lua copy and the page never act on different places.
+local function parsePath(path)
+    if type(path) ~= "string" then return nil end
+    local name = path:match("^%a[%w_]*")
+    if not name then return nil end
+    local keys, pos = { name }, #name + 1
+    while pos <= #path do
+        local idx = path:match("^%[(%d+)%]", pos)
+        if idx then
+            local n = math.tointeger(tonumber(idx))
+            if not n or n < 1 then return nil end
+            keys[#keys + 1] = n
+            pos = pos + #idx + 2
+        else
+            local member = path:match("^%.([%a_][%w_]*)", pos)
+            if not member then return nil end
+            keys[#keys + 1] = member
+            pos = pos + #member + 1
+        end
+    end
+    return keys
+end
+
+-- the page's path for those keys (0-based)
+local function toPage(keys)
+    local out = keys[1]
+    for i = 2, #keys do
+        local k = keys[i]
+        out = out .. (math.type(k) == "integer" and ("[" .. (k - 1) .. "]") or ("." .. k))
+    end
     return out
 end
 
+-- a path from the page (0-based) as Lua writes it
 local function toLua(path)
     return (tostring(path):gsub("%[(%d+)%]", function(n) return "[" .. (tonumber(n) + 1) .. "]" end))
 end
 
--- the table and key a path ends at, inside the Lua copy of a model (nil when it runs through a scalar)
-local function locate(model, path)
-    local parent, key = nil, nil
+-- The table and key a path ends at in the Lua copy of a model, or nil: every step before the last must be a table
+-- that is there; a last index must be on a list and may append (#list + 1) but not leave a hole; a last member must
+-- not be on a list (the page refuses both too).
+local function locate(model, keys)
     local cur = model
-    for name, rest in path:gmatch("([^%.%[]*)([^%.]*)") do
-        if name ~= "" then
-            if type(cur) ~= "table" then return nil end
-            parent, key, cur = cur, name, cur[name]
-        end
-        for idx in rest:gmatch("%[(%d+)%]") do
-            if type(cur) ~= "table" then return nil end
-            parent, key, cur = cur, tonumber(idx), cur[tonumber(idx)]
-        end
+    for i = 1, #keys - 1 do
+        cur = cur[keys[i]]
+        if type(cur) ~= "table" then return nil end
     end
-    return parent, key
+    local last = keys[#keys]
+    if math.type(last) == "integer" then
+        if last > #cur + 1 then return nil end
+        for k in pairs(cur) do if type(k) ~= "number" then return nil end end
+    elseif #cur > 0 then
+        return nil
+    end
+    return cur, last
 end
 
 function LrBind.page(page, opts)
     opts = opts or {}
     local models = copy(opts.models or {})
     local events = copy(opts.events or {})
+    local fields = {}   -- each model's top-level names, fixed at create as natively
+    for name, m in pairs(models) do
+        fields[name] = {}
+        if type(m) == "table" then for k in pairs(m) do fields[name][k] = true end end
+    end
     local handlers, nextId = {}, 0
     local self = { page = page }
 
@@ -82,43 +113,57 @@ function LrBind.page(page, opts)
         return false
     end
 
-    function self:set(model, path, value)
-        local m = models[model]
-        if not m then return bad("set: no model", model, path) end
-        local pagePath = toPage(path)
-        local parent, key = locate(m, path)
-        if not pagePath or not parent then return bad("set: bad path", model, path) end
-        parent[key] = copy(value)
-        return page:send("lrbind:set", { model = model, path = pagePath, value = value })
+    -- the keys of a path into model and where it ends in the Lua copy, or nil
+    local function find(model, path)
+        local keys = parsePath(path)
+        if not models[model] or not keys or not fields[model][keys[1]] then return nil end
+        local parent, key = locate(models[model], keys)
+        if parent == nil then return nil end
+        return keys, parent, key
     end
 
-    function self:merge(model, fields)
+    function self:set(model, path, value)
+        if not models[model] then return bad("set: no model", model, path) end
+        local keys, parent, key = find(model, path)
+        if not keys then return bad("set: bad path", model, path) end
+        parent[key] = copy(value)
+        return page:send("lrbind:set", { model = model, path = toPage(keys), value = value })
+    end
+
+    -- top-level fields only (set takes a path), each one the model had at create
+    function self:merge(model, values)
         local m = models[model]
         if not m then return bad("merge: no model", model, "") end
-        for k, v in pairs(fields) do m[k] = copy(v) end
-        return page:send("lrbind:merge", { model = model, fields = fields })
+        if type(values) ~= "table" then return bad("merge: no fields for", model, "") end
+        local sent = {}
+        for k, v in pairs(values) do
+            if type(k) == "string" and fields[model][k] then
+                m[k] = copy(v)
+                sent[k] = v
+            else
+                bad("merge: not a top-level field of", model, k)
+            end
+        end
+        return page:send("lrbind:merge", { model = model, fields = sent })
     end
 
     function self:push(model, path, value)
-        local m = models[model]
-        local parent, key
-        if m then parent, key = locate(m, path) end
-        local list = parent and parent[key]
+        local keys, parent, key = find(model, path)
+        local list = keys and parent[key]
         if type(list) ~= "table" then return bad("push: not an array", model, path) end
         list[#list + 1] = copy(value)
-        return page:send("lrbind:push", { model = model, path = toPage(path), value = value })
+        return page:send("lrbind:push", { model = model, path = toPage(keys), value = value })
     end
 
     function self:removeAt(model, path, index)
-        local m = models[model]
-        local parent, key
-        if m then parent, key = locate(m, path) end
-        local list = parent and parent[key]
-        if type(list) ~= "table" or type(index) ~= "number" or index < 1 or index > #list then
+        local keys, parent, key = find(model, path)
+        local list = keys and parent[key]
+        local i = math.tointeger(index)
+        if type(list) ~= "table" or not i or i < 1 or i > #list then
             return bad("removeAt: no entry " .. tostring(index) .. " in", model, path)
         end
-        table.remove(list, index)
-        return page:send("lrbind:removeAt", { model = model, path = toPage(path), index = index - 1 })
+        table.remove(list, i)
+        return page:send("lrbind:removeAt", { model = model, path = toPage(keys), index = i - 1 })
     end
 
     function self:onModel(name, fn)
@@ -144,10 +189,8 @@ function LrBind.page(page, opts)
     page:on("lrbind:change", function(payload)
         if type(payload) ~= "table" then return end
         local path = toLua(payload.path)
-        local m = models[payload.model]
-        local parent, key
-        if m then parent, key = locate(m, path) end
-        if parent then parent[key] = payload.value end
+        local keys, parent, key = find(payload.model, path)
+        if keys then parent[key] = payload.value end
         fire("change", path, payload.value, payload.model)
     end)
     page:on("lrbind:error", function(payload)
