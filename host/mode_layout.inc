@@ -3,9 +3,13 @@ namespace layout {
 static std::string fnum(float v) { char b[32]; snprintf(b, 32, "%.1f", v); return b; }
 static std::string col(Colourb c) { char b[16]; snprintf(b, 16, "#%02x%02x%02x%02x", c.red, c.green, c.blue, c.alpha); return b; }
 static std::string fop(float v) { char b[32]; snprintf(b, 32, "%.3f", v); return b; }
-struct Clip { float x0 = -1e9f, y0 = -1e9f, x1 = 1e9f, y1 = 1e9f; };
-static std::string clipStr(const Clip& c) {
-	return "[" + fnum(c.x0 < -1e8f ? 0 : c.x0) + "," + fnum(c.y0 < -1e8f ? 0 : c.y0) + "," + fnum(c.x1 > 1e8f ? 1920 : c.x1) + "," + fnum(c.y1 > 1e8f ? 1080 : c.y1) + "]";
+// the scissor region RmlUi draws the element with (ElementUtilities::GetClippingRegion: the padding boxes of the
+// ancestors in its offset-parent chain that clip content which overflows them, honouring clip: none/always/N), as
+// [x0, y0, x1, y1]; null when nothing clips it
+static std::string clipOf(Element* el) {
+	Rectanglei r;
+	if (!ElementUtilities::GetClippingRegion(el, r)) return "null";
+	return "[" + fnum((float)r.Left()) + "," + fnum((float)r.Top()) + "," + fnum((float)r.Right()) + "," + fnum((float)r.Bottom()) + "]";
 }
 static std::string chainOf(Element* el) {
 	std::vector<std::string> parts;
@@ -20,7 +24,7 @@ static std::string chainOf(Element* el) {
 	for (size_t i = parts.size(); i-- > 0;) out += q(parts[i]) + (i ? "," : "");
 	return out + "]";
 }
-static void emit(Element* el, std::ostringstream& out, bool& first, float, Clip clip) {
+static void emit(Element* el, std::ostringstream& out, bool& first) {
 	if (auto* t = rmlui_dynamic_cast<ElementText*>(el)) {
 		const auto& cv = t->GetComputedValues();
 		Vector2f off = t->GetAbsoluteOffset(BoxArea::Border);
@@ -30,7 +34,7 @@ static void emit(Element* el, std::ostringstream& out, bool& first, float, Clip 
 			    << ",\"w\":" << line.width << ",\"size\":" << fnum(cv.font_size()) << ",\"weight\":" << (int)cv.font_weight()
 			    << ",\"family\":" << q(cv.font_family()) << ",\"color\":\"" << col(cv.color()) << "\",\"op\":" << fop(cv.opacity())
 			    << ",\"ls\":" << fnum(cv.letter_spacing()) << ",\"italic\":" << (cv.font_style() == Style::FontStyle::Italic ? "true" : "false")
-			    << ",\"clip\":" << clipStr(clip)
+			    << ",\"clip\":" << clipOf(t)
 			    << ",\"upper\":" << (cv.text_transform() == Style::TextTransform::Uppercase ? "true" : "false") << "}";
 			first = false;
 		}
@@ -58,18 +62,14 @@ static void emit(Element* el, std::ostringstream& out, bool& first, float, Clip 
 		    << ",\"bb\":" << fnum(box.GetEdge(BoxArea::Border, BoxEdge::Bottom)) << ",\"bl\":" << fnum(box.GetEdge(BoxArea::Border, BoxEdge::Left))
 		    << ",\"btc\":\"" << col(cv.border_top_color()) << "\",\"brc\":\"" << col(cv.border_right_color()) << "\",\"bbc\":\"" << col(cv.border_bottom_color())
 		    << "\",\"blc\":\"" << col(cv.border_left_color()) << "\",\"radius\":" << fnum(cv.border_top_left_radius())
-		    << ",\"mask\":" << q(mask) << ",\"deco\":" << q(deco) << ",\"backdrop\":" << q(back) << ",\"clip\":" << clipStr(clip);
+		    << ",\"mask\":" << q(mask) << ",\"deco\":" << q(deco) << ",\"backdrop\":" << q(back) << ",\"clip\":" << clipOf(el);
 		if (el->GetTagName() == "path")
 			out << ",\"d\":" << q(el->GetAttribute<String>("d", "")) << ",\"viewbox\":" << q(el->GetAttribute<String>("view-box", ""))
 			    << ",\"chain\":" << chainOf(el);
 		out << "}";
 		first = false;
 	}
-	if (cv.overflow_x() != Style::Overflow::Visible || cv.overflow_y() != Style::Overflow::Visible) {
-		clip.x0 = std::max(clip.x0, off.x); clip.y0 = std::max(clip.y0, off.y);
-		clip.x1 = std::min(clip.x1, off.x + sz.x); clip.y1 = std::min(clip.y1, off.y + sz.y);
-	}
-	for (int i = 0; i < el->GetNumChildren(); i++) emit(el->GetChild(i), out, first, op, clip);
+	for (int i = 0; i < el->GetNumChildren(); i++) emit(el->GetChild(i), out, first);
 }
 int run(const std::string& docPath, const std::string& modelName, const std::string& fontsPath) {
 	{
@@ -126,7 +126,7 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 			context->Update();
 			std::ostringstream out;
 			bool first = true;
-			emit(doc, out, first, 1.0f, Clip());
+			emit(doc, out, first);
 			std::cout << out.str();
 		}
 		std::cout << "]}";

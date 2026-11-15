@@ -100,3 +100,9 @@ mutant host host/common.hpp "open77: fx() without an effect name or with units i
 # layout mode
 mutant host host/mode_layout.inc "layout: a hidden element drops its text and its whole subtree" \
     'if (!el->IsVisible()) return;' 'if (cv.display() == Style::Display::None) return;'
+mutant host host/mode_layout.inc "layout: overflow clips to the padding box of the clipping ancestor" \
+    'ElementUtilities::GetClippingRegion(el, r)' 'ElementUtilities::GetClippingRegion(el, r, nullptr, true)'
+mutant host host/mode_layout.inc "layout: the clip follows the offset-parent chain (an absolute child escapes; clip: none)" \
+    'ElementUtilities::GetClippingRegion(el, r)' 'ElementUtilities::GetClippingRegion(el->GetParentNode() ? el->GetParentNode() : el, r, nullptr, el->GetParentNode() && el->GetParentNode()->GetParentNode())'
+mutant host host/mode_layout.inc "layout: nothing clips an unclipped box, whatever the context size" \
+    'if (!ElementUtilities::GetClippingRegion(el, r)) return "null";' 'if (!ElementUtilities::GetClippingRegion(el, r)) return "[0.0,0.0,1920.0,1080.0]";'

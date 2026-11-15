@@ -377,6 +377,40 @@ def _():
     expect(texts(es) == ['OK'] and ids(es) == ['ok'], f'texts {texts(es)}, boxes {ids(es)}')
 
 
+CLIP_RCSS = ('div { display: block; } #c { position: absolute; left: 20dp; top: 30dp; width: 100dp; height: 50dp; '
+             'border: 10dp #fff; overflow: hidden; } #in { width: 300dp; height: 300dp; } '
+             '#s { width: 100dp; height: 50dp; overflow: hidden; margin-top: 200dp; } #sin { width: 300dp; height: 300dp; } '
+             '#ab { position: absolute; left: 500dp; top: 500dp; width: 10dp; height: 10dp; } '
+             '#none { clip: none; width: 5dp; height: 5dp; } '
+             '#far { position: absolute; left: 2200dp; top: 1200dp; width: 10dp; height: 10dp; }')
+CLIP_BODY = ('<div id="c"><div id="in">text in</div><div id="none"></div></div>'
+             '<div id="s"><div id="sin"></div><div id="ab"></div></div><div id="far"></div>')
+
+
+def clips():
+    es = els(CLIP_BODY, CLIP_RCSS, cases=[{'name': 'c', 'model': {}, 'size': [2560, 1440]}], name='clip')
+    out = {e.get('id') or e.get('text'): e['clip'] for e in es}
+    return out
+
+
+@check('layout: overflow clips to the padding box of the clipping ancestor')
+def _():
+    c = clips()
+    expect(c['in'] == [30, 40, 130, 90] and c['text in'] == [30, 40, 130, 90] and c['sin'] == [0, 200, 100, 250], f'{c}')
+
+
+@check('layout: the clip follows the offset-parent chain (an absolute child escapes; clip: none)')
+def _():
+    c = clips()
+    expect(c['ab'] is None and c['none'] is None, f'{c}')
+
+
+@check('layout: nothing clips an unclipped box, whatever the context size')
+def _():
+    c = clips()
+    expect(c['far'] is None and c['c'] is None, f'{c}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

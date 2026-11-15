@@ -16,6 +16,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/DataVariable.h>
 #include <RmlUi/Core/ElementText.h>
+#include <RmlUi/Core/ElementUtilities.h>
 #include <RmlUi/Core/Decorator.h>
 #include <RmlUi/Core/Filter.h>
 #include <RmlUi/Core/PropertyDefinition.h>
