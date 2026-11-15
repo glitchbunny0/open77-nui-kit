@@ -25,6 +25,14 @@ static std::string chainOf(Element* el) {
 	for (size_t i = parts.size(); i-- > 0;) out += q(parts[i]) + (i ? "," : "");
 	return out + "]";
 }
+// a text line's width as RmlUi measures it (the font engine's sum; Line::width is only filled in when RmlUi draws).
+// text-overflow: ellipsis is applied only when drawing, so a run is always the whole line.
+static int widthOf(ElementText* t, const String& text) {
+	FontFaceHandle h = t->GetFontFaceHandle();
+	if (!h) return 0;
+	const auto& cv = t->GetComputedValues();
+	return GetFontEngineInterface()->GetStringWidth(h, text, TextShapingContext{cv.language(), cv.direction(), cv.font_kerning(), cv.letter_spacing()}, Character::Null);
+}
 static void emit(Element* el, std::ostringstream& out, bool& first) {
 	if (auto* t = rmlui_dynamic_cast<ElementText*>(el)) {
 		const auto& cv = t->GetComputedValues();
@@ -33,7 +41,7 @@ static void emit(Element* el, std::ostringstream& out, bool& first) {
 		for (auto& line : t->GetLines()) {
 			if (line.text.empty()) continue;
 			out << (first ? "" : ",") << "{\"text\":" << q(line.text) << ",\"x\":" << fnum(off.x + line.position.x) << ",\"y\":" << fnum(off.y + line.position.y)
-			    << ",\"w\":" << line.width << ",\"size\":" << fnum(cv.font_size()) << ",\"weight\":" << (int)cv.font_weight()
+			    << ",\"w\":" << widthOf(t, line.text) << ",\"size\":" << fnum(cv.font_size()) << ",\"weight\":" << (int)cv.font_weight()
 			    << ",\"family\":" << q(cv.font_family()) << ",\"color\":\"" << col(cv.color()) << "\",\"op\":" << fop(cv.opacity())
 			    << ",\"ls\":" << fnum(cv.letter_spacing()) << ",\"italic\":" << (cv.font_style() == Style::FontStyle::Italic ? "true" : "false")
 			    << ",\"clip\":" << clipOf(t) << "}";
@@ -101,8 +109,17 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 				for (auto& c : adv->o) {
 					char* end = nullptr;
 					unsigned long cp = strtoul(c.first.c_str(), &end, 10);
-					if (c.first.empty() || *end || !isNum(&c.second)) badInput(fontsPath + ": face \"" + kv.first + "\": bad advance \"" + c.first + "\"");
-					f.adv[(unsigned)cp] = num(c.second);
+					if (c.first.empty() || *end || !(isNum(&c.second) || c.second.t == J::Null))
+						badInput(fontsPath + ": face \"" + kv.first + "\": bad advance \"" + c.first + "\"");
+					f.adv[(unsigned)cp] = c.second.t == J::Null ? -1.f : (float)num(c.second);
+				}
+			if (J* kern = kv.second.get("kern"))
+				for (auto& k : kern->o) {
+					unsigned a = 0, b = 0;
+					char tail = 0;
+					if (sscanf(k.first.c_str(), "%u,%u%c", &a, &b, &tail) != 2 || !isNum(&k.second))
+						badInput(fontsPath + ": face \"" + kv.first + "\": bad kerning pair \"" + k.first + "\"");
+					f.kern[{a, b}] = (float)num(k.second);
 				}
 			faces.push_back(f);
 		}

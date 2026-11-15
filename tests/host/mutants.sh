@@ -125,3 +125,19 @@ mutant host host/common.hpp "font: a missing weight takes the nearest loaded fac
     'Log::Message(Log::LT_WARNING, "Font face substituted:' 'if (false) Log::Message(Log::LT_WARNING, "Font face substituted:'
 mutant host host/common.hpp "font: italic text needs an italic face" \
     'if (f.family != family || f.italic != italic) continue;' 'if (f.family != family) continue;'
+
+# text widths
+mutant host host/common.hpp "width: each glyph adds its whole-pixel advance" \
+    'width += (int)std::lround((it != f.adv.end() ? it->second : f.def) * hd.size / 1000.f);' 'width += (int)((it != f.adv.end() ? it->second : f.def) * hd.size / 1000.f);'
+mutant host host/common.hpp "width: letter-spacing adds its whole pixels per glyph" \
+    'width += (int)ctx.letter_spacing;' 'width += (int)std::lround(ctx.letter_spacing);'
+mutant host host/common.hpp "width: a glyph the font lacks adds nothing" \
+    'if (it != f.adv.end() && it->second < 0) continue;' 'if (it != f.adv.end() && it->second < 0) it = f.adv.end();'
+mutant host host/common.hpp "width: a control character adds nothing" \
+    'if (c < 0x20) continue;' ''
+mutant host host/common.hpp "width: kerning pairs from fonts.json apply unless font-kerning is none" \
+    'bool kerning = ctx.font_kerning != Style::FontKerning::None && !f.kern.empty();' 'bool kerning = !f.kern.empty();'
+mutant host host/common.hpp "width: an emoji counts as one glyph" \
+    'if (c >= 0xF0 && p + 2 < e)' 'if (false)'
+mutant host host/mode_layout.inc "layout: a text run carries its measured width" \
+    '<< widthOf(t, line.text) <<' '<< line.width <<'

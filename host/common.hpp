@@ -381,7 +381,8 @@ public:
 class NullFont : public FontEngineInterface {};
 
 // ---- a font engine with real advances (layout mode): bin/rml-preview measures the TTFs at 1000 units into fonts.json
-// { "<family>|<weight>[|i]": { "ascent", "descent", "adv": { "<codepoint>": width }, "def": width } }   (|i: italic)
+// { "<family>|<weight>[|i]": { "ascent", "descent", "def": width, "adv": { "<codepoint>": width or null },
+//                              "kern": { "<codepoint>,<codepoint>": adjustment } } }   |i: italic; null: no such glyph
 // A face is chosen as RmlUi's own font engine chooses it (FontProvider, FontFamily::GetFaceHandle): the family must be
 // loaded and the style (italic or not) must match, else there is no face and RmlUi draws no text ("No font face
 // defined"); of those, the nearest weight. A weight other than the one asked for adds a "font face substituted" warning.
@@ -392,7 +393,8 @@ struct Face {
 	int weight = 400;
 	bool italic = false;
 	float ascent = 930, descent = 346, def = 500;
-	std::map<unsigned, float> adv;
+	std::map<unsigned, float> adv;                       // a negative advance: the font has no such glyph
+	std::map<std::pair<unsigned, unsigned>, float> kern;  // legacy kern-table pairs, what FreeType's FT_Get_Kerning reads
 };
 static std::vector<Face> faces;
 struct Handle { int face; int size; FontMetrics m; };
@@ -443,14 +445,28 @@ public:
 	}
 	FontEffectsHandle PrepareFontEffects(FontFaceHandle, const FontEffectList&) override { return 0; }
 	const FontMetrics& GetFontMetrics(FontFaceHandle h) override { return handles[h - 1].m; }
-	int GetStringWidth(FontFaceHandle h, StringView s, const TextShapingContext& ctx, Character) override {
+	// RmlUi's sum (FontFaceHandleDefault::GetStringWidth): per glyph its whole-pixel advance (FreeType hints them to the
+	// pixel grid), the kerning to the glyph before it, and letter-spacing truncated to whole pixels. Control characters
+	// and glyphs the font lacks add nothing. A code point fonts.json did not measure takes the face's default advance.
+	int GetStringWidth(FontFaceHandle h, StringView s, const TextShapingContext& ctx, Character prior_character) override {
 		Handle& hd = handles[h - 1];
 		Face& f = faces[hd.face];
-		float w = 0;
-		auto cps = utf8(s);
-		for (unsigned c : cps) { auto it = f.adv.find(c); w += (it != f.adv.end() ? it->second : f.def) * hd.size / 1000.f; }
-		w += ctx.letter_spacing * cps.size();
-		return (int)(w + 0.5f);
+		bool kerning = ctx.font_kerning != Style::FontKerning::None && !f.kern.empty();
+		unsigned prior = (unsigned)prior_character;
+		int width = 0;
+		for (unsigned c : utf8(s)) {
+			if (c < 0x20) continue;
+			auto it = f.adv.find(c);
+			if (it != f.adv.end() && it->second < 0) continue;
+			if (kerning) {
+				auto k = f.kern.find({prior, c});
+				if (k != f.kern.end()) width += (int)std::lround(k->second * hd.size / 1000.f);
+			}
+			width += (int)std::lround((it != f.adv.end() ? it->second : f.def) * hd.size / 1000.f);
+			width += (int)ctx.letter_spacing;
+			prior = c;
+		}
+		return std::max(width, 0);
 	}
 	int GenerateString(RenderManager&, FontFaceHandle h, FontEffectsHandle, StringView s, Vector2f, ColourbPremultiplied, float, const TextShapingContext& ctx, TexturedMeshList&) override {
 		return GetStringWidth(h, s, ctx, Character::Null);

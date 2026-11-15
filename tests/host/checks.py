@@ -466,6 +466,58 @@ def _():
     expect(box['w'] == 28.0 and not warn, f'with an italic face: width {box["w"]}, warnings {warn}')
 
 
+# ---- text widths as RmlUi's font engine sums them
+def span_width(text, rcss='', face=None, model=None):
+    faces = {'probe|400': dict(PROBE_FONT, **(face or {}))}
+    out = layout(f'<span id="w">{text}</span>', 'span { display: inline-block; } ' + rcss, faces=faces, name='width',
+                 cases=[{'name': 'c', 'model': model or {}}])[0]
+    return next(e for e in out['els'] if e.get('id') == 'w')['w']
+
+
+@check('width: each glyph adds its whole-pixel advance')
+def _():
+    w = span_width('aaa', face={'adv': {'97': 370}})
+    expect(w == 12.0, f'width {w}, want 3 x round(3.7) = 12')
+
+
+@check('width: letter-spacing adds its whole pixels per glyph')
+def _():
+    w = span_width('aaaa', '#w { letter-spacing: 1.5dp; }')
+    expect(w == 24.0, f'width {w}, want 4 x (5 + 1) = 24')
+
+
+@check('width: a glyph the font lacks adds nothing')
+def _():
+    w = span_width('a\u2190a', face={'adv': {'8592': None}})
+    expect(w == 10.0, f'width {w}, want 10 (the arrow is not in the font)')
+
+
+@check('width: a control character adds nothing')
+def _():
+    w = span_width('{{s}}', model={'s': 'a\u0001b'})
+    expect(w == 10.0, f'width {w}, want 10')
+
+
+@check('width: kerning pairs from fonts.json apply unless font-kerning is none')
+def _():
+    face = {'kern': {'97,98': -100}}
+    w, w0 = span_width('ab', face=face), span_width('ab', '#w { font-kerning: none; }', face=face)
+    expect((w, w0) == (9.0, 10.0), f'widths {w}, {w0}, want 9 kerned, 10 with font-kerning: none')
+
+
+@check('width: an emoji counts as one glyph')
+def _():
+    w = span_width('a\U0001F600b')
+    expect(w == 15.0, f'width {w}, want 15')
+
+
+@check('layout: a text run carries its measured width')
+def _():
+    es = els('<p>abc</p>')
+    run = next(e for e in es if 'text' in e)
+    expect(run['w'] == 15, f'{run}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:
