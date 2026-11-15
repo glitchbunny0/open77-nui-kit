@@ -300,8 +300,7 @@ class Painter:
                 layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
                 d = ImageDraw.Draw(layer)
                 x, col = e['x'], rgba(e['color'], e['op'])
-                text = e['text'].upper() if e.get('upper') else e['text']
-                for ch in text:
+                for ch in e['text']:   # the host's text is what RmlUi renders: text-transform already applied
                     d.text((x, e['y']), ch, font=f, fill=col, anchor='ls')
                     x += f.getlength(ch) + e['ls']
                 self.composite(img, layer, clip)
@@ -320,7 +319,7 @@ class Painter:
             if mask.startswith('image(') and bgc[3] > 0:
                 src = self.image(re.match(r'image\(\s*([^\s)]+)', mask).group(1))
                 if src is None:
-                    missing.add(mask)
+                    missing.add('MISSING ' + mask)
                 else:
                     m = src.resize((max(1, int(w)), max(1, int(h)))).split()[3].point(lambda a: a * bgc[3] // 255)
                     layer.paste(Image.new('RGBA', m.size, bgc[:3] + (255,)), (int(x), int(y)), m)
@@ -335,7 +334,7 @@ class Painter:
                 mm = re.match(r'image\(\s*([^\s)]+)\s*([^)]*)\)', deco)
                 src = self.image(mm.group(1)) if mm else None
                 if src is None:
-                    missing.add(deco)
+                    missing.add('MISSING ' + deco)
                 else:
                     fit = mm.group(2)
                     if 'contain' in fit:
@@ -459,7 +458,11 @@ def main():
         p = os.path.join(a.out, s['name'] + '.png')
         img.save(p)
         names.append(s['name'])
-        print('ok  ', p, len(s['els']), 'boxes', ('MISSING ' + ', '.join(sorted(missing))) if missing else '')
+        print('ok  ', p, len(s['els']), 'boxes')
+        for w in s.get('warnings') or []:
+            print('  WARN', w)
+        for m in sorted(missing):
+            print(' ', m)
     crop = [int(v) for v in a.sheet_crop.split(',')] if a.sheet_crop else None
     lab = painter.font('', 600, 26)
 
