@@ -61,4 +61,12 @@ if bin/html-shot --find >/dev/null 2>&1; then
 else
     echo "== html-shot skipped (no Chromium; optional)"
 fi
+# Every tests/*.sh is its own suite (one per area, added by whoever owns that area): it runs from the kit root with
+# NUIKIT (kit root) and NUIKIT_TMP (a fresh empty dir for it alone) set, and fails by exiting non-zero.
+for t in tests/*.sh; do
+    [ -e "$t" ] || continue
+    step "suite: $t"
+    d="$(mktemp -d)"
+    if NUIKIT="$kit" NUIKIT_TMP="$d" bash "$t"; then rm -rf "$d"; else echo "FAIL: $t"; fail=1; fi
+done
 [ $fail = 0 ] && echo "ALL OK" || { echo "FAILED"; exit 1; }
