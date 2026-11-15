@@ -17,7 +17,7 @@ static std::string chainOf(Element* el) {
 	for (Element* e = el; e; e = e->GetParentNode()) {
 		std::string s = e->GetTagName();
 		if (!e->GetId().empty()) s += "#" + e->GetId();
-		std::string c = e->GetClassNames();
+		std::string c = classesOf(e);
 		if (!c.empty()) { for (auto& ch : c) if (ch == ' ') ch = '.'; s += "." + c; }
 		parts.push_back(s);
 	}
@@ -64,7 +64,7 @@ static void emit(Element* el, std::ostringstream& out, bool& first) {
 		if (auto* pd = el->GetLocalProperty("decorator")) deco = pd->ToString();
 		else if (auto* pd2 = el->GetProperty("decorator")) deco = pd2->ToString();
 		if (auto* pb = el->GetProperty("backdrop-filter")) back = pb->ToString();
-		out << (first ? "" : ",") << "{\"tag\":" << q(el->GetTagName()) << ",\"id\":" << q(el->GetId()) << ",\"cls\":" << q(el->GetClassNames())
+		out << (first ? "" : ",") << "{\"tag\":" << q(el->GetTagName()) << ",\"id\":" << q(el->GetId()) << ",\"cls\":" << q(classesOf(el))
 		    << ",\"x\":" << fnum(off.x) << ",\"y\":" << fnum(off.y) << ",\"w\":" << fnum(sz.x) << ",\"h\":" << fnum(sz.y)
 		    << ",\"bg\":\"" << col(cv.background_color()) << "\",\"op\":" << fop(op) << ",\"color\":\"" << col(cv.color()) << "\""
 		    << ",\"bt\":" << fnum(box.GetEdge(BoxArea::Border, BoxEdge::Top)) << ",\"br\":" << fnum(box.GetEdge(BoxArea::Border, BoxEdge::Right))

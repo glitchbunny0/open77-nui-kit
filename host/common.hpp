@@ -474,11 +474,21 @@ public:
 	int GetVersion(FontFaceHandle) override { return 1; }
 };
 
+// an element's classes sorted, space-separated: RmlUi's own order follows the order data-class-* bindings were applied
+// in, which differs between builds
+static std::string classesOf(Element* e) {
+	StringList classes;
+	StringUtilities::ExpandString(classes, e->GetClassNames(), ' ');
+	std::sort(classes.begin(), classes.end());
+	std::string out;
+	for (auto& c : classes) out += (out.empty() ? "" : " ") + c;
+	return out;
+}
 // tag#id.class1.class2 of an element, as the outline and the click lines name it
 static std::string label(Element* e) {
 	std::string s = e->GetTagName();
 	if (!e->GetId().empty()) s += "#" + e->GetId();
-	std::string c = e->GetClassNames();
+	std::string c = classesOf(e);
 	if (!c.empty()) { for (auto& ch : c) if (ch == ' ') ch = '.'; s += "." + c; }
 	return s;
 }

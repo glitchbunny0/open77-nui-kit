@@ -22,7 +22,7 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 	bool none = el->GetComputedValues().display() == Style::Display::None;
 	std::cout << std::string(depth * 2, ' ') << el->GetTagName();
 	if (!el->GetId().empty()) std::cout << "#" << el->GetId();
-	std::string c = el->GetClassNames();
+	std::string c = classesOf(el);
 	if (!c.empty()) { std::string d = c; for (auto& ch : d) if (ch == ' ') ch = '.'; std::cout << "." << d; }
 	if (none) std::cout << " [none]";
 	auto box = el->GetBox();

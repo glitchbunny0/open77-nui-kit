@@ -518,6 +518,28 @@ def _():
     expect(run['w'] == 15, f'{run}')
 
 
+def check_doc(path, model=None):
+    r = host('check', path, 'm', cases=[{'name': 'c', 'model': model or {}}])
+    expect(r.rc == 0, f'rc {r.rc}: {r.err[:300]}')
+    return r
+
+
+# ---- classes in a stable order
+CLS_BODY = '<div id="x" class="zz" data-class-aa="on">x</div>'
+
+
+@check('classes: the check outline sorts them')
+def _():
+    r = check_doc(doc('cls', CLS_BODY), {'on': True})
+    expect('div#x.aa.zz ' in r.out, r.out[:300])
+
+
+@check('classes: layout sorts them')
+def _():
+    es = els(CLS_BODY, cases=[{'name': 'c', 'model': {'on': True}}], name='cls')
+    expect(next(e for e in es if e.get('id') == 'x')['cls'] == 'aa zz', f'{es}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

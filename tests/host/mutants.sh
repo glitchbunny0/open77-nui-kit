@@ -141,3 +141,9 @@ mutant host host/common.hpp "width: an emoji counts as one glyph" \
     'if (c >= 0xF0 && p + 2 < e)' 'if (false)'
 mutant host host/mode_layout.inc "layout: a text run carries its measured width" \
     '<< widthOf(t, line.text) <<' '<< line.width <<'
+
+# classes
+mutant host host/mode_check.inc "classes: the check outline sorts them" \
+    'std::string c = classesOf(el);' 'std::string c = el->GetClassNames();'
+mutant host host/mode_layout.inc "classes: layout sorts them" \
+    'q(classesOf(el))' 'q(el->GetClassNames())'
