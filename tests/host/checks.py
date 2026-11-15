@@ -6,7 +6,7 @@ assert what it prints (check outline and clicks, layout numbers, parity dumps, e
 
 Prints "ok <check>" or "FAIL <check>: why" per check; exits 1 when any failed. Needs only the standard library.
 """
-import json, os, subprocess, sys, tempfile
+import json, os, struct, subprocess, sys, tempfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.path.abspath(sys.argv[1])
@@ -60,6 +60,18 @@ def fonts(faces=None, name='fonts'):
     path = os.path.join(WORK, name + '.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump({'probe|400': PROBE_FONT} if faces is None else faces, f)
+    return path
+
+
+def png(rel, w, h):
+    """Write a w x h PNG under the work dir; return its path."""
+    path = os.path.join(WORK, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d))
+    raw = b''.join(b'\0' + b'\xff\0\0' * w for _ in range(h))
+    with open(path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
     return path
 
 
@@ -518,6 +530,10 @@ def _():
     expect(run['w'] == 15, f'{run}')
 
 
+def warns(r):
+    return [l for l in r.out.splitlines() if l.startswith('WARN')]
+
+
 def check_doc(path, model=None):
     r = host('check', path, 'm', cases=[{'name': 'c', 'model': model or {}}])
     expect(r.rc == 0, f'rc {r.rc}: {r.err[:300]}')
@@ -554,6 +570,55 @@ def _():
            't': by['t']['h'], 'r1': [by['r1'][k] for k in ('x', 'w')], 'r2': [by['r2'][k] for k in ('x', 'h')]}
     want = {'a': [20, 30, 230, 130, 5], 'text': [0, 221, 30, 20], 't': 30, 'r1': [300, 70], 'r2': [370, 20]}
     expect(got == want, f'got {got}, want {want}')
+
+
+# ---- images
+@check('image: a missing img src is reported')
+def _():
+    w = warns(check_doc(doc('img1', '<img src="nope.png"/>')))
+    expect(any('Could not load texture' in x and 'nope.png' in x for x in w), f'{w}')
+
+
+@check('image: a missing decorator image is reported')
+def _():
+    w = warns(check_doc(doc('img2', '<div id="d">x</div>', '#d { width: 10dp; height: 10dp; decorator: image(gone.png); }')))
+    expect(any('Could not load texture' in x and 'gone.png' in x for x in w), f'{w}')
+
+
+@check('image: an image next to the document or under the resource root is found')
+def _():
+    png('res/img/a.png', 4, 4)
+    os.makedirs(os.path.join(WORK, 'res', 'ui'), exist_ok=True)
+    path = os.path.join(WORK, 'res', 'ui', 'found.rml')
+    with open(path, 'w') as f:
+        f.write('<rml><head><style>#d { width: 10dp; height: 10dp; decorator: image(/img/a.png); }</style></head>'
+                '<body data-model="m"><img src="../img/a.png"/><div id="d"/></body></rml>')
+    w = warns(check_doc(path))
+    expect(not any('texture' in x for x in w), f'{w}')
+
+
+@check('image: layout lists a missing image in the case warnings')
+def _():
+    out = layout('<div id="d">x</div>', '#d { width: 10dp; height: 10dp; decorator: image(gone.png); }', name='imglay')[0]
+    expect(any('Could not load texture' in w and 'gone.png' in w for w in out['warnings']), f'{out["warnings"]}')
+
+
+@check('image: drawing raises no noise of its own')
+def _():
+    w = warns(check_doc(doc('draw', '<div id="d">x</div><div id="z"></div>', '#z { box-shadow: #000 0dp 0dp 2dp; } '
+                              '#d { width: 50dp; height: 20dp; '
+                              'decorator: linear-gradient(90deg, #fff, #000), radial-gradient(circle, #f00, #00f); '
+                              'box-shadow: #000 0dp 0dp 2dp, #fff 1dp 1dp inset; filter: blur(2dp) glow(2dp #fff 1); '
+                              'backdrop-filter: blur(4dp); mask-image: linear-gradient(#000, #0000); }')))
+    expect(not [x for x in w if 'font face' not in x], f'{w}')
+
+
+@check('image: an img takes the PNG natural size')
+def _():
+    png('nat/n.png', 40, 30)
+    r = check_doc(doc('natural', '<img id="i" src="nat/n.png"/>'))
+    line = next((l for l in r.out.splitlines() if l.strip().startswith('img#i')), '')
+    expect(' 40x30' in line, f'outline line {line!r}')
 
 
 def main():

@@ -35,7 +35,8 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 	for (int i = 0; i < el->GetNumChildren(); i++) outline(el->GetChild(i), depth + 1, none);
 }
 static std::vector<std::string> fired;
-int run(const std::string& docPath, const std::string& modelName) {
+int run(const std::string& doc_path, const std::string& modelName) {
+	docPath = doc_path;
 	J cases = readCases(Mode::Check);
 	faces.assign(1, Face());
 	faces[0].ascent = 800, faces[0].descent = 200, faces[0].def = 500;
@@ -66,7 +67,9 @@ int run(const std::string& docPath, const std::string& modelName) {
 		std::cout << "=== case " << c.get("name")->s << "\n";
 		if (!doc) { std::cout << "LOAD FAILED\n"; }
 		else {
-			doc->Show(); context->Update(); context->Update(); outline(doc, 0, false);
+			doc->Show(); context->Update(); context->Update();
+			renderOnce(context);   // decorators and masks load their images when first drawn
+			outline(doc, 0, false);
 			if (J* clicks = c.get("clicks"))
 				for (J& k : clicks->a) {
 					std::string want = k.get("event")->s + "(";

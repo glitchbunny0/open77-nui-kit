@@ -25,6 +25,7 @@
 #include <RmlUi/Core/RenderManager.h>
 #include <RmlUi/Core/StyleSheetSpecification.h>
 #include <cstdio>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -357,27 +358,94 @@ DataVariable DynDef::Child(void* ptr, const DataAddressEntry& e) {
 	return DataVariable();
 }
 
+// ---- images: RmlUi hands LoadTexture the path joined with the document's (or sheet's) folder, a game-absolute
+// "/ui/img/x.png" with its slash stripped. Found relative to the working directory or to any folder above the document
+// (the resource root, where the game resolves it); a URL ("nui://...") is taken on trust. Missing: LoadTexture fails
+// and RmlUi warns "Could not load texture: <path>", as the game would show nothing.
+static std::string docPath;   // the document being checked, set by each mode
+static std::string findImage(const std::string& source) {
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::is_regular_file(source, ec)) return source;
+	if (fs::path(source).is_absolute()) return "";
+	for (fs::path dir = fs::absolute(docPath, ec).parent_path(); !dir.empty(); dir = dir.parent_path()) {
+		if (fs::is_regular_file(dir / source, ec)) return (dir / source).string();
+		if (dir == dir.parent_path()) break;
+	}
+	return "";
+}
+// the natural size from the file's header: PNG, JPEG, TGA; anything else counts as 1x1
+static Vector2i imageSize(const std::string& path) {
+	std::ifstream f(path, std::ios::binary);
+	std::vector<unsigned char> b((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+	auto be16 = [&](size_t i) { return int(b[i] << 8 | b[i + 1]); };
+	auto be32 = [&](size_t i) { return int(unsigned(b[i]) << 24 | b[i + 1] << 16 | b[i + 2] << 8 | b[i + 3]); };
+	if (b.size() >= 24 && !memcmp(b.data(), "\x89PNG", 4)) return {be32(16), be32(20)};
+	if (b.size() >= 4 && b[0] == 0xFF && b[1] == 0xD8)
+		for (size_t i = 2; i + 9 < b.size() && b[i] == 0xFF;) {
+			unsigned char m = b[i + 1];
+			if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) return {be16(i + 7), be16(i + 5)};
+			i += 2 + be16(i + 2);
+		}
+	std::string ext = path.size() > 4 ? StringUtilities::ToLower(path.substr(path.size() - 4)) : "";
+	if (ext == ".tga" && b.size() >= 18) return {b[12] | b[13] << 8, b[14] | b[15] << 8};
+	return {1, 1};
+}
+
 // ---- null backends
 class NullRender : public RenderInterface {
 public:
 	CompiledGeometryHandle CompileGeometry(Span<const Vertex>, Span<const int>) override { return 1; }
 	void RenderGeometry(CompiledGeometryHandle, Vector2f, TextureHandle) override {}
 	void ReleaseGeometry(CompiledGeometryHandle) override {}
-	TextureHandle LoadTexture(Vector2i& d, const String&) override { d = {1, 1}; return 1; }
+	TextureHandle LoadTexture(Vector2i& d, const String& source) override {
+		if (source.find("://") != String::npos || source.rfind("data:", 0) == 0) { d = {1, 1}; return 1; }
+		std::string path = findImage(source);
+		if (path.empty()) return 0;
+		d = imageSize(path);
+		return 1;
+	}
 	TextureHandle GenerateTexture(Span<const byte>, Vector2i) override { return 1; }
 	void ReleaseTexture(TextureHandle) override {}
 	void EnableScissorRegion(bool) override {}
 	void SetScissorRegion(Rectanglei) override {}
+	// layers, filters, shaders, clip masks: accepted and dropped, so drawing gradients, filters and masks raises no
+	// "could not compile" noise; what RmlUi itself rejects (an unknown filter, a bad value) is still logged
+	void EnableClipMask(bool) override {}
+	void RenderToClipMask(ClipMaskOperation, CompiledGeometryHandle, Vector2f) override {}
+	void SetTransform(const Matrix4f*) override {}
+	LayerHandle PushLayer() override { return ++layers; }
+	void CompositeLayers(LayerHandle, LayerHandle, BlendMode, Span<const CompiledFilterHandle>) override {}
+	void PopLayer() override { if (layers) layers--; }
+	TextureHandle SaveLayerAsTexture() override { return 1; }
+	CompiledFilterHandle SaveLayerAsMaskImage() override { return 1; }
+	CompiledFilterHandle CompileFilter(const String&, const Dictionary&) override { return 1; }
+	void ReleaseFilter(CompiledFilterHandle) override {}
+	CompiledShaderHandle CompileShader(const String&, const Dictionary&) override { return 1; }
+	void RenderShader(CompiledShaderHandle, CompiledGeometryHandle, Vector2f, TextureHandle) override {}
+	void ReleaseShader(CompiledShaderHandle) override {}
+
+private:
+	LayerHandle layers = 0;
 };
 static std::vector<std::string> warnings;
+// Render() runs only so decorators and masks load their images. RmlUi's debug asserts on that path concern RmlUi's own
+// bookkeeping (box-shadow textures trip one), not the document, and a release build like the game's has none.
+static bool rendering = false;
 class Sys : public SystemInterface {
 public:
 	double GetElapsedTime() override { return 0; }
 	bool LogMessage(Log::Type type, const String& message) override {
+		if (type == Log::LT_ASSERT && rendering) return true;
 		if (type <= Log::LT_WARNING) warnings.push_back(message);
 		return true;
 	}
 };
+static void renderOnce(Context* context) {
+	rendering = true;
+	context->Render();
+	rendering = false;
+}
 class NullFont : public FontEngineInterface {};
 
 // ---- a font engine with real advances (layout mode): bin/rml-preview measures the TTFs at 1000 units into fonts.json

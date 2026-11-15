@@ -80,7 +80,8 @@ static void emit(Element* el, std::ostringstream& out, bool& first) {
 	}
 	for (int i = 0; i < el->GetNumChildren(); i++) emit(el->GetChild(i), out, first);
 }
-int run(const std::string& docPath, const std::string& modelName, const std::string& fontsPath) {
+int run(const std::string& doc_path, const std::string& modelName, const std::string& fontsPath) {
+	docPath = doc_path;
 	{
 		std::ifstream fj(fontsPath);
 		if (!fj) badInput("cannot read " + fontsPath);
@@ -156,6 +157,7 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 				}
 			context->Update();
 			context->Update();
+			renderOnce(context);   // decorators and masks load their images when first drawn
 			std::ostringstream out;
 			bool first = true;
 			emit(doc, out, first);

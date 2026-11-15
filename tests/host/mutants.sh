@@ -140,7 +140,7 @@ mutant host host/common.hpp "width: kerning pairs from fonts.json apply unless f
 mutant host host/common.hpp "width: an emoji counts as one glyph" \
     'if (c >= 0xF0 && p + 2 < e)' 'if (false)'
 mutant host host/mode_layout.inc "layout: a text run carries its measured width" \
-    '<< widthOf(t, line.text) <<' '<< line.width <<'
+    '<< widthOf(t, line.text) <<' '<< 0 <<'
 
 # classes
 mutant host host/mode_check.inc "classes: the check outline sorts them" \
@@ -153,3 +153,19 @@ mutant host host/common.hpp "layout: a probe document lays out to known numbers"
     'h.m.ascent = faces[f].ascent * size / 1000.f;' 'h.m.ascent = faces[f].descent * size / 1000.f;'
 mutant host host/mode_layout.inc "layout: a probe document lays out to known numbers" \
     'Vector2f sz = el->GetBox().GetSize(BoxArea::Border);' 'Vector2f sz = el->GetBox().GetSize(BoxArea::Content);'
+
+# images
+mutant host host/common.hpp "image: a missing img src is reported" \
+    'if (path.empty()) return 0;' 'if (path.empty()) { d = {1, 1}; return 1; }'
+mutant host host/mode_check.inc "image: a missing decorator image is reported" \
+    'renderOnce(context);   // decorators' '// decorators'
+mutant host host/common.hpp "image: an image next to the document or under the resource root is found" \
+    'if (fs::is_regular_file(dir / source, ec)) return (dir / source).string();' ''
+mutant host host/common.hpp "image: an img takes the PNG natural size" \
+    'd = imageSize(path);' 'd = {1, 1};'
+mutant host host/common.hpp "image: drawing raises no noise of its own" \
+    'if (type == Log::LT_ASSERT && rendering) return true;' ''
+mutant host host/common.hpp "image: drawing raises no noise of its own" \
+    'CompileShader(const String&, const Dictionary&) override { return 1; }' 'CompileShader(const String&, const Dictionary&) override { return 0; }'
+mutant host host/mode_layout.inc "image: layout lists a missing image in the case warnings" \
+    'renderOnce(context);   // decorators' '// decorators'
