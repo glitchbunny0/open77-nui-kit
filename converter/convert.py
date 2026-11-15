@@ -105,7 +105,11 @@ class Converter:
         if not os.path.exists(absp):
             issues.append(Issue(f'image {u} not found (looked at {self.rel(absp)})', 'check the path'))
         if self.root:
-            return '/' + os.path.relpath(absp, self.root).replace(os.sep, '/')
+            rel = os.path.relpath(absp, self.root).replace(os.sep, '/')
+            if not rel.startswith('../'):
+                return '/' + rel
+            issues.append(Issue(f'image {u} is outside --root', 'written relative to the output folder; copy it into '
+                                'the resource'))
         return os.path.relpath(absp, self.out).replace(os.sep, '/')
 
     # ---- sheets

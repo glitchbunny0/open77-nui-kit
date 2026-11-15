@@ -374,6 +374,16 @@ def gradient(t, issues):
                 out.append(col + (' 0deg' if conic else ' 0dp'))
             else:
                 out.append(col + ' ' + V.ser(w))
+    # `transparent` next to a colour: written as that colour at zero alpha (what CSS's premultiplied interpolation,
+    # and RmlUi's, make of it anyway; readable, and rml-preview paints it)
+    for i in range(len(out)):
+        if out[i].startswith('transparent'):
+            near = [out[j].split()[0] for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(out)))
+                    if out[j].startswith('#')]
+            if near:
+                h = near[0][1:]
+                h = ''.join(c * 2 for c in h[:3]) if len(h) in (3, 4) else h[:6]
+                out[i] = '#' + h + '00' + out[i][len('transparent'):]
     return '%s(%s)' % (name, ', '.join(out))
 
 
