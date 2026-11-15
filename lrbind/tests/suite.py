@@ -274,7 +274,7 @@ MUTANTS += [
      'parity', 'for default names'),
     ('undeclared event callback allowed', 'lrbind.js', 'if (!model.events.has(name)) {', 'if (false) {', 'parity',
      'undeclared event stops the chain'),
-    ('ev.* ignores the parameter name', 'lrbind.js', 'return event ? event[address[1]] : NONE;',
+    ('ev.* ignores the parameter name', 'lrbind.js', 'return event && hasOwn(event, address[1]) ? event[address[1]] : NONE;',
      'return event ? event.mouse_x : NONE;', 'parity', 'event params'),
     ('data-value writes on change, not per edit', 'lrbind.js',
      'if (tag === "textarea" || (tag === "input" && type !== "checkbox" && type !== "radio")) return "input";', '',
@@ -328,6 +328,29 @@ MUTANTS += [
      '', 'parity', 'one change event per click'),
     ('data-value on a checkbox writes its value', 'lrbind.js', '    if (el.type === "checkbox") return el.checked;\n', '',
      'parity', 'data-value on a checkbox writes its checked state'),
+]
+
+# ==== ev.* and controller values typed as RmlUi hands them over
+MUTANTS += [
+    ('modifier keys as booleans', 'lrbind.js', 'p.ctrl_key = e.ctrlKey ? 1 : 0;', 'p.ctrl_key = e.ctrlKey;', 'protocol',
+     'modifier keys are ints 0/1'),
+    ('a button on every mouse event', 'lrbind.js', 'if (BUTTON_EVENTS.has(e.type)) p.button =', 'p.button =', 'protocol',
+     'mousemove carries no button'),
+    ('no lock keys', 'lrbind.js', '      for (const [name, key] of LOCK_KEYS) p[name] =', '      if (false) p[name] =', 'protocol',
+     'ctrl and caps lock as 1'),
+    ('wheel deltas as their sign', 'lrbind.js', 'p.wheel_delta_x = e.deltaX / notch; p.wheel_delta_y = e.deltaY / notch;',
+     'p.wheel_delta_x = Math.sign(e.deltaX); p.wheel_delta_y = Math.sign(e.deltaY);', 'parity', 'wheel delta in notches'),
+    ('wheel deltaMode ignored', 'lrbind.js', 'const notch = WHEEL_NOTCH[e.deltaMode] || 1;', 'const notch = 100;', 'protocol',
+     'wheel in lines'),
+    ('ev.value of a range as text', 'lrbind.js', 'else p.value = t.type === "range" ? parseFloat(t.value) : t.value;',
+     'else p.value = t.value;', 'protocol', 'range: ev.value and the model value are numbers'),
+    ('a range writes text into the model', 'lrbind.js', 'return el.type === "range" ? parseFloat(el.value) : el.value;',
+     'return el.value;', 'protocol', 'range: ev.value and the model value are numbers'),
+    ('no ev.checked', 'lrbind.js', ' p.checked = t.checked;', '', 'protocol', 'checkbox change'),
+    ("ev.value from the listener's element", 'lrbind.js', 'const t = e.target;', 'const t = e.currentTarget;', 'protocol',
+     "carries the target's value"),
+    ('ev.* reads inherited properties', 'lrbind.js', 'event && hasOwn(event, address[1]) ? event[address[1]] : NONE',
+     'event ? event[address[1]] : NONE', 'parity', 'ev prototype name'),
 ]
 
 # ==== the run

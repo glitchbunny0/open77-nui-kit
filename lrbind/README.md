@@ -80,8 +80,13 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
 - How Open77 maps Lua values into the native model (integers vs floats print alike either way; only > 2^53 differ).
 - Whether native `onModel("change")` also reports `data-event` assignments, and the path format it uses (the facade
   reports both, 1-based).
-- `ev.*` in events: the shim gives `mouse_x`/`mouse_y` (CSS px of the page, not screen px), `button` (RmlUi
-  numbering), modifier keys, `wheel_delta_*`, `value`; RmlUi's `key_identifier` has no equivalent.
+- `ev.*` in events: the shim gives the parameters RmlUi gives, with RmlUi's types: `mouse_x`/`mouse_y` on mouse events
+  (CSS px of the page, not the game's screen px); `button` (0 left, 1 right, 2 middle) on mousedown/mouseup/click/
+  dblclick only; `ctrl_key`, `shift_key`, `alt_key`, `meta_key`, `caps_lock_key`, `num_lock_key`, `scroll_lock_key`
+  as ints 0/1 (in Lua `0` is true: test `== 1`); `wheel_delta_x`/`_y` in wheel notches (the DOM's pixels / 100 or
+  lines / 3; how the game scales a notch is not verified); a change's `value` (a number from a range input, text
+  otherwise) and, from a checkbox or radio, `checked`. RmlUi's `key_identifier` has no equivalent. A range input's
+  `data-value` writes a number into the model, as natively.
 - NaN prints `nan` here; the game's MSVC runtime prints `-nan(ind)` for 0/0.
 
 ## Tests

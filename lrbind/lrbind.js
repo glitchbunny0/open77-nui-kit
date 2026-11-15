@@ -33,6 +33,7 @@
   // a string reads as a bool only when it is 1/0/true/false, and as a number through atof.
 
   const NONE = undefined;
+  const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const isScalar = (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 
   // printf("%.<p>f") for a double: correctly rounded, exact ties to even (JS toFixed breaks ties upwards).
@@ -759,7 +760,7 @@
         return model.resolve(str, element);
       },
       getValue(address) {
-        if (address[0] === "ev" && address.length === 2) return event ? event[address[1]] : NONE;
+        if (address[0] === "ev" && address.length === 2) return event && hasOwn(event, address[1]) ? event[address[1]] : NONE;
         return model.getValue(address);
       },
       setValue(address, value) {
@@ -1081,16 +1082,31 @@
     return "change";
   }
 
-  function eventParams(e, el) {
+  const BUTTON_EVENTS = new Set(["mousedown", "mouseup", "click", "dblclick"]);
+  const LOCK_KEYS = [["caps_lock_key", "CapsLock"], ["num_lock_key", "NumLock"], ["scroll_lock_key", "ScrollLock"]];
+  const WHEEL_NOTCH = [100, 3, 1];   // DOM deltaMode pixels / lines / pages per wheel notch (Chromium: 100 px)
+
+  // ev.* as RmlUi fills it (Context.cpp, the input widgets): mouse_x/mouse_y on mouse events; button (0 left, 1 right,
+  // 2 middle) on mousedown/mouseup/click/dblclick only; the seven modifier keys as ints 0/1; wheel_delta_x/_y in
+  // notches; a change's value (a number from a range input) and, from a checkbox or radio, checked.
+  function eventParams(e) {
     const p = {};
     if ("clientX" in e) {
       p.mouse_x = e.clientX; p.mouse_y = e.clientY;
-      p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;   // RmlUi: 0 left, 1 right, 2 middle
+      if (BUTTON_EVENTS.has(e.type)) p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;
     }
-    if ("ctrlKey" in e) { p.ctrl_key = e.ctrlKey; p.shift_key = e.shiftKey; p.alt_key = e.altKey; p.meta_key = e.metaKey; }
-    if ("deltaY" in e) { p.wheel_delta_x = Math.sign(e.deltaX); p.wheel_delta_y = Math.sign(e.deltaY); }
-    if ("value" in el && (e.type === "change" || e.type === "input")) {
-      p.value = el.type === "checkbox" || el.type === "radio" ? (el.checked ? el.value : "") : el.value;
+    if ("ctrlKey" in e) {
+      p.ctrl_key = e.ctrlKey ? 1 : 0; p.shift_key = e.shiftKey ? 1 : 0; p.alt_key = e.altKey ? 1 : 0; p.meta_key = e.metaKey ? 1 : 0;
+      for (const [name, key] of LOCK_KEYS) p[name] = typeof e.getModifierState === "function" && e.getModifierState(key) ? 1 : 0;
+    }
+    if ("deltaY" in e) {
+      const notch = WHEEL_NOTCH[e.deltaMode] || 1;
+      p.wheel_delta_x = e.deltaX / notch; p.wheel_delta_y = e.deltaY / notch;
+    }
+    const t = e.target;
+    if ((e.type === "change" || e.type === "input") && t && "value" in t) {
+      if (isToggle(t)) { p.value = t.checked ? t.value : ""; p.checked = t.checked; }
+      else p.value = t.type === "range" ? parseFloat(t.value) : t.value;
     }
     return p;
   }
@@ -1136,7 +1152,7 @@
     if (!expr) return;
     const real = type === "change" ? changeEventFor(el) : domType;
     el.addEventListener(real, (e) => {
-      run(expr.program, expr.addresses, makeIface(model, el, eventParams(e, el)));
+      run(expr.program, expr.addresses, makeIface(model, el, eventParams(e)));
     });
   }
 
@@ -1154,11 +1170,11 @@
   }
 
   // What the change event hands the controller (data-binding-override-value, else value): a checkbox its checked state,
-  // a radio its value when it got checked (nothing when it got unchecked), any other control its value.
+  // a radio its value when it got checked (nothing when it got unchecked), a range input a number, any other its text.
   function controllerValue(el) {
     if (el.type === "checkbox") return el.checked;
     if (el.type === "radio") return el.checked ? el.value : NONE;
-    return el.value;
+    return el.type === "range" ? parseFloat(el.value) : el.value;   // a slider hands over a float
   }
 
   function bindTree(model, root) {

@@ -115,6 +115,42 @@ function page(body, withBridge = true) {
   check(p.$("#txt").value === "Judy", "a later set moves the control's live value too");
 }
 
+// ---- ev.* carries what RmlUi hands Lua: ints 0/1 for modifier keys, button only on button events, wheel in notches,
+// a range's value as a number, a checkbox's checked, the target's value on a change that bubbled up
+{
+  const p = page(`<div data-model="e">
+    <div id="m" data-event-mousedown="pick(ev.button, ev.ctrl_key, ev.shift_key, ev.mouse_x)" data-event-mousemove="pick(ev.button, ev.alt_key)">m</div>
+    <div id="k" tabindex="0" data-event-keydown="pick(ev.ctrl_key, ev.caps_lock_key, ev.num_lock_key, ev.button, ev.mouse_x)">k</div>
+    <div id="w" data-event-mousescroll="pick(ev.wheel_delta_y, ev.wheel_delta_x)">w</div>
+    <input id="vol" type="range" min="0" max="100" data-value="volume" data-event-change="pick(ev.value)"/>
+    <input id="cb" type="checkbox" data-event-change="pick(ev.value, ev.checked)"/>
+    <div data-event-change="pick(ev.value)"><input id="t" type="text" value=""/></div>
+  </div>`);
+  await p.fire("lrbind:init", { models: { e: { volume: 30 } }, events: { e: ["pick"] } });
+  const args = () => (p.last("lrbind:event") || [, {}])[1];
+  const ev = (el, e) => { p.$(el).dispatchEvent(e); return tick(); };
+  await ev("#m", new p.w.MouseEvent("mousedown", { bubbles: true, button: 2, ctrlKey: true, clientX: 7 }));
+  check(JSON.stringify(args().args) === "[1,1,0,7]", "mousedown: right button is 1, modifier keys are ints 0/1 " + JSON.stringify(args().args));
+  await ev("#m", new p.w.MouseEvent("mousemove", { bubbles: true, altKey: true }));
+  check(args().n === 2 && args().args[0] === null && args().args[1] === 1, "mousemove carries no button " + JSON.stringify(args()));
+  await ev("#k", new p.w.KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, modifierCapsLock: true }));
+  check(JSON.stringify(args().args) === "[1,1,0,null,null]", "keydown: ctrl and caps lock as 1, no button or mouse position " + JSON.stringify(args().args));
+  await ev("#w", new p.w.WheelEvent("wheel", { bubbles: true, deltaY: 250, deltaX: -50 }));
+  check(JSON.stringify(args().args) === "[2.5,-0.5]", "wheel: deltas in notches (100 px each), not just the sign " + JSON.stringify(args().args));
+  await ev("#w", new p.w.WheelEvent("wheel", { bubbles: true, deltaY: 6, deltaMode: 1 }));
+  check(args().args[0] === 2, "wheel in lines: 3 a notch " + JSON.stringify(args().args));
+  p.$("#vol").value = "42";
+  await ev("#vol", new p.w.Event("input", { bubbles: true }));
+  check(args().args[0] === 42 && p.last("lrbind:change")[1].value === 42 && p.w.LrBind.get("e").volume === 42,
+    "range: ev.value and the model value are numbers " + JSON.stringify([args().args, p.last("lrbind:change")[1]]));
+  p.$("#cb").checked = true;
+  await ev("#cb", new p.w.Event("change", { bubbles: true }));
+  check(JSON.stringify(args().args) === '["on",true]', "checkbox change: value 'on' and checked true " + JSON.stringify(args().args));
+  p.$("#t").value = "typed";
+  await ev("#t", new p.w.Event("change", { bubbles: true }));
+  check(args().args[0] === "typed", "a change that bubbles up carries the target's value " + JSON.stringify(args().args));
+}
+
 // ---- plain browser (a mockup): no Open77, init by hand, nothing pending
 {
   const p = page(`<div data-model="voice"><span id="d">{{mode | to_upper}}</span></div>`, false);
