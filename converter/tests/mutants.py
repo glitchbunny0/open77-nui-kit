@@ -10,7 +10,8 @@ import os, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(os.path.dirname(HERE))
 
-# (id, file under converter/, old, new, check) - check: 'fixture NAME' or 'unit LABEL'
+# (id, file under converter/, old, new, check) - check: 'fixture NAME', 'unit LABEL' or 'facts' (the RmlUi facts: a
+# mutant there states a fact wrongly, which real RmlUi must refuse)
 MUTANTS = [
     ('escape-ident', 'css_values.py', r"(?:\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n0-9a-fA-F]|[\w\u00a0-\uffff-])*')",
      r"[\w\u00a0-\uffff-]*')", 'unit escape'),
@@ -198,6 +199,21 @@ MUTANTS = [
      "                if False:", 'fixture 13-values'),
     ('font-fallback-once', 'convert.py', "                    if (file, iss.what) in self.fallbacks_seen:\n                        continue",
      "                    if False:\n                        continue", 'fixture 13-values'),
+    # the RmlUi facts the new mappings rest on: each stated wrongly must fail against real RmlUi
+    ('fact-var-declaring-element', 'tests/facts.py', "== (10.0, 2.0, 30.0)", "== (20.0, 2.0, 30.0)", 'facts'),
+    ('fact-var-data-for', 'tests/facts.py', "== ['#ff0000ff', '#00ff00ff', '#0000ffff']", "== ['#ff0000ff', '#ff0000ff', '#ff0000ff']", 'facts'),
+    ('fact-var-body-class', 'tests/facts.py', "body_attrs=' class=\"k\"') != []", "body_attrs=' class=\"k\"') == []", 'facts'),
+    ('fact-last-child', 'tests/facts.py', "== [(1.0, False), (1.0, False)]", "== [(1.0, False), (3.0, True)]", 'facts'),
+    ('fact-align-dp', 'tests/facts.py', "and not ok_decl('decorator: image(a.png scale-none 10dp 20dp)')",
+     "and ok_decl('decorator: image(a.png scale-none 10dp 20dp)')", 'facts'),
+    ('fact-translate-arity', 'tests/facts.py', "return (not ok_decl('transform: translate(10dp)')",
+     "return (ok_decl('transform: translate(10dp)')", 'facts'),
+    ('fact-transition-all', 'tests/facts.py', "return (not ok_decl('transition: all 0.2s linear-in-out, opacity",
+     "return (ok_decl('transition: all 0.2s linear-in-out, opacity", 'facts'),
+    ('fact-radial-order', 'tests/facts.py', "and not ok_decl('decorator: radial-gradient(closest-side circle, #fff, #000)')",
+     "and ok_decl('decorator: radial-gradient(closest-side circle, #fff, #000)')", 'facts'),
+    ('fact-lab', 'tests/facts.py', "and ok_decl('color: lch(50% 40 180)') and not ok_decl('color: canvastext'))",
+     "and ok_decl('color: lch(50% 40 180)') and ok_decl('color: canvastext'))", 'facts'),
 ]
 
 
@@ -221,8 +237,11 @@ def run(ids):
         with open(p, 'w', encoding='utf-8') as fh:
             fh.write(src.replace(old, new))
         kind, _, what = check.partition(' ')
-        cmd = [sys.executable, os.path.join(d, 'converter', 'tests', 'run.py')]
-        cmd += ['--unit=' + what] if kind == 'unit' else [what]
+        if kind == 'facts':
+            cmd = [sys.executable, os.path.join(d, 'converter', 'tests', 'facts.py')]
+        else:
+            cmd = [sys.executable, os.path.join(d, 'converter', 'tests', 'run.py')]
+            cmd += ['--unit=' + what] if kind == 'unit' else [what]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, env=dict(env, NUIKIT_TMP=d), timeout=120)
             rc = r.returncode
