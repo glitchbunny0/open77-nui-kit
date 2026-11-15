@@ -66,8 +66,12 @@ static J* walk(J* root, const std::string& path) {
 			if (!tok.empty()) member(tok);
 			tok.clear();
 			size_t close = path.find(']', i);
-			int idx = std::stoi(path.substr(i + 1, close - i - 1));
-			cur = (cur && cur->t == J::Arr && idx < (int)cur->a.size()) ? &cur->a[idx] : nullptr;
+			if (close == std::string::npos) badInput("set path \"" + path + "\": '[' without ']'");
+			std::string digits = path.substr(i + 1, close - i - 1);
+			if (digits.empty() || digits.find_first_not_of("0123456789") != std::string::npos)
+				badInput("set path \"" + path + "\": the index must be a number >= 0");
+			size_t idx = strtoul(digits.c_str(), nullptr, 10);
+			cur = (cur && cur->t == J::Arr && idx < cur->a.size()) ? &cur->a[idx] : nullptr;
 			i = close + 1;
 		}
 		else { tok += c; i++; }
@@ -77,9 +81,7 @@ static J* walk(J* root, const std::string& path) {
 }
 
 int run() {
-	std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
-	P parser{input.c_str()};
-	J cases = parser.val();
+	J cases = readCases(Mode::Parity);
 
 	NullRender render;
 	Sys sys;
@@ -88,6 +90,7 @@ int run() {
 	SetSystemInterface(&sys);
 	SetFontEngineInterface(&font);
 	Initialise();
+	registerOpen77();
 
 	std::cout << "[";
 	int n = 0;
@@ -138,7 +141,8 @@ int run() {
 					Element* el = doc->GetElementById(id->s);
 					Dictionary params;
 					if (J* ps = s.get("params"))
-						for (auto& kv : ps->o) params[kv.first] = kv.second.t == J::Str ? Variant(kv.second.s) : Variant(kv.second.t == J::Int ? (double)kv.second.i : kv.second.n);
+						for (auto& kv : ps->o)   // numbers as doubles, as the cases' mouse_x and friends always were
+							params[kv.first] = isNum(&kv.second) ? Variant(num(kv.second)) : toVariant(kv.second);
 					if (el) el->DispatchEvent(s.get("type")->s, params);
 				}
 				context->Update();
