@@ -122,7 +122,7 @@ PY
 want() { local name="$1"; shift; if "$@"; then echo "ok   $name"; else echo "FAIL $name"; fi; }
 
 real_out=$(runner_checks scripts/test.sh)
-grep -v '^ok ' <<<"$real_out" && fail=1
+grep -v -e '^ok ' -e '^skip ' <<<"$real_out" && fail=1   # a skip (no Pillow) is not a failure
 echo "runner: $(grep -c '^ok ' <<<"$real_out") checks ok on the real scripts/test.sh"
 
 # ---- mutants ----
@@ -155,9 +155,13 @@ mutant "runner: no Lua 5.4 is FAILED with a hint" 'if [ -z "$LUA" ]; then
     echo "FAILED'
 mutant "runner: no Chromium is a skip" 'elif [ "${NUIKIT_REQUIRE_CHROME:-}" = 1 ]; then' 'elif true; then'
 mutant "runner: no Chromium with NUIKIT_REQUIRE_CHROME=1" 'elif [ "${NUIKIT_REQUIRE_CHROME:-}" = 1 ]; then' 'elif false; then'
-mutant "runner: a preview that writes no PNG" "n=\$(find \"\$out\" -name '*.png' | wc -l)" "n=\$(ls \"\$out\"/*.png | wc -l)"
-mutant "runner: stale PNGs in TMPDIR" 'sub() { mktemp -d "$root/$1.XXXXXX"; }' 'sub() { mkdir -p "${TMPDIR:-/tmp}/nuikit-$1"; echo "${TMPDIR:-/tmp}/nuikit-$1"; }'
-mutant "runner: a preview that skips a state" '[ "$n" -eq $((ncases + 1)) ]' '[ "$n" -ge 1 ]'
+if [ "$have_pil" = 1 ]; then   # the preview checks above only run with Pillow, so their mutants only can then
+    mutant "runner: a preview that writes no PNG" "n=\$(find \"\$out\" -name '*.png' | wc -l)" "n=\$(ls \"\$out\"/*.png | wc -l)"
+    mutant "runner: stale PNGs in TMPDIR" 'sub() { mktemp -d "$root/$1.XXXXXX"; }' 'sub() { mkdir -p "${TMPDIR:-/tmp}/nuikit-$1"; echo "${TMPDIR:-/tmp}/nuikit-$1"; }'
+    mutant "runner: a preview that skips a state" '[ "$n" -eq $((ncases + 1)) ]' '[ "$n" -ge 1 ]'
+else
+    echo "skip runner: the preview mutants (no Pillow)"
+fi
 
 echo "runner: $reds of $i mutants turn their check red"
 [ "$reds" = "$i" ] || fail=1

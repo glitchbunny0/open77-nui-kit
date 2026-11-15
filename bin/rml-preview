@@ -40,7 +40,10 @@ Writes <out>/<case>.png, <out>/sheet.png (every case) and, with --compare, <out>
 NUIKIT_HOST names an already built rmlhost to use instead of building one.
 """
 import argparse, importlib.util, json, math, os, re, struct, subprocess, sys
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+try:
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+except ImportError:
+    sys.exit('rml-preview needs Pillow: apt install python3-pil, dnf install python3-pillow, or pip install Pillow')
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # measured besides ASCII: Latin-1, general punctuation, currency, arrows, a few symbols
