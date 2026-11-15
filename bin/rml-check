@@ -359,7 +359,7 @@ def main():
 
     def where(names):
         return f'[{", ".join(names[:4])}{" ..." if len(names) > 4 else ""}]'
-    for msg, names in sorted(bad.items()):
+    for msg, names in bad.items():   # in the order RmlUi logged them: an expression error is 3 lines (message, expression, caret)
         print(f'WARN  {msg}  {where(names)}')
     for (ev, attr, el, at), names in sorted(undeclared.items()):
         print(f'EVENT {ev}  {attr} on <{el}> at {at} calls an event that is not in the "events" of {where(names)}')

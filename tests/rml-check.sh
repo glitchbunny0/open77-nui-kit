@@ -180,6 +180,14 @@ chk_model_many()   { printf '<rml><body><div data-model="m">{{t}}</div><div data
                      rc "$fx/mm.rml" "$fx/mm.json" --model m; wantnot 'note:'; }
 chk_model_none()   { printf '<rml><body>x</body></rml>' > "$fx/nm.rml"; rc "$fx/nm.rml" "$fx/ok.json"; want 2 'no --model given'; }
 
+# warnings keep RmlUi's order: a data expression error is the message, then the expression, then a caret under the fault
+chk_warn_order()   { variant o.rml 's/{{title}}/{{titel}}/'; rc "$fx/o.rml" "$fx/ok.json"; want 1 || return 1
+                     python3 -c 'import re, sys
+L = [l for l in sys.stdin.read().splitlines() if l.startswith("WARN")]
+i = next((n for n, l in enumerate(L) if "Error in data expression" in l), None)
+sys.exit(0 if i is not None and i + 2 < len(L) and "titel" in L[i + 1] and re.match(r"WARN +\^", L[i + 2]) else 1)' <<<"$out" \
+                         || fail "the expression error is not message, expression, caret in that order"; }
+
 # warnings are attributed to every case that sees them (RmlUi caches a parsed stylesheet within one process)
 chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$fx/ui.rml" > "$fx/p.rml"
                       echo '[{"name":"one","model":{"title":"T","rows":[],"show":false}},{"name":"two","model":{"title":"T","rows":[],"show":false}}]' > "$fx/two.json"
@@ -189,7 +197,7 @@ CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_
         chk_property chk_allow_open77 chk_allow_scope chk_allow_values chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
         chk_no_cases chk_cases_shape chk_exit_codes chk_host_input chk_emoji chk_name_inject chk_outline_path
-        chk_model_comment chk_model_many chk_model_none chk_warn_each_case)
+        chk_model_comment chk_model_many chk_model_none chk_warn_each_case chk_warn_order)
 
 failed=()
 run_checks() { failed=(); local c; for c in "${CHECKS[@]}"; do
@@ -203,6 +211,7 @@ status=0; [ ${#failed[@]} = 0 ] || status=1
 # ---- tool mutants: one line of a copy of bin/rml-check broken; $2 names the check(s) that must go red
 mname=(); mold=(); mnew=(); mexp=()
 mut() { mname+=("$1"); mold+=("$2"); mnew+=("$3"); mexp+=("$4"); }
+mut warnings_sorted  'for msg, names in bad.items():' 'for msg, names in sorted(bad.items()):' "chk_warn_order"
 mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_host_input"
 mut load_failed_lost "elif line == 'LOAD FAILED':" "elif line == 'LOAD FAILED!':" "chk_load_failed"
 mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_allow_values chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
