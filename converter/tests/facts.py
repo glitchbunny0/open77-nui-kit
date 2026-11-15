@@ -20,6 +20,11 @@ def host():
 
 HOST = None
 TMP = tempfile.mkdtemp(prefix='html2rml-facts-')
+# image(a.png) in the facts below must name a file that exists: the host reports a missing image as RmlUi does
+for _png in ('a.png', 'a b.png'):
+    with open(os.path.join(TMP, _png), 'wb') as fh:
+        fh.write(bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010806000000'
+                               '1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082'))
 
 
 def doc(rcss, body, body_attrs=''):
@@ -48,7 +53,7 @@ def layout(rcss, body, model=None):
     """layout mode: the element list"""
     fj = os.path.join(TMP, 'fonts.json')
     with open(fj, 'w') as fh:
-        json.dump({'x|400': {'ascent': 900, 'descent': 300, 'def': 500, 'adv': {}}}, fh)
+        json.dump({f: {'ascent': 900, 'descent': 300, 'def': 500, 'adv': {}} for f in ('x|400', 'rajdhani|400')}, fh)
     r = subprocess.run([HOST, 'layout', doc(rcss, body), 'm', fj],
                        input=json.dumps([{'name': 'c', 'model': model or {'x': 1}}]), capture_output=True, text=True)
     return json.loads(r.stdout)[0]['els']

@@ -74,7 +74,7 @@ MUTANTS = [
     # currentColor (L5-10, L7-3)
     ('currentcolor-rule', 'convert.py', "ctx.color = color if d.name != 'color' else None", 'ctx.color = None',
      'fixture 05-colours'),
-    ('currentcolor-cascade', 'convert.py', 'color = color or self.cascade_color(matched)', 'color = color',
+    ('currentcolor-cascade', 'convert.py', 'color = self.cascade_color(matched)   # only where', 'color = None   # only where',
      'fixture 05-colours'),
     ('currentcolor-note', 'convert.py', "in d.value.lower():\n                self.cascade_color_note(file, d, color)",
      "in d.value.lower():\n                pass", 'fixture 05-colours'),

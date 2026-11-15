@@ -205,8 +205,11 @@ def run_fixture(d, out, regen, check):
             with open(cases, 'w') as fh:
                 json.dump([{'name': 'default', 'model': {}}] if 'data-model' in got['expected.rml']
                           else [{'name': 'default'}], fh)
+        # warnings a fixture causes on purpose (a missing image it tests), one regex a line
+        allow = os.path.join(d, 'rml-check-allow.txt')
+        extra = [a for ln in (open(allow).read().splitlines() if os.path.exists(allow) else []) if ln for a in ('--allow', ln)]
         r = subprocess.run([sys.executable, os.path.join(TOOLS, 'bin', 'rml-check'), os.path.join(out, 'page.rml'),
-                            cases, '--quiet'], capture_output=True, text=True)
+                            cases, '--quiet'] + extra, capture_output=True, text=True)
         if r.returncode != 0:
             bad.append('rml-check')
             status += ' / rml-check FAIL:\n' + r.stdout + r.stderr
