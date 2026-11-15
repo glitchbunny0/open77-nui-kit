@@ -67,7 +67,7 @@ good_protocol() { echo 'console.log("protocol: 3 passed")' > "$stub/lrbind/tests
 bad_protocol() { echo 'console.log("FAIL a check of the protocol suite"); console.log("protocol: 1 passed, 1 failed"); process.exitCode = 1' > "$stub/lrbind/tests/protocol.test.mjs"; }
 
 # run the stub kit's test.sh: sets $out and $rc; env VARS before it
-runner() { out=$(cd "$stub" && env "$@" bash scripts/test.sh 2>&1) && rc=0 || rc=$?; }
+runner() { out=$(cd "$stub" && env -u NUIKIT_REQUIRE_CHROME -u NUIKIT_REQUIRE_PILLOW "$@" bash scripts/test.sh 2>&1) && rc=0 || rc=$?; }   # CI's own NUIKIT_REQUIRE_* must not leak into the stub runs
 
 # ---- the checks (on a given test.sh) ----
 runner_checks() {   # runner_checks TESTSH
