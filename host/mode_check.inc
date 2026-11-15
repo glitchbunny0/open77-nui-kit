@@ -42,6 +42,7 @@ int run(const std::string& docPath, const std::string& modelName) {
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
+	registerOpen77();
 	int n = 0;
 	for (J& c : cases.a) {
 		warnings.clear();

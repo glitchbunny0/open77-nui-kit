@@ -16,6 +16,12 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/DataVariable.h>
 #include <RmlUi/Core/ElementText.h>
+#include <RmlUi/Core/Decorator.h>
+#include <RmlUi/Core/Filter.h>
+#include <RmlUi/Core/PropertyDefinition.h>
+#include <RmlUi/Core/PropertyDictionary.h>
+#include <RmlUi/Core/PropertyParser.h>
+#include <RmlUi/Core/RenderManager.h>
 #include <RmlUi/Core/StyleSheetSpecification.h>
 #include <cstdio>
 #include <iostream>
@@ -442,6 +448,121 @@ static std::string label(Element* e) {
 	std::string c = e->GetClassNames();
 	if (!c.empty()) { for (auto& ch : c) if (ch == ' ') ch = '.'; s += "." + c; }
 	return s;
+}
+
+// ---- what Open77's NativeUI adds to RmlUi 6.3 (the Open77 docs, "NativeUI effects, shapes and themes"), registered so
+// RmlUi parses and checks it like its own: the <path>/<shape> paint properties with real parsers, the filters glow,
+// chromatic, scanlines, distort and pixelate, and the fx() decorator. They are parsed and then drawn as nothing.
+//   fill, stroke                 a colour (or none / currentColor)
+//   stroke-width, -dashoffset    a length or number
+//   stroke-linejoin / -linecap   miter round bevel / butt round square
+//   stroke-dasharray             none, or lengths/numbers separated by spaces or commas ("8 4")
+//   trim-start, -end, -offset    a number (0..1)
+//   glow(radius color strength)  a length, a colour, a number: glow(6dp #22d8e2 1.2)
+//   chromatic(offset angle)  scanlines(strength period speed grain)  distort(amount frequency speed)  pixelate(cell)
+//                                plain numbers ("not 3dp", the docs say); the trailing ones may be left out
+//   fx(effect a b c d color)     an effect name (built in or Lua-registered), four numbers, a colour
+// As in RmlUi's own filters, a later argument may be left out (it takes its default) but never reordered.
+class IdentParser : public PropertyParser {   // a CSS identifier: the fx() effect name
+public:
+	bool ParseValue(Property& property, const String& value, const ParameterMap&) const override {
+		if (value.empty() || !(isalpha((unsigned char)value[0]) || value[0] == '_')) return false;
+		for (char c : value)
+			if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;
+		property = Property(value, Unit::STRING);
+		return true;
+	}
+};
+class DashArrayParser : public PropertyParser {   // stroke-dasharray: none | <length-or-number>[[,| ]...]
+public:
+	bool ParseValue(Property& property, const String& value, const ParameterMap&) const override {
+		String v = StringUtilities::StripWhitespace(value);
+		if (v != "none") {
+			StringList parts;
+			StringUtilities::ExpandString(parts, StringUtilities::Replace(v, ',', ' '), ' ');
+			PropertyParser* len = StyleSheetSpecification::GetParser("number_length_percent");
+			int n = 0;
+			for (const String& part : parts) {
+				if (part.empty()) continue;
+				Property p;
+				if (!len->ParseValue(p, part, ParameterMap())) return false;
+				n++;
+			}
+			if (n == 0) return false;
+		}
+		property = Property(v, Unit::STRING);
+		return true;
+	}
+};
+class StubFilter : public Filter {
+public:
+	explicit StubFilter(String name) : name(std::move(name)) {}
+	CompiledFilter CompileFilter(Element* element) const override { return element->GetRenderManager()->CompileFilter(name, Dictionary()); }
+	String name;
+};
+class StubFilterInstancer : public FilterInstancer {
+public:
+	StubFilterInstancer(const char* properties, const char* parsers) {   // "a, b, c" and their parsers, "length|color|number"
+		StringList names, kinds;
+		StringUtilities::ExpandString(names, properties, ',');
+		StringUtilities::ExpandString(kinds, parsers, '|');
+		for (size_t i = 0; i < names.size(); i++)
+			RegisterProperty(names[i], kinds[i] == "color" ? "white" : "0").AddParser(kinds[i]);
+		RegisterShorthand("filter", properties, ShorthandType::FallThrough);
+	}
+	SharedPtr<Filter> InstanceFilter(const String& name, const PropertyDictionary&) override { return MakeShared<StubFilter>(name); }
+};
+class StubDecorator : public Decorator {
+public:
+	DecoratorDataHandle GenerateElementData(Element*, BoxArea) const override { return 1; }
+	void ReleaseElementData(DecoratorDataHandle) const override {}
+	void RenderElement(Element*, DecoratorDataHandle) const override {}
+};
+class FxInstancer : public DecoratorInstancer {
+public:
+	FxInstancer() {
+		effect_id = RegisterProperty("effect", "").AddParser("open77_ident").GetId();
+		for (const char* n : {"a", "b", "c", "d"}) RegisterProperty(n, "0").AddParser("number");
+		RegisterProperty("color", "white").AddParser("color");
+		RegisterShorthand("decorator", "effect, a, b, c, d, color", ShorthandType::FallThrough);
+	}
+	SharedPtr<Decorator> InstanceDecorator(const String&, const PropertyDictionary& properties, const DecoratorInstancerInterface&) override {
+		const Property* effect = properties.GetProperty(effect_id);
+		if (!effect || effect->Get<String>().empty()) {
+			Log::Message(Log::LT_WARNING, "fx() needs the effect name first: fx(effect a b c d color)");
+			return nullptr;
+		}
+		return MakeShared<StubDecorator>();
+	}
+	PropertyId effect_id;
+};
+static void registerOpen77() {
+	static IdentParser ident;
+	static DashArrayParser dashes;
+	StyleSheetSpecification::RegisterParser("open77_ident", &ident);
+	StyleSheetSpecification::RegisterParser("open77_dasharray", &dashes);
+	for (const char* p : {"fill", "stroke"})
+		StyleSheetSpecification::RegisterProperty(p, "none", true).AddParser("keyword", "none, currentcolor").AddParser("color");
+	StyleSheetSpecification::RegisterProperty("stroke-width", "1dp", true).AddParser("number_length_percent");
+	StyleSheetSpecification::RegisterProperty("stroke-dashoffset", "0", true).AddParser("number_length_percent");
+	StyleSheetSpecification::RegisterProperty("stroke-linejoin", "miter", true).AddParser("keyword", "miter, round, bevel");
+	StyleSheetSpecification::RegisterProperty("stroke-linecap", "butt", true).AddParser("keyword", "butt, round, square");
+	StyleSheetSpecification::RegisterProperty("stroke-dasharray", "none", true).AddParser("open77_dasharray");
+	StyleSheetSpecification::RegisterProperty("trim-start", "0", false).AddParser("number");
+	StyleSheetSpecification::RegisterProperty("trim-end", "1", false).AddParser("number");
+	StyleSheetSpecification::RegisterProperty("trim-offset", "0", false).AddParser("number");
+	static StubFilterInstancer glow("radius, color, strength", "length|color|number");
+	static StubFilterInstancer chromatic("offset, angle", "number|number");
+	static StubFilterInstancer scanlines("strength, period, speed, grain", "number|number|number|number");
+	static StubFilterInstancer distort("amount, frequency, speed", "number|number|number");
+	static StubFilterInstancer pixelate("cell", "number");
+	Factory::RegisterFilterInstancer("glow", &glow);
+	Factory::RegisterFilterInstancer("chromatic", &chromatic);
+	Factory::RegisterFilterInstancer("scanlines", &scanlines);
+	Factory::RegisterFilterInstancer("distort", &distort);
+	Factory::RegisterFilterInstancer("pixelate", &pixelate);
+	static FxInstancer fx;
+	Factory::RegisterDecoratorInstancer("fx", &fx);
 }
 
 // ---- a case's models: "model" binds under the name given on the command line, "models" adds more by name

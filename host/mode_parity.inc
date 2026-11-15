@@ -90,6 +90,7 @@ int run() {
 	SetSystemInterface(&sys);
 	SetFontEngineInterface(&font);
 	Initialise();
+	registerOpen77();
 
 	std::cout << "[";
 	int n = 0;

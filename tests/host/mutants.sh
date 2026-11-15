@@ -82,3 +82,17 @@ mutant host host/mode_check.inc "click: events the pointer calls on its way ther
 # parity
 mutant host host/mode_parity.inc "parity: boolean and string event params reach the expression as such" \
     ': toVariant(kv.second);' ': (kv.second.t == J::Str ? Variant(kv.second.s) : Variant(kv.second.n));'
+
+# Open77's additions
+mutant host host/common.hpp "open77: the paint properties parse their documented values" \
+    '"miter, round, bevel"' '"miter, bevel"'
+mutant host host/common.hpp "open77: a bad paint value is an error" \
+    'if (!len->ParseValue(p, part, ParameterMap())) return false;' 'len->ParseValue(p, part, ParameterMap());'
+mutant host host/common.hpp "open77: the filters take their documented arguments" \
+    'glow("radius, color, strength", "length|color|number")' 'glow("radius, color, strength", "number|color|number")'
+mutant host host/common.hpp "open77: a filter with bad arguments is an error" \
+    'scanlines("strength, period, speed, grain", "number|number|number|number")' 'scanlines("strength, period, speed, grain", "number|length|number|number")'
+mutant host host/common.hpp "open77: fx() takes an effect name, numbers and a colour" \
+    "if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;" "if (!(isalnum((unsigned char)c) || c == '_')) return false;"
+mutant host host/common.hpp "open77: fx() without an effect name or with units is an error" \
+    'if (!effect || effect->Get<String>().empty()) {' 'if (!effect) {'

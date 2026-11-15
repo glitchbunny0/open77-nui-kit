@@ -294,6 +294,62 @@ def _():
     expect(calls == ['pick(1,n,1.5)'], f'calls {calls}')
 
 
+# ---- Open77's additions, registered: parsed and checked like RmlUi's own properties
+def decl_warnings(decl):
+    r = host('check', doc('decl', '<div id="e"></div>', 'div { display: block; width: 10dp; height: 10dp; } #e { %s }' % decl),
+             'm', cases=[{'name': 'c', 'model': {}}])
+    expect(r.rc == 0, f'rc {r.rc}: {r.err[:200]}')
+    return [l for l in r.out.splitlines() if l.startswith('WARN')]
+
+
+def all_parse(decls):
+    bad = {d: w for d in decls if (w := decl_warnings(d))}
+    expect(not bad, f'warnings for valid declarations: {bad}')
+
+
+def none_parse(decls):
+    good = [d for d in decls if not decl_warnings(d)]
+    expect(not good, f'no warning for: {good}')
+
+
+@check('open77: the paint properties parse their documented values')
+def _():
+    all_parse(['fill: #22d8e233', 'fill: none', 'fill: currentColor', 'stroke: #22d8e2', 'stroke-width: 1.5dp',
+               'stroke-width: 2', 'stroke-linejoin: round', 'stroke-linecap: square', 'stroke-dasharray: 8 4',
+               'stroke-dasharray: 8, 4dp', 'stroke-dashoffset: 3', 'trim-start: 0', 'trim-end: 0.65', 'trim-offset: 0.5'])
+
+
+@check('open77: a bad paint value is an error')
+def _():
+    none_parse(['fill: #GGGGGG', 'stroke: nope', 'stroke-width: 2pxx', 'stroke-linejoin: rund', 'stroke-dasharray: 8 x',
+                'trim-end: high'])
+
+
+@check('open77: the filters take their documented arguments')
+def _():
+    all_parse(['filter: glow(6dp #22d8e2 1.2)', 'filter: glow(2dp)', 'filter: chromatic(2) scanlines(0.25 3)',
+               'filter: scanlines(0.35 3 1 0.2)', 'filter: distort(3 4 2) brightness(1.2)', 'filter: pixelate(4)',
+               'backdrop-filter: blur(14dp) glow(5dp #5EF6FF 0.9)'])
+
+
+@check('open77: a filter with bad arguments is an error')
+def _():
+    none_parse(['filter: scanlines(0.35 3dp)', 'filter: glow(1.2 #fff 6dp)', 'filter: glow(6dp #fff 1 2)',
+                'filter: blur(4pz) glow(2dp #fff 1)', 'filter: glo(2dp)'])
+
+
+@check('open77: fx() takes an effect name, numbers and a colour')
+def _():
+    all_parse(['decorator: fx(holo 0.6 1 0 0 #22d8e2)', 'decorator: fx(chamfer-solid 6 0 0 0 #22d8e2)',
+               'decorator: fx(border-flow 1.5 2 0 0 #22d8e2) padding-box', 'decorator: fx(pulse 1)'])
+
+
+@check('open77: fx() without an effect name or with units is an error')
+def _():
+    none_parse(['decorator: fx(1 2 3)', 'decorator: fx(holo 1px)', 'decorator: fx(holo 1 2 3 4 #fff 5)',
+                'decorator: linear-gradient(90dge, #f00, #00f), fx(border-flow 1 2)'])
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:

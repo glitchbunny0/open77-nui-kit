@@ -96,6 +96,7 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
+	registerOpen77();
 	int n = 0;
 	std::cout << "[";
 	for (J& c : cases.a) {
