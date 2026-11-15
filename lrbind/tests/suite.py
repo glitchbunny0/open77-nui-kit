@@ -3,6 +3,7 @@
 
 Checks, one line each:
   golden    rmlhost parity regenerates golden.json from cases.mjs on every run; it must equal the committed file
+  order     the cases 8 times over in shuffled order through rmlhost parity: no case may come out differently
   parity    lrbind.js in jsdom against that fresh golden, snapshot by snapshot
   protocol  the page protocol, form controls, mockup mode (protocol.test.mjs)
   lua       lrbind.lua against a fake page (lrbind_lua.lua)
@@ -13,7 +14,7 @@ Then every mutant in MUTANTS: a copy of one file with ONE planted bug, run throu
 must go red, and its output must contain the expected text (the failing case or check). A mutant whose pattern no
 longer matches exactly once fails too, so the table cannot rot silently.
 """
-import concurrent.futures as cf, json, os, re, shutil, subprocess, sys
+import concurrent.futures as cf, json, os, random, re, shutil, subprocess, sys
 
 KIT = os.environ.get('NUIKIT') or os.getcwd()
 TMP = os.environ['NUIKIT_TMP']
@@ -22,6 +23,7 @@ LUA = os.path.join(KIT, 'lrbind', 'lrbind.lua')
 GOLDEN = os.path.join(KIT, 'lrbind', 'tests', 'parity', 'golden.json')
 FRESH = os.path.join(TMP, 'golden.json')
 SOURCES = {'lrbind.js': (JS, 'js'), 'lrbind.lua': (LUA, 'lua'), 'golden.json': (GOLDEN, 'golden')}
+HOST = None    # rmlhost, built by main()
 CHECKS = {}
 MUTANTS = []   # (what, file, old, new, check, expected text in the red output)
 
@@ -55,6 +57,44 @@ def check_golden(golden=GOLDEN):
 CHECKS['golden'] = check_golden
 MUTANTS += [
     ('golden.json edited by hand', 'golden.json', '"calls":[]', '"calls":["x()"]', 'golden', 'FAIL golden'),
+]
+
+# ==== order: RmlUi updates the views of one depth in address order, so a case whose outcome hangs on that order gets a
+# golden that flips when cases are added before it. One rmlhost run with the cases 8 times over, each round shuffled
+# (fixed seeds, so the probe is the same every run): every case must come out the same every time.
+CASES = os.path.join(KIT, 'lrbind', 'tests', 'parity', 'cases.mjs')
+SOURCES['cases.mjs'] = (CASES, 'cases')
+
+
+def host_parity(cases_json):
+    r = subprocess.run([HOST, 'parity'], input=cases_json.encode(), capture_output=True)
+    if r.returncode:
+        raise RuntimeError('rmlhost parity failed: ' + r.stderr.decode()[-400:])
+    return r.stdout
+
+
+def check_order(cases=CASES):
+    rc, out = sh(['node', 'lrbind/tests/parity/parity.test.mjs', '--cases', cases, '--emit-cases'])
+    if rc:
+        return False, 'FAIL order: cannot read the cases: ' + out[-400:]
+    listed, rounds = json.loads(out), []
+    for seed in range(8):
+        order = listed[:]
+        random.Random(seed).shuffle(order)
+        rounds += order
+    seen = {}
+    for c in json.loads(host_parity(json.dumps(rounds))):
+        seen.setdefault(c['name'], set()).add(re.sub(r'#root#c\d+', '', json.dumps(c, sort_keys=True)))
+    flips = [n for n, outs in seen.items() if len(outs) > 1]
+    return not flips, (f'{len(seen)} cases give the same snapshots at 8 shuffled positions each' if not flips else
+                       'FAIL order: RmlUi gives these cases other snapshots in another case order (views of one depth '
+                       'run in address order; rewrite them): ' + '; '.join(flips))
+
+
+CHECKS['order'] = check_order
+MUTANTS += [
+    ('a case whose outcome hangs on view order', 'cases.mjs', 'value="x" data-checked="c"/>', 'value="x" data-checked="b"/>',
+     'order', 'checked: radio bound to a bool'),
 ]
 
 # ==== parity, protocol, lua: the three test files, run on the file under test
@@ -303,6 +343,9 @@ def plant(i, src, old, new):
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w', encoding='utf-8') as f:
         f.write(text.replace(old, new, 1))
+    if src == 'cases.mjs':   # its shared blocks are read relative to the file
+        shutil.copytree(os.path.join(os.path.dirname(CASES), 'fixtures'), os.path.join(os.path.dirname(out), 'fixtures'),
+                        dirs_exist_ok=True)
     return out, None
 
 
@@ -322,18 +365,21 @@ def run_mutant(i, m):
 
 
 def main():
+    global HOST
     failed = 0
     rc, out = sh(['bash', 'scripts/build.sh'])
-    host = out.strip().splitlines()[-1] if rc == 0 else ''
-    if rc != 0 or not os.path.exists(host):
+    HOST = out.strip().splitlines()[-1] if rc == 0 else ''
+    if rc != 0 or not os.path.exists(HOST):
         print('FAIL rmlhost: scripts/build.sh failed\n' + out)
         return 1
     rc, cases = sh(['node', 'lrbind/tests/parity/parity.test.mjs', '--emit-cases'])
-    r = subprocess.run([host, 'parity'], input=cases.encode(), capture_output=True)
-    with open(FRESH, 'wb') as f:
-        f.write(r.stdout)
-    if rc != 0 or r.returncode != 0:
-        print('FAIL rmlhost parity did not run: ' + (cases if rc else r.stderr.decode())[-400:])
+    try:
+        if rc:
+            raise RuntimeError(cases[-400:])
+        with open(FRESH, 'wb') as f:
+            f.write(host_parity(cases))
+    except RuntimeError as e:
+        print(f'FAIL rmlhost parity did not run: {e}')
         return 1
     for name, fn in CHECKS.items():
         ok, detail = fn()

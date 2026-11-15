@@ -5,6 +5,9 @@
 // params are RmlUi's (button 1 = right, ctrl_key 0/1, wheel_delta_y in notches); the harness fires the DOM event that
 // carries them, and RmlUi gets exactly the params given, so read only those in the case. xhtml: true parses the case as
 // XML in jsdom too (attribute names keep their case, as in RmlUi).
+// RmlUi updates the views of one depth in address order: a case where the order of two such views changes the outcome
+// (two radios checked by one variable, a data-for shrinking under a data-if on its element) gets a golden that flips
+// when cases are added before it. Write cases that do not depend on it.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -150,7 +153,7 @@ export const cases = [
 
   // ---- form controls (the harness drops the classes and local styles RmlUi's controls give themselves)
   T("checked: checkbox bound to a number", `<input type="checkbox" data-checked="n"/><input type="checkbox" value="1" data-checked="n"/>`, { n: 1 }),
-  T("checked: radio bound to a bool", `<input type="radio" name="g" value="1" data-checked="b"/><input type="radio" name="g" value="x" data-checked="b"/>`, { b: true }),
+  T("checked: radio bound to a bool", `<input type="radio" name="g" value="1" data-checked="b"/><input type="radio" name="g" value="x" data-checked="c"/><b>{{b}}|{{c}}</b>`, { b: true, c: false }),
   T("checked: checkbox bound to a string", `<input type="checkbox" value="a" data-checked="s"/><input type="checkbox" data-checked="t"/>`, { s: "a", t: "true" }),
   T("checked: radio with empty value", `<input type="radio" name="g" value="" data-checked="s"/>`, { s: "" }),
   T("checked: a view change fires change (controller and data-event-change see it)", `<div data-event-change="n = n + 1"><input id="c" type="checkbox" value="a" data-checked="s"/></div><b>{{s}}|{{n}}</b>`,
