@@ -54,8 +54,8 @@ mutant "GetGameTimer follows the passes" 'GetGameTimer = function() return F.now
 mutant "print keeps every argument" 'table.concat(t, "\t", 1, t.n)' 'table.concat(t, "\t", 1, 1)'
 # the instruction counter
 mutant "instruction counter: a resume's" 'n = n + STEP' 'n = n + 0'
-mutant "instruction counter: a direct call" 'counted("event " .. name, nil, fn, ...)' 'fn(...)'
-mutant "budget: 1,500,000" 'budget = 1500000 }' 'budget = 150000 }'
+mutant "instruction counter: a direct call" 'counted("event " .. name, nil, function()' '(function(w, c, f) return f() end)("event " .. name, nil, function()'
+mutant "budget: 1,500,000" 'budget = 1500000,' 'budget = 150000,'
 mutant "budget: a resume past it" 'if limit and n > limit then error("Open77 script execution budget exceeded", 0) end' ''
 mutant "counted: the hook is restored" 'table.pack(pcall(fn, ...))' 'table.pack(true, fn(...))'
 
@@ -79,5 +79,35 @@ mutant "F.case: a document with several models" 'if m ~= doc.model then' 'if fal
 mutant "create accepts source" 'if opts.document and not exists(opts.document)' 'if not exists(opts.document)'
 mutant "create accepts source" '(type(opts.document) == "string") ~= (type(opts.source) == "string")' '(type(opts.document) == "string") or (type(opts.source) == "string")'
 mutant "create: a document file that does not exist" 'return nil, "undeclared_file:" .. opts.document' 'return nil, "undeclared"'
+
+# focus, events, listeners
+mutant "focus: hide() releases it" 'self.visible = false; release("released"); return true end' 'self.visible = false; return true end'
+mutant "focus: blur() releases it" 'rec("blur"); release("released"); return true end' 'rec("blur"); return true end'
+mutant "focus: destroy() releases it" '        self.visible = false
+        release("released")' '        self.visible = false'
+mutant "focus: destroy() releases it" '        fire("event", "closed", "closed", {})
+' ''
+mutant "focus: focus() takes it and tells the document once" 'if not self.focused then self.focused = true; fire("event", "focus", "focus", {}) end' 'self.focused = true; fire("event", "focus", "focus", {})'
+mutant "focus: another surface taking it" 'release(reason or "taken", by)' 'release("released", by)'
+mutant "focus: a refused focus" '        fire("event", "error", "focus", { message = why })   -- the document is told as well
+' ''
+mutant "events: F.loaded fires loaded" 'd.loaded = true; counted("loaded"' 'counted("loaded"'
+mutant "model events: every listener" '        d.fire("model", "*", name, table.unpack(args, 1, args.n))
+' ''
+mutant "model events: every listener" 'if l.id == id then table.remove(list, i); return true end' 'if l.id == id then return true end'
+mutant "DOM events: F.key / F.emit" 'F.emit(d, "keydown", { key = key, type = "keydown" })' 'F.emit(d, "keyup", { key = key, type = "keydown" })'
+mutant "documented methods (DOM, motion, scene) exist" '"blurElement", "scrollTo",' '"blurElement",'
+mutant "documented methods (DOM, motion, scene) exist" 'live(name); rec(name, ...); return true end' 'live(name); return true end'
+mutant "documented methods (DOM, motion, scene) exist" 'live(name); rec(name, ...); return true end' 'rec(name, ...); return true end'
+mutant "documented methods: set/push/removeAt/merge record" 'rec("set", mn, path, v)' 'rec("set", mn, path)'
+mutant "documented methods: create returns" 'serial = serial + 1; return "@" .. serial' 'return "@" .. serial'
+mutant "documented methods: create returns" 'rec("rect", sel); return nil end' 'rec("rect", sel); return {} end'
+mutant "documented methods: create returns" 'focused = d.focused,' 'focused = true,'
+mutant "documented methods: reload fires reloaded" 'fire("event", "reloaded", "reloaded", {})' ''
+mutant "create: a resource owns at most 32" 'if open >= 32 then' 'if open >= 33 then'
+mutant "create: a resource owns at most 32" 'if not x.destroyed then open = open + 1 end' 'open = open + 1'
+mutant "Open77.ui: registerEffect records" 'F.effects[name] = hlsl' ''
+mutant "Open77.ui: registerEffect records" 'return nil, "invalid_effect"' 'return nil, "x"'
+mutant "Open77.ui: registerEffect records" '{ path, family, fallback }' '{ path, family }'
 
 exit $fail

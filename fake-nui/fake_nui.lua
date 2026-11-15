@@ -3,11 +3,25 @@
 -- tables BY REFERENCE (a copy would be counted against the instruction budget it measures), runs CreateThread / Wait /
 -- SetTimeout as coroutines on 16 ms frames, and counts the Lua instructions of every resume and every direct call
 -- (F.maxInstr, F.maxWhere; F.budget = 1,500,000 per resume, what Open77 documents, 500,000 on older clients).
+--
+-- What is faked, from Open77's NativeUI reference: create (document or source, every model by name, the 32 documents
+-- limit), loadFont, registerEffect, stats; per document the data (set / push / removeAt with 1-based paths, merge,
+-- batch), listeners (onModel incl. "*", on, onEvent, off), show / hide / focus / blur / hasFocus with the input lease and
+-- its focus / blur / error / closed events, reload, state, rect (nil), create (a @serial), id. What only RECORDS its call
+-- (d.calls, no layout is run, callbacks never called): F.stubs (text, rml, attr, class, animate, scene, ...). The
+-- platform's side is driven by you: F.loaded, F.event (a model event), F.emit / F.key (DOM events), F.docError,
+-- F.focusLost, then F.frames / F.settle / F.advance for the scheduler.
 -- Load: local F = dofile("<kit>/fake-nui/fake_nui.lua"); F.install()      Example: examples/side-menu/models.lua
 local F = { docs = {}, threads = {}, now = 0, maxInstr = 0, maxWhere = "", fonts = {}, refuse = nil, focusResult = true,
-    focusWhy = nil, logs = {}, quiet = false, budget = 1500000 }
+    focusWhy = nil, logs = {}, quiet = false, budget = 1500000, effects = {} }
 local FRAME = 16
+local listenerId = 0
 local wake = {}
+
+-- the documented document methods that only record their call (F.stubs); the ones with a behaviour are in newDoc
+F.stubs = { "text", "rml", "attr", "class", "setClasses", "value", "click", "focusElement", "blurElement", "scrollTo",
+    "insert", "remove", "stylesheet", "watch", "unwatch", "setZIndex", "animate", "keyframes", "stop", "settle", "layout",
+    "scene", "anchor", "unanchor", "projection" }
 
 local function exists(path)
     local f = io.open(path, "rb")
@@ -85,16 +99,26 @@ function F.install()
             assert(type(opts) == "table" and (type(opts.document) == "string") ~= (type(opts.source) == "string"),
                 "create needs exactly one of document / source")
             if opts.document and not exists(opts.document) then return nil, "undeclared_file:" .. opts.document end
+            local open = 0
+            for _, x in ipairs(F.docs) do if not x.destroyed then open = open + 1 end end
+            if open >= 32 then return nil, "nativeui_instance_limit" end
             local d = F.newDoc(opts)
+            d.docId = #F.docs + 1
             F.docs[#F.docs + 1] = d
             F.last = d
             return d
         end,
-        loadFont = function(path, family)
+        loadFont = function(path, family, fallback)
             if not exists(path) then return nil, "font_not_declared" end
-            F.fonts[#F.fonts + 1] = { path, family }
+            F.fonts[#F.fonts + 1] = { path, family, fallback }
             return true
         end,
+        registerEffect = function(name, hlsl)
+            if type(name) ~= "string" or type(hlsl) ~= "string" then return nil, "invalid_effect" end
+            F.effects[name] = hlsl
+            return true
+        end,
+        stats = function() return { text = "fake-nui: " .. #F.docs .. " documents" } end,
     }
     return F
 end
@@ -140,9 +164,38 @@ function F.newDoc(opts)
     d.model = d.models[names[1]] or {}
     local function rec(m, ...) d.calls[#d.calls + 1] = { m = m, args = table.pack(...) } end
     local function live(m) if d.destroyed then error("NativeUI: " .. m .. " on a destroyed document", 2) end end
-    function d:onEvent(kind, fn) live("onEvent"); rec("onEvent", kind); self.ev[kind] = fn; return true end
-    function d:onModel(n, fn) live("onModel"); rec("onModel", n); self.modelH[n] = fn; return #self.calls end
-    function d:on(t, sel, fn) live("on"); if fn == nil then fn, sel = sel, nil end rec("on", t, sel); self.dom[t] = fn; return #self.calls end
+    -- listeners by kind ("event", "model", "dom") and name, in registration order; the id they return goes to d:off
+    d.listeners = { event = {}, model = {}, dom = {} }
+    local function listen(kind, name, fn)
+        assert(type(fn) == "function", "a listener is a function")
+        listenerId = listenerId + 1
+        local l = d.listeners[kind]
+        l[name] = l[name] or {}
+        l[name][#l[name] + 1] = { id = listenerId, fn = fn }
+        return listenerId
+    end
+    function d:onEvent(kind, fn) live("onEvent"); rec("onEvent", kind); listen("event", kind, fn); self.ev[kind] = fn; return true end
+    function d:onModel(n, fn) live("onModel"); rec("onModel", n); self.modelH[n] = fn; return listen("model", n, fn) end
+    -- DOM listeners are delegated by selector in the game; the fake keeps the selector for the record and fires them
+    -- all (F.emit)
+    function d:on(t, sel, fn)
+        live("on"); if fn == nil then fn, sel = sel, nil end
+        rec("on", t, sel); self.dom[t] = fn
+        return listen("dom", t, fn)
+    end
+    function d:off(id)
+        live("off"); rec("off", id)
+        for _, byName in pairs(d.listeners) do
+            for _, list in pairs(byName) do
+                for i, l in ipairs(list) do if l.id == id then table.remove(list, i); return true end end
+            end
+        end
+        return false
+    end
+    local function fire(kind, name, ...)   -- every listener of that kind and name, as the platform calls them
+        for _, l in ipairs({ table.unpack(d.listeners[kind][name] or {}) }) do l.fn(...) end
+    end
+    d.fire = fire
     local function modelOf(mn, m)
         local model = d.models[mn]
         assert(model, m .. " into an unknown model " .. tostring(mn))
@@ -184,28 +237,74 @@ function F.newDoc(opts)
     end
     function d:batch(fn) live("batch"); rec("batch"); fn(); return true end
     function d:show() live("show"); rec("show"); self.visible = true; return true end
-    function d:hide() live("hide"); rec("hide"); self.visible = false; return true end
+    -- the input lease: focus() takes it, blur() / hide() / destroy() give it back ("released"); the document is told
+    -- through onEvent("focus"): name "focus" or "blur" with detail.reason (taken, released, suspended) and detail.by
+    local function release(reason, by)
+        if not d.focused then return end
+        d.focused = false
+        fire("event", "focus", "blur", { reason = reason, by = by })
+    end
+    d.release = release
+    function d:hide() live("hide"); rec("hide"); self.visible = false; release("released"); return true end
     function d:focus(o)
         live("focus"); rec("focus", o)
-        if F.focusResult then self.focused = true; return true end
-        return nil, F.focusWhy or "focus_unavailable"
+        if F.focusResult then
+            if not self.focused then self.focused = true; fire("event", "focus", "focus", {}) end
+            return true
+        end
+        local why = F.focusWhy or "focus_unavailable"
+        fire("event", "error", "focus", { message = why })   -- the document is told as well
+        return nil, why
     end
-    function d:blur() live("blur"); rec("blur"); self.focused = false; return true end
+    function d:blur() live("blur"); rec("blur"); release("released"); return true end
     function d:hasFocus() return self.focused end
     function d:style(...) live("style"); rec("style", ...); return true end
-    function d:destroy() if self.destroyed then return false end rec("destroy"); self.destroyed = true; self.focused = false; self.visible = false; return true end
+    function d:destroy()
+        if self.destroyed then return false end
+        rec("destroy")
+        self.visible = false
+        release("released")
+        fire("event", "closed", "closed", {})
+        self.destroyed = true
+        return true
+    end
+    -- the documented DOM, motion and scene calls: recorded (d.calls), not run: they return true, as the game does for a
+    -- queued command, and a callback argument (onDone) is never called
+    for _, name in ipairs(F.stubs) do
+        d[name] = function(self, ...) live(name); rec(name, ...); return true end
+    end
+    local serial = 1073741824
+    function d:create(parent, spec) live("create"); rec("create", parent, spec); serial = serial + 1; return "@" .. serial end
+    function d:id() live("id"); return d.docId end
+    function d:rect(sel) live("rect"); rec("rect", sel); return nil end   -- "nil until published"
+    function d:state()
+        live("state")
+        return { loaded = d.loaded == true, visible = d.visible, focused = d.focused, width = 1920, height = 1080,
+            perf = { fps = 60, frameMs = 0, updateMs = 0, renderMs = 0, sceneDraws = 0, sceneRenders = 0, sceneInstances = 0, sceneGpuMB = 0 } }
+    end
+    function d:sceneState(...) live("sceneState"); rec("sceneState", ...); return {} end
+    function d:reload() live("reload"); rec("reload"); fire("event", "reloaded", "reloaded", {}); return true end
     return d
 end
 
--- the platform's side: the document loaded, a model event from the markup, a key, a document error event
-function F.loaded(d) counted("loaded", nil, d.ev.loaded, "loaded", {}) end
-function F.event(d, name, ...)
-    local fn = d.modelH[name]
-    assert(fn, "no model event handler " .. tostring(name))
-    counted("event " .. name, nil, fn, ...)
+-- the platform's side: the document loaded, a model event from the markup, a DOM event, a key, a document error event,
+-- the input taken away
+function F.loaded(d) d.loaded = true; counted("loaded", nil, d.fire, "event", "loaded", "loaded", {}) end
+function F.event(d, name, ...)   -- a model event: the listeners of that name, then the "*" ones (name first)
+    local own, star = d.listeners.model[name], d.listeners.model["*"]
+    assert((own and #own > 0) or (star and #star > 0), "no model event handler " .. tostring(name))
+    local args = table.pack(...)
+    counted("event " .. name, nil, function()
+        d.fire("model", name, table.unpack(args, 1, args.n))
+        d.fire("model", "*", name, table.unpack(args, 1, args.n))
+    end)
 end
-function F.key(d, key) counted("keydown", nil, d.dom.keydown, { key = key, type = "keydown" }) end
-function F.docError(d, kind, msg) d.ev.error(kind, { message = msg }) end
+function F.emit(d, kind, detail)   -- a DOM event of that type reaches every listener of it (the selector is not matched)
+    counted(kind, nil, d.fire, "dom", kind, detail)
+end
+function F.key(d, key) F.emit(d, "keydown", { key = key, type = "keydown" }) end
+function F.docError(d, kind, msg) d.fire("event", "error", kind, { message = msg }) end
+function F.focusLost(d, reason, by) d.release(reason or "taken", by) end
 
 -- run the scheduler for n passes (default 1) of 16 ms: the tasks whose wake time has come, earliest first; a task
 -- created during a pass starts on the next one
