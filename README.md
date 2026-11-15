@@ -4,10 +4,14 @@ Offline tools for [Open77](https://open2077.net) NativeUI screens: RmlUi documen
 Lua. See what a screen really does before you start the game.
 
 - **`rml-check`** loads your document in real RmlUi for every state you describe and fails on anything RmlUi
-  complains about: a binding to a model field that doesn't exist, an unknown property or value, broken XML, a
-  `data-for` over a non-array, a button whose click calls nothing or the wrong event.
+  complains about: a binding to a model field that doesn't exist, an unknown property or value (Open77's own
+  properties, filters and `fx()` included: the host registers them, so their values are checked too), broken XML, a
+  `data-for` over a non-array, a missing image, an event the client does not declare, a button whose click (a real
+  press at its centre) calls nothing, the wrong event or the wrong arguments.
 - **`rml-preview`** lays the document out in real RmlUi with your real fonts and paints a PNG per state (boxes,
-  borders, gradients, images, masks, vector paths, text) over a backdrop. Real sizes, wrapping, clipping, overflow.
+  borders and radii, gradients of every RmlUi kind, image decorators with their fit and alignment, masks, vector
+  paths, text) over a backdrop. Real sizes, wrapping, clipping, overflow. What it can't paint it lists per state
+  (`NOT PAINTED ...`, missing images and font faces); `--strict` turns those into a failure.
 - **`lrbind`** (the kit's own name for it) runs RmlUi's data bindings inside a WebUI page, so one markup serves a
   WebUI page and its NativeUI twin; its behaviour is measured against real RmlUi case by case (`bin/lrbind-parity`).
 - **`fake-nui`** is a fake `Open77.ui` for plain Lua 5.4: it implements the documented document API (models with

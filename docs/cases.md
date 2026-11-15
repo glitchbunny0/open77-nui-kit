@@ -22,8 +22,8 @@ what your client Lua would have put into the document's data model at that momen
 | `name` | yes | the state's name; also the PNG's file name in `rml-preview` |
 | `model` | usually | the data model's fields, bound under the document's `data-model` name (or `--model NAME`) |
 | `models` | no | more models by name, `{ "other": { ... } }`, for a document with several `data-model` roots |
-| `events` | no | the model event names the client declares (`events = { menu = { ... } }` in `Open77.ui.create`). A `data-event-*` that calls a name not listed here is an error, as in the game |
-| `clicks` | no | `rml-check` clicks the first VISIBLE element matching `sel` (real RmlUi event dispatch) and expects the model event `event` with `args` (compared as text). `CLICK FAIL ... -> nothing` means the click reached no listener |
+| `events` | no | the model event names the client declares (`events = { menu = { ... } }` in `Open77.ui.create`). Every `data-event-*` call in the document (and the templates it links) is checked against this list whether a case clicks it or not: a misspelt `cancle()` fails |
+| `clicks` | no | `rml-check` presses the mouse at the centre of the first VISIBLE element matching `sel`, through the context as the game does (so `pointer-events: none`, a zero-size box or an overlay on top count), and expects exactly one model event, `event` with `args`. Numbers and bools are compared as RmlUi prints them (`pick(2)`, `toggle(1)`). `CLICK FAIL` names what happened instead: `nothing`, `no element`, `covered by <tag#id.cls>`, `zero-size box`, `off screen`, or `a(1), then b(2)` when a parent's handler fires too |
 | `place` | no | `{ "selector": [left, top] }` in dp: positions your client writes at run time with `ui:style` (a marker over a projected point). Set before layout |
 | `size` | no | `[width, height]` of the context, default `[1920, 1080]`; 1 dp = 1 px here |
 
@@ -34,6 +34,9 @@ what your client Lua would have put into the document's data model at that momen
 - Numbers print with up to three decimals, trailing zeros cut (`3.0` prints `3`, `1/3` prints `0.333`). Booleans print `1`/`0`.
 - Every field the markup binds must be in the model of every case: RmlUi drops a binding to a name it does not know
   (the check reports `Member x not found in data struct`).
+- An empty case list (`[]`) is an error, and so is a misspelt key (`click` for `clicks`). Warnings are reported per
+  case (each case runs in its own host process), and an image or texture the document names but that is not on disk
+  is reported (`Could not load texture: ...`).
 
 ## Making cases from your client Lua
 
