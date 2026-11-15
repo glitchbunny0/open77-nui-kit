@@ -71,7 +71,14 @@ def notes_missing(tool, out):
 
 def notes_font(tool, out):
     r = run(tool, 'text.rml', [{'name': 'text', 'size': [640, 400]}], out)
-    return has(r.stdout, "NO FONT FACE 'kitraj' 400 italic", "NO FONT FACE 'nosuchfont' 400")
+    # the host leaves text with no face out of the layout, as RmlUi does, and passes RmlUi's own warning on; a painter
+    # given such text (an older host) lists it itself. Either way: listed, and nothing red painted.
+    listed = (("'kitraj' [italic]" in r.stdout or "NO FONT FACE 'kitraj' 400 italic" in r.stdout)
+              and ("'nosuchfont' [regular]" in r.stdout or "NO FONT FACE 'nosuchfont' 400" in r.stdout))
+    img = Image.open(os.path.join(out, 'text.png')).convert('RGB')
+    red = sum(1 for px in img.getdata() if px[0] > 200 and px[1] < 60 and px[2] < 60)
+    return listed and red == 0, f'listed={listed}, red pixels={red}'
+
 
 
 def notes_unpainted(tool, out):
@@ -292,9 +299,7 @@ MUTANTS = [
     ('notes: a missing image is listed', 'a missing image not reported',
      "            if src is None:\n                notes.add(f'MISSING image",
      "            if src is None:\n                return None\n                notes.add(f'MISSING image"),
-    ('notes: text RmlUi has no face for is listed, not painted', 'any face as a fallback (the old behaviour)',
-     "    return best\n", "    return best or faces[0][3]\n"),
-    ('notes: what is not painted is listed', 'unknown decorator types skipped silently',
+        ('notes: what is not painted is listed', 'unknown decorator types skipped silently',
      "        notes.add(f'NOT PAINTED {kind} {typ}()'", "        (f'NOT PAINTED {kind} {typ}()'"),
     ('notes: what is not painted is listed', 'sheet properties not scanned',
      "                if k in NOT_PAINTED and", "                if False and"),

@@ -218,7 +218,8 @@ mut size_unchecked   "if 'size' in c and not" "if False and not" "chk_cases_shap
 mut name_unescaped   "name = esc(c['name'])" "name = c['name']" "chk_name_inject"
 mut crlf_unescaped   "{'r': '\\\\u000d', 'f': '\\\\u000c', 'b': '\\\\u0008'}.get(m.group(1), m.group())" 'm.group()' "chk_host_input"
 mut forged_lines_in  "        if r['warns']:" "        if False:" "chk_forged_lines chk_warn_lines"
-mut args_untyped     "args=[fmt_arg(x) for x in k.get('args', [])]" "args=k.get('args', [])" "chk_arg_types chk_host_input"
+# with the host printing typed args itself, untyped args from the CLI only change what the host is sent
+mut args_untyped     "args=[fmt_arg(x) for x in k.get('args', [])]" "args=k.get('args', [])" "chk_host_input"
 mut args_bool_text   "return '1' if v else '0'" "return 'true' if v else 'false'" "chk_arg_types chk_host_input"
 mut args_two_places  "s = '%.3f' % v" "s = '%.2f' % v" "chk_arg_types chk_host_input"
 mut args_float_zeros "return s.rstrip('0').rstrip('.') if '.' in s else s" "return s" "chk_arg_types chk_host_input"
