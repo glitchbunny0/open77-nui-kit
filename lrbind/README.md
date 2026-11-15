@@ -121,6 +121,7 @@ integral index.
   otherwise) and, from a checkbox or radio, `checked`. RmlUi's `key_identifier` has no equivalent. A range input's
   `data-value` writes a number into the model, as natively.
 - NaN prints `nan` here; the game's MSVC runtime prints `-nan(ind)` for 0/0.
+- Whether Open77's WebUI serves a `.xhtml` entry as XHTML (it would keep `data-*` names as written, as RmlUi does).
 
 ## Tests
 
@@ -129,7 +130,7 @@ integral index.
 | Parity: every snapshot of every case compared with real RmlUi 6.3, form controls included (the harness drops only the classes and local styles RmlUi's controls give themselves) | `tests/parity/` (`cases.mjs`, `golden.json`) | `bin/lrbind-parity` |
 | Page protocol, paths, form controls, `ev.*` types, `data-rml` in a browser, mockup mode | `tests/protocol.test.mjs` | `node lrbind/tests/protocol.test.mjs` |
 | Lua facade | `tests/lrbind_lua.lua` | `cd lrbind && lua5.4 tests/lrbind_lua.lua` |
-| All of the above, plus the golden regenerated through real RmlUi and compared, and one planted bug per check | `tests/suite.py` (the kit's `tests/lrbind.sh`) | `scripts/test.sh` |
+| All of the above, plus the golden regenerated through real RmlUi and compared, the cases run again in shuffled order (none may depend on it), `lrbind-sync`, the headers, `data-rml` in Chromium, and one planted bug per check | `tests/suite.py` (the kit's `tests/lrbind.sh`) | `scripts/test.sh` |
 
 `npm ci` in `tests/` once (jsdom, pinned; `bin/lrbind-parity` does it for you). After adding or changing a parity case,
 `bin/lrbind-parity --regen` runs the cases through real RmlUi (the kit's `rmlhost parity`) and rewrites `golden.json`;
