@@ -219,9 +219,14 @@ def check(sel):
     return True
 
 
+ROOT_CLASS = 'html2rml-root'       # :root -> this class on the RML body: class-level specificity, as in CSS
+HIDDEN_CLASS = 'html2rml-hidden'   # the hidden attribute (a page's own .hidden class stays its own)
+
+
 def rewrite(sel, svg_compound=None):
-    """RML names: html and :root are the document body; [hidden] is the .hidden class; an inline <svg> is a <path>
-    (svg_compound(c) says whether a compound matches an <svg> of the page: `.icon path` is then `path.icon`)"""
+    """RML names: html is the document body, :root its ROOT_CLASS (html2rml-root, so `:root .x` keeps the
+    specificity of a class); [hidden] is the HIDDEN_CLASS; an inline <svg> is a <path> (svg_compound(c) says whether a
+    compound matches an <svg> of the page: `.icon path` is then `path.icon`)"""
     out = []
     for i, (comb, c) in enumerate(sel):
         c2 = Compound()
@@ -229,12 +234,13 @@ def rewrite(sel, svg_compound=None):
         c2.attrs = []
         for a in c.attrs:
             if a[0] == 'hidden' and a[1] is None:
-                c2.classes.append('hidden')
+                c2.classes.append(HIDDEN_CLASS)
             else:
                 c2.attrs.append(a)
         for n, arg in c.pseudos:
             if n == 'root':
-                c2.tag = 'body'
+                c2.classes.append(ROOT_CLASS)
+                c2.tag = 'body' if c2.tag in ('html', 'body') else c2.tag
             elif n == 'not' and arg:
                 try:
                     c2.pseudos.append((n, ser_sel(rewrite(parse_one(arg)))))
@@ -255,8 +261,10 @@ def rewrite(sel, svg_compound=None):
             prev.id = prev.id or c2.id
             prev.pseudos += c2.pseudos
             continue
-        if out and c2.tag == 'body' and out[-1][1].tag == 'body' and comb in (' ', '>'):
-            continue
+        if out and c2.tag == 'body' and comb in (' ', '>') and (out[-1][1].tag == 'body'
+                                                                or ROOT_CLASS in out[-1][1].classes):
+            prev = out.pop()[1]   # `html body`, `:root body`: the one root element
+            c2.classes = [x for x in prev.classes if x not in c2.classes] + c2.classes
         out.append((comb, c2))
     return out
 
@@ -295,7 +303,10 @@ def comp_match(c, el, dynamic=False):
     cls = el.classes(bool(dynamic))
     if any(x not in cls for x in c.classes):
         return False
+    assumed = getattr(el, 'assumed', ())   # pseudo-classes and attributes a state assumption puts on el
     for n, op, v in c.attrs:
+        if ('attr', n, op, v) in assumed:
+            continue
         if n not in el.attrs:
             return False
         av = el.attrs[n] or ''
@@ -316,9 +327,17 @@ def comp_match(c, el, dynamic=False):
             if el.tag != 'html':
                 return False
             continue
+        if ('pseudo', n, arg) in assumed:
+            continue
         if n in STATE_PSEUDO:
             if dynamic == 'relaxed':
                 continue   # :hover and friends: any element may get them
+            return False
+        if n != 'not' and (getattr(el, 'virtual', False) or 'data-for' in el.attrs):
+            # a structural pseudo-class on an element a data-for repeats (or one only a script builds): any copy may
+            # match it, the one in the page's tree tells nothing
+            if dynamic == 'relaxed' or getattr(el, 'virtual', False):
+                continue
             return False
         sib = [x for x in el.parent.children if hasattr(x, 'tag')] if el.parent else [el]
         same = [x for x in sib if x.tag == el.tag]

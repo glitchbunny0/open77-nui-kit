@@ -76,6 +76,7 @@ class Converter:
         self.report = Report()
         self.fonts = []
         self.hidden_used = False
+        self.root_class_used = False
         self.svg_rules = []
         self.svg_n = 0
 
@@ -358,6 +359,8 @@ class Converter:
         """rules setting custom property `name` that reach none of these elements (nor their ancestors)"""
         out = []
         for e in self.casc.by_name.get(name, ()):
+            if S.ser_sel(e[0]) in (':root', 'html', 'body'):
+                continue   # set on the document root: it reaches every element
             hit = False
             for el in els:
                 n = el
@@ -370,10 +373,71 @@ class Converter:
                 out.append(e)
         return out
 
+    def virtual(self, sel):
+        """elements a rule targets that only a script builds (`.list b` with an empty .list): one stand-in per page
+        element its ancestor part matches, so the cascade sees what they inherit there"""
+        if len(sel) < 2 or sel[-1][0] not in (' ', '>'):
+            return []
+        anchors = [el for el in self.all_els if S.matches(sel[:-1], el, True)]
+        c = sel[-1][1]
+        out = []
+        for a in anchors:
+            attrs = [(n, v if v is not None else '') for n, op, v in c.attrs]
+            if c.classes:
+                attrs.append(('class', ' '.join(c.classes)))
+            if c.id:
+                attrs.append(('id', c.id))
+            v = H.Element(c.tag if c.tag not in (None, '*') else 'div', attrs, a.line, a)
+            v.virtual = True
+            out.append(v)
+        self._virtual += out   # kept alive: the cascade memo is keyed by id()
+        return out
+
+    def root_merge(self, flat):
+        """html (or :root) and body are two boxes in a browser, one in RmlUi: a property both set lands twice on
+        <body>, and the html value can win there"""
+        seen = {}
+        for file, it in flat:
+            if not isinstance(it, css_parse.Rule) or not it.decls:
+                continue
+            for t in S.split_list(it.prelude):
+                try:
+                    sel = S.parse_one(t)
+                except S.SelectorIssue:
+                    continue
+                c = sel[-1][1]
+                if len(sel) != 1 or c.classes or c.id or c.attrs or [p for p in c.pseudos if p[0] != 'root']:
+                    continue
+                who = 'body' if c.tag == 'body' else 'html' if c.tag == 'html' or ('root', None) in c.pseudos else None
+                for d in (it.decls if who else ()):
+                    if d.name.startswith('--'):
+                        continue
+                    other = seen.get(('html' if who == 'body' else 'body', d.name))
+                    if other and other[0] != d.value.strip():
+                        self.report.add(self.where(file), d.line, 'css', f'{d.name} set on both html and body '
+                                        f'({other[0]} at line {other[1]}, {d.value.strip()} here)',
+                                        'RmlUi has one root element: both land on <body> and the later one wins there; '
+                                        'a browser gives each box its own. Keep one')
+                    seen[(who, d.name)] = (d.value.strip(), d.line)
+
+    def rule_rank(self, sel, file, it):
+        for e in self.casc.entries:
+            if e[4] == file and e[5] == it.line and S.ser_sel(e[0]) == S.ser_sel(sel):
+                return e[1], e[2]
+        return None
+
+    def later_sets(self, name, rank, els, nspec):
+        """a rule after this one (by specificity, then order) sets `name` on all these elements, so it wins in every
+        state, and a re-statement of specificity nspec would beat it in RmlUi: the re-statement must not be written"""
+        return rank is not None and any((e[1], e[2]) > rank and e[1] < nspec
+                                        and all(S.matches(e[0], x, 'relaxed') for x in els)
+                                        for e in self.casc.by_name.get(name, ()))
+
     # ---- rules
     def convert_rules(self, flat, doc):
         body = H.find(doc.root, 'body') or doc.root
         all_els = list(body.walk())
+        self.all_els, self._virtual = all_els, []
         self.keyframe_names = {it.prelude.strip() for _, it in flat if isinstance(it, css_parse.AtRule)}
         # which elements other rules give a decorator, a mask or a background colour (a shorthand resets them in
         # CSS; the RCSS gets the reset only where it can matter), and the cascade of layer sizes/positions/repeats
@@ -422,6 +486,7 @@ class Converter:
                 if f:
                     for sel in sels:
                         self.layer_src.append((sel, S.specificity(sel), order, g, f, it))
+        self.root_merge(flat)
         svgs = [el for el in all_els if el.tag == 'svg']
 
         def svg_compound(c):
@@ -436,6 +501,11 @@ class Converter:
             if it.decls is None:
                 self.report.add(self.where(file), it.line, 'css', f'{it.prelude!r} without a block', 'fix the sheet')
                 continue
+            for d in it.decls:
+                if d.name.startswith('--') and d.important:
+                    self.report.add(self.where(file), d.line, 'css', f'{d.name}: {d.value} !important',
+                                    'RmlUi has no !important: the converter lets it win in its own cascade (as CSS '
+                                    'does) but RmlUi will not; raise the selector\'s specificity instead')
             decls = [d for d in it.decls if not d.name.startswith('--')]
             parsed = []
             for t in S.split_list(it.prelude):
@@ -452,7 +522,7 @@ class Converter:
             used = sorted({n for d in decls for n in V.var_names(V.tokenize(d.value))})
             for sel in parsed:
                 els = [el for el in all_els if S.matches(sel, el)] or [el for el in all_els if S.matches(sel, el, True)] \
-                    or [el for el in all_els if S.matches(sel, el, 'relaxed')] \
+                    or [el for el in all_els if S.matches(sel, el, 'relaxed')] or self.virtual(sel) \
                     or [el for el in all_els if S.matches(sel, el, 'loose')]
                 pairs = [p_ for el in els for p_ in (align(sel, el) or [])]
                 with self.casc.assume(pairs):
@@ -496,9 +566,17 @@ class Converter:
                                 nsel = [(cb, merged if cc is c else cc) for cb, cc in sel]
                                 npairs = [(e2, merged if c2 is c else c2) for e2, c2 in pairs]
                                 setp = {k for k in o[3] if k.startswith('--')}
-                                sub = [d for d in decls if set(V.var_names(V.tokenize(d.value))) & setp]
+                                rank = self.rule_rank(sel, file, it)
+                                sub = [d for d in decls if set(V.var_names(V.tokenize(d.value))) & setp
+                                       and not self.later_sets(d.name, rank, els, S.specificity(nsel))]
+                                if not sub:
+                                    done = True   # a later rule sets those properties in every state anyway
+                                    break
                                 with self.casc.assume(npairs):
                                     nlines = self.map_decls(sub, file, els, None, once, it.prelude, rule=it)
+                                    hit = any(S.matches(o[0], e2) for e2, c2 in npairs if c2 is merged)
+                                if not hit:
+                                    break   # the override's condition could not be assumed: reported below
                                 base = [x for x in lines if x[0] in {k for k, _ in nlines}]
                                 if nlines and nlines != base:
                                     k2 = S.ser_sel(S.rewrite(nsel, svg_compound))
@@ -526,12 +604,15 @@ class Converter:
             for lines, sels in groups.items():
                 if not lines:
                     continue
+                if any(S.ROOT_CLASS in c.classes for x in sels for _, c in x):
+                    self.root_class_used = True
                 disp = [v for k, v in lines if k == 'display']
                 if disp:
                     for sel in sels:
                         self.rule_display.append((sel, disp[-1]))
                 out.append((', '.join(S.ser_sel(x) for x in sels), list(lines)))
             for k2, nlines in expansions.items():
+                self.root_class_used = self.root_class_used or S.ROOT_CLASS in k2
                 out.append((k2, nlines))
         return out
 
@@ -785,7 +866,7 @@ class Converter:
             if k == 'class':
                 continue
             if k == 'hidden':
-                classes.append('hidden')
+                classes.append(S.HIDDEN_CLASS)
                 self.hidden_used = True
                 continue
             if k == 'style':
@@ -833,6 +914,8 @@ class Converter:
                     k, 'RmlUi has no accessibility tree: dropped' if k.startswith('aria-') else 'dropped'))
         if size_style:   # width/height attributes of a canvas/video/iframe: its box keeps the size
             attrs['style'] = '; '.join(size_style) + ';' + ((' ' + attrs['style']) if attrs.get('style') else '')
+        if tag == 'body' and self.root_class_used:
+            classes = [S.ROOT_CLASS] + classes
         if classes:
             attrs = {'class': ' '.join(dict.fromkeys(classes)), **attrs}
         if 'id' in attrs:
@@ -1109,7 +1192,7 @@ class Converter:
             tags = sorted(used - {'br', 'wbr'})
             lines.append('%s { box-sizing: %s; }' % (', '.join(tags), self.box_sizing))
         if self.hidden_used:
-            lines.append('.hidden { display: none; }')
+            lines.append('.%s { display: none; }' % S.HIDDEN_CLASS)
         for sel, decl in self.svg_rules:
             lines.append('%s { %s; }' % (sel, '; '.join(decl)))
         lines.append('')

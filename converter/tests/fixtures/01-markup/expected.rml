@@ -11,7 +11,7 @@
   <div class="row"><span>already wrapped</span></div>
   <p>A paragraph<br/>with a break &amp; an entity &lt;tag&gt; nbsp</p>
   <p>Unclosed paragraph
-  </p><div id="note" class="hidden">hidden note</div>
+  </p><div id="note" class="html2rml-hidden">hidden note</div>
   <div class="if" data-if="a &amp;&amp; b" data-class-on="n > 2" data-event-click="go('x', n)">{{ a ? 'yes' : 'no' }}</div>
   <img src="../../fixtures/01-markup/assets/dot.png" width="8" height="8"/>
   <input type="text" value="3" placeholder="n"/>

@@ -1,0 +1,5 @@
+css      c.css:3  margin set on both html and body (0 at line 2, 4px here)  =>  RmlUi has one root element: both land on <body> and the later one wins there; a browser gives each box its own. Keep one
+css      c.css:13  --ic: #00ff00 !important  =>  RmlUi has no !important: the converter lets it win in its own cascade (as CSS does) but RmlUi will not; raise the selector's specificity instead
+css      c.css:18  var(--dc) is also set under .scope, .scope .d, which this converter cannot re-state for this rule  =>  RmlUi has no custom properties: the value for the page as written is used; re-state the affected declarations under those selectors
+css      c.css:21  var(--ec) differs between the elements this rule matches (#00ff00, #ff0000)  =>  used #00ff00; split the rule per element
+css      c.css:46  var(--nw) is also set under .nx:not(.x), which this converter cannot re-state for this rule  =>  RmlUi has no custom properties: the value for the page as written is used; re-state the affected declarations under those selectors
