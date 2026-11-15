@@ -238,7 +238,9 @@ def rewrite(sel, svg_compound=None):
             else:
                 c2.attrs.append(a)
         for n, arg in c.pseudos:
-            if n == 'root':
+            if n == 'root' and len(sel) == 1 and not (c.tag or c.id or c.classes or c.attrs or len(c.pseudos) > 1):
+                c2.tag = 'body'   # a lone :root is body itself (RmlUi sets body's class after styling it once)
+            elif n == 'root':
                 c2.classes.append(ROOT_CLASS)
                 c2.tag = 'body' if c2.tag in ('html', 'body') else c2.tag
             elif n == 'not' and arg:

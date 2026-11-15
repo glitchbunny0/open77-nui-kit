@@ -64,7 +64,7 @@ def _esc_attr(s):
 
 
 class Converter:
-    def __init__(self, page, out, name=None, css=(), canvas=(1920, 1080), px_per_dp=1.0, root=None):
+    def __init__(self, page, out, name=None, css=(), canvas=(1920, 1080), px_per_dp=1.0, root=None, vars_mode='fold'):
         self.page = os.path.abspath(page)
         self.pdir = os.path.dirname(self.page)
         self.out = os.path.abspath(out)
@@ -77,6 +77,10 @@ class Converter:
         self.fonts = []
         self.hidden_used = False
         self.root_class_used = False
+        self.vars = vars_mode
+        self.quiet = False
+        self.last_folded = set()
+        self.native_memo = {}
         self.svg_rules = []
         self.svg_n = 0
 
@@ -386,8 +390,9 @@ class Converter:
                     if v is not None:
                         self.global_vars[n] = v
 
-    def lookup_for(self, els, file, line, report_once):
-        """the var() lookup for declarations applying to these elements (under the current assumption)"""
+    def lookup_for(self, els, file, line, report_once, quiet=()):
+        """the var() lookup for declarations applying to these elements (under the current assumption); a value that
+        differs between them is reported, except for the names in `quiet` (RmlUi resolves those itself)"""
         def look(name):
             vals = []
             for el in els:
@@ -398,7 +403,7 @@ class Converter:
                 v = self.global_vars.get(name)
                 vals = [v] if v is not None else []
             key = (name, file, line)
-            if len(vals) > 1 and key not in report_once:
+            if len(vals) > 1 and key not in report_once and name not in quiet:
                 report_once.add(key)
                 self.report.add(self.where(file), line, 'css',
                                 f'var({name}) differs between the elements this rule matches ({", ".join(vals)})',
@@ -563,9 +568,14 @@ class Converter:
             for d in it.decls:
                 if d.name.startswith('--') and d.important:
                     self.report.add(self.where(file), d.line, 'css', f'{d.name}: {d.value} !important',
-                                    'RmlUi has no !important: the converter lets it win in its own cascade (as CSS '
-                                    'does) but RmlUi will not; raise the selector\'s specificity instead')
+                                    'RmlUi has no !important: ' + (
+                                        'written without it, so a more specific rule setting it wins there; raise this '
+                                        'selector\'s specificity instead' if self.vars == 'native' else
+                                        'the converter lets it win in its own cascade (as CSS does) but RmlUi will '
+                                        'not; raise the selector\'s specificity instead'))
             decls = [d for d in it.decls if not d.name.startswith('--')]
+            clines = self.custom_lines([d for d in it.decls if d.name.startswith('--')], file) \
+                if self.vars == 'native' else []
             parsed = []
             for t in S.split_list(it.prelude):
                 try:
@@ -575,10 +585,11 @@ class Converter:
                     self.report.add(self.where(file), it.line, 'selector', f'{t}: {e.what}', e.todo)
                     continue
                 parsed.append(sel)
-            if not parsed or not decls:
+            if not parsed or not (decls or clines):
                 continue
             groups, expansions, pending, covered = {}, {}, {}, set()
-            used = sorted({n for d in decls for n in V.var_names(V.tokenize(d.value))})
+            used = sorted({n for d in decls for n in V.var_names(V.tokenize(d.value))
+                           if self.vars != 'native' or not self.native_ok(n)})
             for sel in parsed:
                 els = [el for el in all_els if S.matches(sel, el)] or [el for el in all_els if S.matches(sel, el, True)] \
                     or [el for el in all_els if S.matches(sel, el, 'relaxed')] or self.virtual(sel) \
@@ -592,8 +603,10 @@ class Converter:
                         reached = lambda e, o: any(S.matches(o[0], a) for a in self._chain(e))
                         part = [o for o in self.casc.by_name.get(n, ()) if 0 < sum(reached(e, o) for e in els) < len(els)]
                         base = [e for e in base if not any(reached(e, o) for o in part)] or base
-                    lines = self.map_decls(decls, file, base, None, once, it.prelude, rule=it)
+                    lines = self.map_decls(decls, file, base, None, once, it.prelude, rule=it) if decls else []
+                    used = sorted(set(used) | self.last_folded)   # the variables that ended up folded
                     ovs = {n: self.overrides_of(n, base) for n in used}
+                lines = clines + lines
                 rws = S.rewrite(sel, svg_compound)
                 key = tuple(lines)
                 if key not in groups:
@@ -624,7 +637,7 @@ class Converter:
                                 merged.pseudos = c.pseudos + [x for x in oc.pseudos if x not in c.pseudos]
                                 nsel = [(cb, merged if cc is c else cc) for cb, cc in sel]
                                 npairs = [(e2, merged if c2 is c else c2) for e2, c2 in pairs]
-                                setp = {k for k in o[3] if k.startswith('--')}
+                                setp = {k for k in o[3] if k.startswith('--') and k in used}
                                 rank = self.rule_rank(sel, file, it)
                                 sub = [d for d in decls if set(V.var_names(V.tokenize(d.value))) & setp
                                        and not self.later_sets(d.name, rank, els, S.specificity(nsel))]
@@ -675,6 +688,193 @@ class Converter:
                 out.append((k2, nlines))
         return out
 
+    # ---- --vars native: custom properties and var() kept for RmlUi 6.3 to resolve
+    MATH_OR_COLOUR = set(V.MATH_FUNCS) | {'rgb', 'rgba', 'hsl', 'hsla', 'lab', 'lch', 'oklab', 'oklch', 'hwb', 'color',
+                                          'color-mix'}
+
+    def _var_inside(self, toks, inside=False):
+        """a var() inside calc()/min()/... or a colour function: RmlUi has no calc() and reads rgba() alpha as 0-255,
+        so such a value can't be left to it"""
+        for t in toks:
+            if t[0] == 'func' and t[1] == 'var' and inside:
+                return True
+            if t[0] in ('func', 'paren') and self._var_inside(t[-1], inside or (t[0] == 'func' and
+                                                                                 t[1] in self.MATH_OR_COLOUR)):
+                return True
+        return False
+
+    def custom_value(self, raw, file):
+        """a custom property's value as RmlUi gets it: px -> dp, colours as hex, calc() folded, url() as the image path
+        (from the declaring sheet); var() kept. Raises ValueIssue when RmlUi could not use it"""
+        toks = V.tokenize(raw.strip())
+        if not V.strip_ws(toks) or self._var_inside(toks):
+            raise ValueIssue('value RmlUi cannot take', '')
+        iss = []
+        toks = [('ident', CP._quote_path(self.asset_path(t[1], os.path.dirname(file), iss) or '')) if t[0] == 'url'
+                else t for t in toks]
+        if any(t == ('ident', '') for t in toks):
+            raise ValueIssue('an image RmlUi cannot load', '')
+        notes = []
+        toks = V.convert_units(toks, self.units, notes)
+        if notes:
+            raise ValueIssue('unit ' + notes[0], '')
+        toks = V.strip_ws(V.convert_colors(V.fold_math(toks)))
+        if any(t[0] == 'str' for t in toks) and len(toks) > 1:
+            raise ValueIssue('a quoted string next to other values', '')   # RmlUi's parser refuses it (measured)
+        return V.ser(toks)
+
+    def setters(self, name):
+        """every value the page gives custom property `name`: (raw value, file it is declared in)"""
+        out = [(e[3][name], e[4]) for e in self.casc.by_name.get(name, ())]
+        for el in self.all_els:
+            for d in css_parse.parse_decls(el.attrs.get('style') or '', el.line) if '--' in (el.attrs.get('style') or '') \
+                    else ():
+                if d.name == name:
+                    out.append((d.value, self.page))
+        return out
+
+    def native_ok(self, name, stack=()):
+        """RmlUi can resolve var(name) itself: every value the page gives it converts, and so does every variable those
+        values use (all or nothing: a setter left out would hand RmlUi another setter's value)"""
+        if name in self.native_memo:
+            return self.native_memo[name]
+        if name in stack:
+            return False
+        ok = bool(self.setters(name))
+        for raw, f in self.setters(name):
+            try:
+                self.custom_value(raw, f)
+            except ValueIssue:
+                ok = False
+                break
+            if not all(self.native_ok(n, stack + (name,)) for n in V.var_names(V.tokenize(raw))):
+                ok = False
+                break
+        self.native_memo[name] = ok
+        return ok
+
+    def custom_lines(self, decls, file):
+        """a rule's (or an inline style's) custom properties, written for RmlUi (--vars native)"""
+        out = []
+        for d in decls:
+            if self.native_ok(d.name):
+                out = [x for x in out if x[0] != d.name] + [(d.name, self.custom_value(d.value, file))]
+        return out
+
+    def native_lines(self, decls, file, matched, sheet, once, prelude, inline, rule):
+        """--vars native: the lines with var() kept wherever RmlUi computes the same value as the static folding does.
+        Checked by mapping the declarations once per value each variable takes on the page: a line must carry each
+        value exactly where the variable is, so writing var() there hands RmlUi the very value the folding would write.
+        A variable that fails (calc() around it, a mapping that rewrites it: border-radius %, font lists, shadows
+        reordered, a missing value) is folded instead. None when nothing is left to RmlUi."""
+        names = {n for d in decls for n in V.var_names(V.tokenize(d.value))}
+        if not names:
+            return None
+        clean = set()
+        for n in names:
+            users = [d for d in decls if n in V.var_names(V.tokenize(d.value))]
+            if self.native_ok(n) and not any(self._var_inside(V.tokenize(d.value)) for d in users):
+                clean.add(n)
+        clean = {n for n in clean if all(set(V.var_names(V.tokenize(d.value))) <= clean
+                                         for d in decls if n in V.var_names(V.tokenize(d.value)))}
+        base = self.lookup_for(matched, file, decls[0].line, set(), quiet=names)
+        texts = {}
+        for d in decls:   # var(--x, fallback) as RmlUi gets it
+            for t in self._var_funcs(V.convert_colors(V.convert_units(V.tokenize(d.value), self.units, []))):
+                texts.setdefault(V.ser(V.split(t[2])[0]).strip(), set()).add(V.ser([t]))
+        bad = {n for n in clean if len(texts.get(n, ())) != 1}
+        tmpl = None
+        while clean - bad:
+            good = clean - bad
+            before = set(bad)
+
+            def run(sg):
+                look = lambda n: sg[n] if n in sg else base(n)
+                out = self.quiet_map(decls, file, matched, sheet, prelude, inline, rule, look)
+                return self._template(out, {n: self._resolved(n, look, decls) for n in good},
+                                      {n: next(iter(texts[n])) for n in good}, bad)
+            tmpl = run({})
+            for n in sorted(good):
+                if n in bad:
+                    continue
+                for raw in self.probes(n):
+                    if run({n: raw}) != tmpl:
+                        bad.add(n)
+                        break
+            if bad == before:
+                break
+        clean -= bad
+        if not clean:
+            return None
+        look = self.lookup_for(matched, file, decls[0].line, once, quiet=clean)
+        self._map_decls(decls, file, matched, sheet, once, prelude, inline, rule, look)   # its report items
+        self.last_folded = names - clean
+        return tmpl
+
+    def probes(self, n):
+        """values to map var(n) with: each one the page gives it, and a made-up one of the same kind (a number, a
+        colour) that can't coincide with another value of the line"""
+        raws = sorted({r for r, _ in self.setters(n)})
+        t = V.strip_ws(V.tokenize(raws[0])) if raws else []
+        if len(t) == 1 and t[0][0] == 'num':
+            raws.append(V.ser([('num', 12.3457, t[0][2])]))
+        elif len(t) == 1 and V.is_color(t[0]):
+            raws.append('#123457')
+        return raws
+
+    @staticmethod
+    def _var_funcs(toks):
+        for t in toks:
+            if t[0] == 'func' and t[1] == 'var':
+                yield t
+            elif t[0] in ('func', 'paren'):
+                yield from Converter._var_funcs(t[-1])
+
+    def _resolved(self, n, look, decls):
+        """the text RmlUi substitutes for var(n) under this lookup (its fallback when no value reaches)"""
+        raw = look(n)
+        if raw is None:
+            for t in self._var_funcs(V.tokenize(' '.join(d.value for d in decls))):
+                parts = V.split(t[2])
+                if V.ser(parts[0]).strip() == n and len(parts) > 1:
+                    raw = V.ser(t[2][[i for i, a in enumerate(t[2]) if a[0] == 'comma'][0] + 1:])
+                    break
+        if raw is None:
+            return None
+        try:
+            return self.custom_value(V.ser(V.resolve_vars(V.tokenize(raw), look)), self.page)
+        except ValueIssue:
+            return None
+
+    @staticmethod
+    def _template(lines, values, texts, bad):
+        """lines with each variable's value put back as its var() text; a variable whose value is missing or is not
+        found exactly once per use goes into `bad`"""
+        out = []
+        counts = {n: 0 for n in values}
+        for k, v in lines:
+            for n, val in values.items():
+                if not val:
+                    bad.add(n)
+                    continue
+                pat = r'(?<![\w#.%-])' + re.escape(val) + r'(?![\w%.-])'
+                counts[n] += len(re.findall(pat, v))
+                v = re.sub(pat, lambda m, t=texts[n]: t, v)
+            out.append((k, v))
+        for n, c in counts.items():
+            if c == 0:
+                bad.add(n)
+        if len({v for v in values.values() if v}) < len([v for v in values.values() if v]):
+            bad |= set(values)   # two variables with one value: whose is whose can't be told
+        return out
+
+    def quiet_map(self, decls, file, matched, sheet, prelude, inline, rule, look):
+        saved, self.report, self.quiet = self.report, Report(), True
+        try:
+            return self._map_decls(decls, file, matched, sheet, set(), prelude, inline, rule, look)
+        finally:
+            self.report, self.quiet = saved, False
+
     def cascade_color(self, matched):
         """the text colour these elements get from the page's static cascade (body's default black when nothing sets
         it), or None when they differ or it can't be read"""
@@ -701,7 +901,18 @@ class Converter:
                         'written (a state that changes their color does not change this)')
 
     def map_decls(self, decls, file, matched, sheet, once, prelude, inline=False, rule=None):
-        look = self.lookup_for(matched, file, decls[0].line, once)
+        """the declarations -> RCSS lines. With --vars native, a declaration whose var()s RmlUi can resolve itself
+        keeps them (native_lines); the others are folded from the static cascade"""
+        self.last_folded = set()
+        if self.vars == 'native' and not self.quiet:
+            got = self.native_lines(decls, file, matched, sheet, once, prelude, inline, rule)
+            if got is not None:
+                return got
+        self.last_folded = {n for d in decls for n in V.var_names(V.tokenize(d.value))}
+        return self._map_decls(decls, file, matched, sheet, once, prelude, inline, rule)
+
+    def _map_decls(self, decls, file, matched, sheet, once, prelude, inline=False, rule=None, look=None):
+        look = look or self.lookup_for(matched, file, decls[0].line, once)
         issues_at = []
         prepared = {}
         # the rule's own colour first: currentColor in its other declarations and colourless borders/shadows take it;
@@ -866,8 +1077,14 @@ class Converter:
                         self.report.add(self.where(file), d.line, 'css', f'var({n}) inside @keyframes is set per element '
                                         f'(under {under})', 'keyframes are shared in RmlUi: write one @keyframes per variant')
             sels = [s.strip() for s in fr.prelude.split(',')]
+            for d in fr.decls:
+                if d.name.startswith('--'):
+                    self.report.add(self.where(file), d.line, 'css', f'{d.name} inside @keyframes',
+                                    'RmlUi cannot animate custom properties: dropped; animate the property itself')
             decls = [d for d in fr.decls if not d.name.startswith('--')]
+            vm, self.vars = self.vars, 'fold'   # a keyframe's values are folded: RmlUi animates the computed ones
             lines = self.map_decls(decls, file, [], {'decorator': False, 'mask-image': False, 'background-color': False}, once, fr.prelude) if decls else []
+            self.vars = vm
             if lines:
                 frames.append((', '.join(sels), lines))
         name = it.prelude.strip()
@@ -997,11 +1214,17 @@ class Converter:
         out.append(f'</{tag}>')
 
     def inline_style(self, el, text):
-        decls = [d for d in css_parse.parse_decls(text, el.line) if not d.name.startswith('--')]
-        if not decls:
-            return ''
-        lines = self.map_decls(decls, self.page, [el], {'decorator': True, 'mask-image': True, 'background-color': True}, set(),
-                               f'style of <{el.tag}>', inline=True)
+        all_d = css_parse.parse_decls(text, el.line)
+        decls = [d for d in all_d if not d.name.startswith('--')]
+        clines = self.custom_lines([d for d in all_d if d.name.startswith('--')], self.page) \
+            if self.vars == 'native' else []
+        for d in all_d:
+            if d.name.startswith('--') and d.important:
+                self.report.add(self.where(None), d.line, 'css', f'{d.name}: {d.value} !important (inline)',
+                                'RmlUi has no !important: kept without it')
+        lines = clines + (self.map_decls(decls, self.page, [el], {'decorator': True, 'mask-image': True,
+                                                                  'background-color': True}, set(),
+                                         f'style of <{el.tag}>', inline=True) if decls else [])
         return '; '.join(f'{k}: {v}' for k, v in lines) + (';' if lines else '')
 
     def svg(self, el, out):
@@ -1281,8 +1504,8 @@ def wrap(sel, decls, width=118):
     return '\n'.join(out)
 
 
-def convert(page, out, name=None, css=(), canvas=(1920, 1080), px_per_dp=1.0, root=None):
-    c = Converter(page, out, name, css, canvas, px_per_dp, root)
+def convert(page, out, name=None, css=(), canvas=(1920, 1080), px_per_dp=1.0, root=None, vars_mode='fold'):
+    c = Converter(page, out, name, css, canvas, px_per_dp, root, vars_mode)
     c.box_sizing = None
     rml, rcss = _run_with_star(c)
     return c, rml, rcss

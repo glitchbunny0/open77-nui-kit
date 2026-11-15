@@ -1,0 +1,31 @@
+<rml>
+<head>
+    <title>page</title>
+    <link type="text/rcss" href="page.rcss"/>
+</head>
+<!-- converted by html2rml from index.html; what it could not map: page.report.md -->
+<body class="html2rml-root" data-model="m">
+<div id="spec" class="a b">specificity: .a.b beats a later .a</div>
+<div id="tie" class="t">a tie: the later rule wins</div>
+<div id="inl" class="box" style="--c: #0000ff;">an inline custom property beats the rules</div>
+<div id="imp" class="i j"><span id="imps">an !important custom property beats a more specific rule</span></div>
+<div class="scope"><div id="d1" class="d">differs per element</div></div><div id="d2" class="d">differs</div>
+<div style="--ec: #00ff00;"><div id="e1" class="e">differs: an inline value up the tree</div></div><div id="e2" class="e">differs</div>
+<div id="vs" class="vs">a var() inside a custom property resolves where it is declared</div>
+<div id="btn" class="btn" data-class-on="on">a :hover override</div>
+<div id="card" class="card" data-attr-data-state="state">an attribute override</div>
+<div class="list"><div class="row" data-for="it : items">{{it}}</div></div>
+<div id="mark" data-class-kill="kill"><i id="mi">x</i></div>
+<div><span id="rs" class="x">:root .x beats a later div .x</span></div>
+<div class="w"></div>
+<div id="list2"></div>
+<div id="nx" class="nx x">an override that cannot hold as written</div>
+<div id="q" data-if="state != 'a&quot;b'">a " inside an attribute</div>
+<div id="ico1" class="ico"></div><div id="ram"><div id="ico2" class="ico"></div></div><div id="ico3" class="ico" style="--m: ../../fixtures/15-native/assets/b.png;"></div>
+<div id="u" class="u" data-class-big="on"></div><div id="co" class="co"></div><div id="dsp" class="dsp" data-class-g="kill"></div><div id="brd" class="brd" data-class-on="on"></div><div class="ff">f</div><div class="tr">t</div>
+<div class="sc">s</div><div id="mg" class="mg"></div><div id="fb" class="fb"></div>
+
+<div id="dim" class="hidden">the page's own .hidden class</div>
+<div id="gone" class="html2rml-hidden">the hidden attribute</div>
+</body>
+</rml>

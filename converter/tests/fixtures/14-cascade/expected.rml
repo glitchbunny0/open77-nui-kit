@@ -8,6 +8,7 @@
 <div id="spec" class="a b">specificity: .a.b beats a later .a</div>
 <div id="tie" class="t">a tie: the later rule wins</div>
 <div id="inl" class="box">an inline custom property beats the rules</div>
+<div id="ii" class="box">an inline !important custom property</div>
 <div id="imp" class="i j"><span id="imps">an !important custom property beats a more specific rule</span></div>
 <div class="scope"><div id="d1" class="d">differs per element</div></div><div id="d2" class="d">differs</div>
 <div><div id="e1" class="e">differs: an inline value up the tree</div></div><div id="e2" class="e">differs</div>

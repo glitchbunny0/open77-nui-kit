@@ -1,0 +1,120 @@
+{
+"expect": [
+{
+"sel": "#spec",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#tie",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#inl",
+"bg": "#0000ffff"
+},
+{
+"sel": "#imps",
+"color": "#ff0000ff"
+},
+{
+"sel": "#d1",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#d2",
+"bg": "#ff0000ff"
+},
+{
+"sel": "#e1",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#e2",
+"bg": "#ff0000ff"
+},
+{
+"sel": "#vs",
+"w": 2.0
+},
+{
+"sel": "#btn",
+"bg": "#112233ff"
+},
+{
+"case": "states",
+"sel": "#btn",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#card",
+"w": 100.0
+},
+{
+"case": "states",
+"sel": "#card",
+"w": 300.0
+},
+{
+"sel": ".row",
+"nth": 0,
+"bg": "#111111ff"
+},
+{
+"sel": ".row",
+"nth": 1,
+"bg": "#222222ff"
+},
+{
+"sel": ".row",
+"nth": 2,
+"bg": "#111111ff"
+},
+{
+"sel": "#mi",
+"w": 5.0
+},
+{
+"case": "states",
+"sel": "#mi",
+"w": 5.0
+},
+{
+"sel": "#rs",
+"color": "#ff0000ff"
+},
+{
+"sel": "#ico1",
+"mask": "image(../../fixtures/15-native/assets/a.png repeat left top)"
+},
+{
+"sel": "#ico2",
+"mask": "image(../../fixtures/15-native/assets/b.png repeat left top)"
+},
+{
+"sel": "#ico3",
+"mask": "image(../../fixtures/15-native/assets/b.png repeat left top)"
+},
+{
+"sel": "#u",
+"w": 40.0
+},
+{
+"sel": "#brd",
+"btc": "#ff00ffff"
+},
+{
+"case": "states",
+"sel": "#brd",
+"btc": "#00ffffff"
+},
+{
+"sel": "#fb",
+"w": 11.0
+},
+{
+"case": "states",
+"sel": "#u",
+"w": 80.0
+}
+]
+}

@@ -10,7 +10,7 @@ path.svg-1 { width: 4dp; height: 4dp; }
 #a { padding: 2dp; }
 * { margin: 0; }
 body { width: 100%; }
-.html2rml-root { font-size: 16dp; }
+body { font-size: 16dp; }
 #a { width: 600dp; }
 #a { height: 10dp; }
 #a span { color: #fff; }

@@ -1,0 +1,66 @@
+:root { --c: #ff0000; --a: 1px; --b: calc(var(--a) * 2); }
+body { margin: 0; color: #ffffff; }
+html { margin: 4px; }
+div { height: 2px; }
+/* specificity, ties, inline style, !important: the static cascade folds the winner */
+.a.b { --s: #00ff00; }
+.a { --s: #ff0000; }
+#spec { background-color: var(--s); }
+.t { --tc: #ff0000; }
+.t { --tc: #00ff00; }
+#tie { background-color: var(--tc); }
+.box { background-color: var(--c); }
+.i { --ic: #00ff00 !important; }
+.i.j { --ic: #ff0000; }
+#imps { color: var(--ic); }
+/* one rule, elements with different values */
+.scope { --dc: #00ff00; }
+.d { --dc: #ff0000; background-color: var(--dc); }
+.scope .d { --dc: #00ff00; }
+body { --ec: #ff0000; }
+.e { background-color: var(--ec); }
+/* resolved at the declaring element: --b is 2px, not 10px */
+.vs { --a: 5px; width: var(--b); }
+/* state, attribute and structural overrides are re-stated under their selectors */
+.btn { --bg: #112233; background-color: var(--bg); }
+.btn:hover { --bg: #ff0000; }
+.btn.on { --bg: #00ff00; }
+.card { --w: 100px; width: var(--w); }
+.card[data-state="open"] { --w: 300px; }
+.row { --rb: #222222; background-color: var(--rb); }
+.row:nth-child(odd) { --rb: #111111; }
+.row:last-child { --rb: #333333; }
+/* a later rule of the same specificity wins in every state: no re-statement may beat it */
+#mark { --len: 10px; }
+#mark i { display: block; width: var(--len); }
+#mark.kill { --len: 14px; }
+#mark i { width: 5px; }
+/* :root keeps a class's specificity; html and body both set margin */
+:root .x { color: #ff0000; }
+div .x { color: #0000ff; }
+/* rules for elements only a script builds still see what they inherit */
+.w { --wc: #00ff00; }
+.w b { color: var(--wc); }
+#list2 { font-size: 20px; }
+#list2 .row2 { letter-spacing: 0.1em; color: var(--c); }
+.nx { --nw: 10px; width: var(--nw); }
+.nx:not(.x) { --nw: 20px; }
+u { color: var(--c); }
+/* a page's own .hidden class is not the hidden attribute */
+.hidden { opacity: 0.5; }
+/* --vars native: what RmlUi resolves itself, what is still folded */
+.ico { --m: url(assets/a.png); mask-image: var(--m); width: 8px; }
+#ram .ico { --m: url(assets/b.png); }
+.u { --u: 0.5px; width: calc(80 * var(--u)); }
+.brd { --bc: #ff00ff; border: 2px solid var(--bc); }
+.brd.on { --bc: #00ffff; }
+.ff { --font: "Rajdhani", sans-serif; font-family: var(--font); }
+.tr { --t: 0.2s; transition: opacity var(--t); }
+.sc { width: var(--script-set); }
+.mg { --mx: 3px; margin: var(--mx) 0 var(--mx) 0; }
+.fb { width: var(--nowhere, 11px); }
+.u.big { --u: 1px; }
+.co { --cx: 3px; padding: var(--cx) 3px; }
+.dsp { --d: flex; display: var(--d); }
+.dsp.g { --d: grid; }
+@keyframes k { from { --o: 0; opacity: 0; } to { opacity: 1; } }
