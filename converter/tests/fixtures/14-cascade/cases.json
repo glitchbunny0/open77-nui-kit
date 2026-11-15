@@ -1,0 +1,1 @@
+[{"name": "default", "model": {"items": [1, 2, 3, 4, 5], "on": false, "kill": false, "state": "closed"}}, {"name": "states", "model": {"items": [1, 2], "on": true, "kill": true, "state": "open"}}]

@@ -7,3 +7,4 @@
 #c { border-top: 1px solid currentColor; box-shadow: 0 0 4px currentColor; }
 #c { background-color: hwb(0 0% 0%); }
 .x { border-color: currentColor; }
+#d { color: #00ff00; background-color: currentColor; border: 1px solid currentColor; }

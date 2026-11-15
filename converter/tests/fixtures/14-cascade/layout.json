@@ -1,0 +1,73 @@
+{
+"expect": [
+{
+"sel": "#spec",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#tie",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#inl",
+"bg": "#0000ffff"
+},
+{
+"sel": "#imps",
+"color": "#00ff00ff"
+},
+{
+"sel": "#vs",
+"w": 2.0
+},
+{
+"sel": "#btn",
+"bg": "#112233ff"
+},
+{
+"case": "states",
+"sel": "#btn",
+"bg": "#00ff00ff"
+},
+{
+"sel": "#card",
+"w": 100.0
+},
+{
+"case": "states",
+"sel": "#card",
+"w": 300.0
+},
+{
+"sel": ".row",
+"nth": 0,
+"bg": "#111111ff"
+},
+{
+"sel": ".row",
+"nth": 1,
+"bg": "#222222ff"
+},
+{
+"sel": "#mi",
+"w": 5.0
+},
+{
+"case": "states",
+"sel": "#mi",
+"w": 5.0
+},
+{
+"sel": "#rs",
+"color": "#ff0000ff"
+},
+{
+"sel": "#dim",
+"op": 0.5
+},
+{
+"sel": "#ds",
+"w": 3.0
+}
+]
+}

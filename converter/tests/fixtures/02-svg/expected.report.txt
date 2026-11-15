@@ -1,2 +1,5 @@
 markup   index.html:4  <svg> stroke="currentColor"  =>  write the stroke colour in the sheet (path.svg-3 or a class of yours)
 markup   index.html:5  inline <svg> with 2 shapes  =>  Open77's <path> draws one path with a view-box: merge the shapes into one path d, or export a PNG and use <img>/decorator: image(); a <div> of the same size stands in
+markup   index.html:6  <svg> with <defs>, <lineargradient>, <stop>  =>  Open77's <path> draws one path in one colour: they are dropped (export a PNG for what needs them)
+markup   index.html:6  <path fill-rule>  =>  dropped
+markup   index.html:6  <svg> fill="url(#g)"  =>  Open77's <path> paints one colour: a gradient or pattern fill is dropped; write the colour

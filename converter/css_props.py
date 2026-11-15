@@ -12,7 +12,7 @@ class Issue:
 
 
 # ---- easing: CSS timing functions -> the nearest RmlUi tween (max error over the curve measured by _fit)
-TWEEN_FAMILIES = ('sine', 'quadratic', 'cubic', 'quartic', 'quintic', 'exponential', 'circular', 'linear')
+TWEEN_FAMILIES = ('sine', 'quadratic', 'cubic', 'quartic', 'quintic', 'exponential', 'circular', 'back', 'linear')
 CSS_EASE = {'ease': (0.25, 0.1, 0.25, 1), 'ease-in': (0.42, 0, 1, 1), 'ease-out': (0, 0, 0.58, 1),
             'ease-in-out': (0.42, 0, 0.58, 1), 'linear': (0, 0, 1, 1)}
 
@@ -21,7 +21,8 @@ def _tween_fn(name):
     fam, mode = re.match(r'^(\w+)-(in-out|in|out)$', name).groups()
     f = {'sine': lambda t: 1 - math.cos(t * math.pi / 2), 'quadratic': lambda t: t * t, 'cubic': lambda t: t ** 3,
          'quartic': lambda t: t ** 4, 'quintic': lambda t: t ** 5,
-         'exponential': lambda t: 0 if t == 0 else 2 ** (10 * (t - 1)),
+         'exponential': lambda t: t if t in (0, 1) else math.exp(7.24 * (t - 1)),   # RmlUi's Tween.cpp
+         'back': lambda t: t * t * (2.70158 * t - 1.70158),
          'circular': lambda t: 1 - math.sqrt(max(0.0, 1 - t * t)), 'linear': lambda t: t}[fam]
     if mode == 'in':
         return f
@@ -61,7 +62,7 @@ def fit_tween(p):
 
 
 EASE_MAP = {k: fit_tween(v)[0] for k, v in CSS_EASE.items()}
-RML_TWEENS = {f'{f}-{m}' for f in TWEEN_FAMILIES + ('back', 'bounce', 'elastic') for m in ('in', 'out', 'in-out')}
+RML_TWEENS = {f'{f}-{m}' for f in TWEEN_FAMILIES + ('bounce', 'elastic') for m in ('in', 'out', 'in-out')}
 
 
 def tween_of(word, issues):
@@ -206,6 +207,9 @@ UNSUPPORTED = {
     'transition-delay': 'write the transition shorthand (RmlUi has no transition longhands)',
     'text-shadow-color': 'nothing to do',
     'grid': 'RmlUi has no grid: use flex rows/columns',
+    'container-type': 'RmlUi has no container queries: the converter folds cq* units with this container\'s size',
+    'container-name': 'RmlUi has no container queries',
+    'container': 'RmlUi has no container queries: the converter folds cq* units with the container\'s size',
 }
 GRID_PROPS = ('grid-template', 'grid-template-columns', 'grid-template-rows', 'grid-template-areas', 'grid-area',
               'grid-column', 'grid-row', 'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
@@ -227,6 +231,7 @@ class Ctx:
         self.rule_decls = rule_decls or {}
         self.keyframes, self.where = keyframes, where
         self.color = None
+        self.used_color = False   # a handler fell back to the text colour (a colourless border or shadow)
 
 
 def prepare(name, value, ctx, issues):
@@ -239,7 +244,9 @@ def prepare(name, value, ctx, issues):
         if u == 'fr':
             continue
         raise ValueIssue(f'unit {u}', {'ch': 'about 0.5em per character in most fonts: write dp',
-                                       'ex': 'about 0.5em: write dp or em'}.get(u, 'write the value in dp'))
+                                       'ex': 'about 0.5em: write dp or em'}.get(
+            u, 'the query container has no fixed size (or the elements have containers of different sizes): write '
+               'dp' if u.startswith('cq') else 'write the value in dp'))
     toks = V.fold_math(toks)
     if name not in NO_COLOR_PROPS:
         toks = V.convert_colors(toks, ctx.color)
@@ -291,12 +298,14 @@ def _size_fit(size):
     return None
 
 
-def _align(pos):
-    """background-position words -> RmlUi image alignment words (x then y), None when it can't be written"""
+def _align(pos, issues, what):
+    """background-position words -> RmlUi image alignment words (x then y), None when it can't be written. RmlUi's
+    image decorator takes keywords, % or px here, not dp (DecoratorTiled.cpp): a dp length is written in px"""
     if not pos:
         return []
     kw = {'left': 'x', 'right': 'x', 'top': 'y', 'bottom': 'y', 'center': None}
-    if len(pos) > 2:
+    pos = position2(pos, issues, what)
+    if pos is None:
         return None
     if len(pos) == 1:
         pos = pos + ['center']
@@ -306,7 +315,31 @@ def _align(pos):
     mapx = {'0': 'left', '0%': 'left', '50%': 'center', '100%': 'right'}
     mapy = {'0': 'top', '0%': 'top', '50%': 'center', '100%': 'bottom'}
     x, y = mapx.get(x, x), mapy.get(y, y)
+    px = [v for v in (x, y) if v.endswith('dp')]
+    if px:
+        issues.append(Issue(f'{what} position {" ".join(px)}', 'RmlUi\'s image alignment takes px or %, not dp: '
+                            'written in px (the same at a dp ratio of 1; give it in % to scale)'))
+        x, y = [v[:-2] + 'px' if v.endswith('dp') else v for v in (x, y)]
     return [x, y]
+
+
+def _tiling(rep, issues, what):
+    """background-repeat words -> RmlUi's fit for an image at natural size: repeat, repeat-x, repeat-y or scale-none"""
+    words = rep or ['repeat']
+    if len(words) == 1:
+        w = words[0]
+        xy = {'repeat-x': ('repeat', 'no-repeat'), 'repeat-y': ('no-repeat', 'repeat')}.get(w, (w, w))
+    else:
+        xy = tuple(words[:2])
+    if any(w in ('space', 'round') for w in xy):
+        issues.append(Issue(f'{what} repeat {" ".join(words)}', 'RmlUi tiles at the natural size: written as repeat'))
+        xy = tuple('repeat' if w in ('space', 'round') else w for w in xy)
+    return {('repeat', 'repeat'): 'repeat', ('repeat', 'no-repeat'): 'repeat-x',
+            ('no-repeat', 'repeat'): 'repeat-y'}.get(xy, 'scale-none')
+
+
+def _quote_path(src):
+    return '"%s"' % src.replace('"', '%22') if re.search(r'[\s()\'",]', src) else src
 
 
 def image_decorator(L, ctx, issues, what):
@@ -318,38 +351,172 @@ def image_decorator(L, ctx, issues, what):
         src = ctx.asset(img[1], issues)
         if src is None:
             return None
+        if re.search(r'[;{}]', src):
+            issues.append(Issue(f'{what} image {img[1]}', 'RmlUi\'s sheet parser ends a declaration at ; { or } even '
+                                'inside quotes: rename the file (dropped)'))
+            return None
         fit = _size_fit(L['size'])
-        rep = ' '.join(L['repeat'] or ['repeat'])
-        al = _align(L['pos'])
-        parts = [src]
+        al = _align(L['pos'], issues, what)
+        parts = [_quote_path(src)]
         if fit is None:
             issues.append(Issue(f'{what} size {" ".join(L["size"])}',
                                 'RmlUi\'s image decorator fills, contains or covers its box: written as fill; size '
                                 'the element to the image instead'))
             fit = 'fill'
         if fit == 'auto':
-            if rep not in ('no-repeat', 'no-repeat no-repeat'):
-                issues.append(Issue(f'{what} tiles the image ({rep}, natural size)',
-                                    'RmlUi\'s image decorator does not tile: written at its natural size '
-                                    '(scale-none); give the element the image\'s size or use background-size'))
-            fit = 'scale-none'
-            if not al:
+            fit = _tiling(L['repeat'], issues, what)
+            if not al and al is not None:
                 al = ['left', 'top']
         if fit != 'fill':
             parts.append(fit)
-        if al is None:
-            issues.append(Issue(f'{what} position {" ".join(L["pos"])}', 'RmlUi aligns with two words or lengths: '
-                                'centered instead'))
-        elif al and fit != 'fill' and al != ['center', 'center']:
+        if al and fit != 'fill' and al != ['center', 'center']:   # (a position it can't read: reported, centred)
             parts += al
         return 'image(%s)' % ' '.join(parts)
+    return _tiled_gradient(img, L, issues, what)
+
+
+FILL_SIZES = ('auto', 'auto auto', '100% 100%')
+ORIGIN_POS = ('', '0 0', '0% 0%', 'left top', 'top left', '0')
+
+
+def _stops_at(stops, per):
+    """gradient stops (token lists) -> [(colour, offset in dp)] on a tile of `per` dp, None when one can't be placed"""
+    out = []
+    for k, st in enumerate(stops):
+        ws = V.words(V.strip_ws(st))
+        col = [w for w in ws if V.is_color(w[0])]
+        at = [w[0] for w in ws if not V.is_color(w[0])]
+        if len(col) != 1 or len(at) > 2:
+            return None
+        for t in at or [None]:
+            if t is None:
+                v = 0 if k == 0 else per if k == len(stops) - 1 else None
+            elif t[0] == 'num' and t[2] == '%':
+                v = per * t[1] / 100
+            elif t[0] == 'num' and (t[2] == 'dp' or (t[2] == '' and t[1] == 0)):
+                v = t[1]
+            else:
+                v = None
+            if v is None:
+                return None
+            out.append((V.ser(col[0]), v))
+    return out
+
+
+def _tiled_gradient(img, L, issues, what):
+    """a gradient layer: CSS sizes, places and tiles it like an image; RmlUi's gradient decorators fill the box. A
+    linear gradient across an axis, tiled along that axis from the origin, is a repeating gradient with the tile as its
+    period (the stripe/grid idiom); any other size or position is reported"""
+    size = ' '.join(L['size'] or ['auto'])
+    pos = ' '.join(L['pos'] or [])
+    if size in FILL_SIZES:   # a gradient at auto size fills its box: no position or tiling shows
+        return gradient(img, issues)
+    name, parts = img[1], V.split(img[2])
+    p0 = V.strip_ws(parts[0])
+    has_dir = not any(V.is_color(w[0]) for w in V.words(p0))
+    first = V.ser(p0) if has_dir else 'to bottom'
+    axis = {'90deg': 0, 'to right': 0, '180deg': 1, 'to bottom': 1}.get(first)
+    if name == 'linear-gradient' and axis is not None and pos in ORIGIN_POS:
+        sz = list(L['size'] or []) + ['auto', 'auto']
+        period = sz[axis]
+        tiles = _tiling(L['repeat'], [], what) in ('repeat', ('repeat-x', 'repeat-y')[axis])
+        if period.endswith('dp') and tiles:
+            per = float(period[:-2])
+            out = _stops_at(parts[1:] if has_dir else parts, per)
+            if out:
+                if out[0][1] > 0:
+                    out.insert(0, (out[0][0], 0))   # a repeating gradient's period runs from its first stop
+                if out[-1][1] < per:
+                    out.append((out[-1][0], per))
+                text = ', '.join(([first] if has_dir else []) + [f'{c} {V.fmt(v)}dp' for c, v in out])
+                return 'repeating-' + gradient(('func', 'linear-gradient', V.tokenize(text)), issues)
+    issues.append(Issue(f'{what} {name}() sized {size}' + (f' at {pos}' if pos else ''),
+                        'RmlUi\'s gradient decorators fill the box: written filling it (give the gradient an element '
+                        'of that size and place, or use a repeating gradient)'))
     return gradient(img, issues)
+
+
+POS_KW = {'left': 'x', 'right': 'x', 'top': 'y', 'bottom': 'y', 'center': None}
+RADIAL_SIZE_KW = {'closest-side', 'closest-corner', 'farthest-side', 'farthest-corner'}
+
+
+def position2(words, issues, what):
+    """a CSS <position> (1-4 words, as strings) -> [x, y] the two-value form RmlUi takes. An offset from left/top is
+    the plain length; an offset from right/bottom in % becomes its complement; one in a length can't be written in two
+    values: reported, kept as the edge keyword"""
+    if len(words) <= 2:
+        return list(words)
+    x = y = None
+    i = 0
+    while i < len(words):
+        w = words[i]
+        off = words[i + 1] if i + 1 < len(words) and words[i + 1] not in POS_KW else None
+        axis = POS_KW.get(w, 'bad')
+        if axis == 'bad':
+            issues.append(Issue(f'{what} position {" ".join(words)}', 'RmlUi aligns with two values (x y): centred '
+                            'instead; write it as two values'))
+            return None
+        if axis is None:
+            val = 'center'
+        elif off is None:
+            val = w
+        elif w in ('left', 'top'):
+            val = off
+        elif off.endswith('%'):
+            val = V.fmt(100 - float(off[:-1])) + '%'
+        else:
+            issues.append(Issue(f'{what} position {" ".join(words)}', f'RmlUi takes two values (x y): an offset from '
+                                f'{w} needs the box size; written as {w}, give the offset as a % or from left/top'))
+            val = w
+        if axis == 'y' or (axis is None and x is not None):
+            y = val
+        else:
+            x = val
+        i += 2 if off is not None else 1
+    return [x or 'center', y or 'center']
+
+
+def _gradient_prelude(name, p, issues):
+    """the first argument of a gradient (direction, shape, size, position, colour space) in the order RmlUi parses:
+    shape before size, `at` two-value position; `in <space>` is dropped (RmlUi interpolates in sRGB)"""
+    words = [V.ser(w) for w in V.words(p)]
+    if 'in' in words:
+        k = words.index('in')
+        end = k + 2
+        if end < len(words) and words[end] in ('shorter', 'longer', 'increasing', 'decreasing'):
+            end += 2   # `longer hue`
+        issues.append(Issue(f'{name}() interpolation {" ".join(words[k:end])}', 'RmlUi interpolates gradients in '
+                            'sRGB: dropped (colours between the stops may differ)'))
+        words = words[:k] + words[end:]
+    pos = []
+    if 'at' in words:
+        k = words.index('at')
+        pos = position2(words[k + 1:], issues, f'{name}()')
+        words = words[:k]
+        if pos is None:
+            pos = ['center', 'center']
+    if 'radial' in name:
+        shape = [w for w in words if w in ('circle', 'ellipse')]
+        size = [w for w in words if w not in ('circle', 'ellipse')]
+        words = shape + size
+    return ' '.join(words + (['at'] + pos if pos else []))
 
 
 def gradient(t, issues):
     """a CSS gradient function token -> RmlUi decorator text"""
     name, args = t[1], t[2]
     parts = V.split(args)
+    legacy = re.match(r'^-(webkit|moz|o)-', name)
+    if legacy:   # the prefixed form: the direction names the start side, angles run counter-clockwise from east
+        name = name[legacy.end():]
+        if 'linear' not in name:
+            raise ValueIssue(f'-{legacy.group(1)}-{name}()', f'the prefixed form has its own syntax: write {name}()')
+        ws0 = [V.ser(w) for w in V.words(V.strip_ws(parts[0]))]
+        opp = {'left': 'right', 'right': 'left', 'top': 'bottom', 'bottom': 'top'}
+        if ws0 and all(w in opp for w in ws0):
+            parts = [[('ident', 'to'), ('ws',)] + [x for w in ws0 for x in (('ident', opp[w]), ('ws',))][:-1]] + parts[1:]
+        elif len(ws0) == 1 and re.fullmatch(r'-?[\d.]+deg', ws0[0]):
+            parts = [[('num', 90 - float(ws0[0][:-3]), 'deg')]] + parts[1:]
     out = []
     conic = 'conic' in name
     for k, p in enumerate(parts):
@@ -358,7 +525,9 @@ def gradient(t, issues):
         if not ws:
             continue
         if k == 0 and not any(V.is_color(w[0]) for w in ws):
-            out.append(V.ser(p))   # direction / shape: RmlUi reads the CSS forms (checked in docs/converter.md)
+            pre = _gradient_prelude(name, p, issues)
+            if pre:
+                out.append(pre)
             continue
         colors = [w for w in ws if V.is_color(w[0])]
         if not colors:
@@ -477,6 +646,11 @@ def map_decl(d, ctx, issues):
                 else '')))
             return []
     h = HANDLERS.get(n)
+    kinds, kws = PROPERTIES.get(n, ((), ()))
+    if kws and any(t[0] == 'ident' and t[1] != t[1].lower() for t in toks):
+        # CSS keywords are case-insensitive, RmlUi's are lower-case: DISPLAY: FLEX is display: flex
+        toks = [('ident', t[1].lower()) if t[0] == 'ident' and (not kinds or t[1].lower() in kws) else t for t in toks]
+        s, ws = V.ser(toks), V.words(toks)
     if h:
         return h(n, toks, ws, s, ctx, issues)
     if n in OPEN77_PROPS:
@@ -486,14 +660,25 @@ def map_decl(d, ctx, issues):
         return []
     if n in PROPERTIES:
         return check_keywords(n, s, ws, issues)
+    if n in COLOUR_SHORTHANDS:
+        return check_keywords(n, s, ws, issues)
     if n in SHORTHANDS:
         return [(n, s)]
     issues.append(Issue(f'{n}: {s}', 'RmlUi 6.3 has no %s property' % n))
     return []
 
 
+COLOUR_SHORTHANDS = {'border-color'}
+
+
 def check_keywords(n, s, ws, issues):
-    kinds, kws = PROPERTIES[n]
+    kinds, kws = PROPERTIES[n] if n in PROPERTIES else (('color',), ())
+    if 'color' in kinds:   # a name the colour table does not know (CSS system colours, typos): RmlUi refuses it
+        bad = [t[1] for w in ws for t in w if t[0] == 'ident' and t[1].lower() not in tuple(kws or ()) + ('transparent',)
+               and not V.is_color(t)]
+        if bad:
+            issues.append(Issue(f'{n}: {s}', f'RmlUi has no colour named {bad[0]}: write the colour as hex'))
+            return []
     if len(ws) == 1 and len(ws[0]) == 1 and ws[0][0][0] == 'ident' and 'string' not in kinds and kws is not None:
         if ws[0][0][1] not in kws and not (kinds and ws[0][0][1] in ('transparent',) and 'color' in kinds):
             if 'color' in kinds or 'transform' in kinds or 'filter' in kinds or 'box_shadow' in kinds \
@@ -711,7 +896,7 @@ def h_border(n, toks, ws, s, ctx, issues):
             issues.append(Issue(f'{n}: {s}', 'could not read it: write width and colour'))
             return []
     side = n[len('border'):]   # '', '-top', ...
-    if style in ('none', 'hidden') or (style is None and width is None and color is None):
+    if style in ('none', 'hidden') or (style is None and width is None and color is None) or width in ('0', '0dp'):
         return [(f'border{side}-width' if side else 'border-width', '0')]
     if style not in (None, 'solid'):
         issues.append(Issue(f'border style {style}', 'RmlUi draws solid borders only: written solid'))
@@ -719,7 +904,7 @@ def h_border(n, toks, ws, s, ctx, issues):
         width = V.fmt(3 / ctx.units.ppd) + 'dp'   # CSS medium
     if color is None:
         if ctx.color:
-            color = ctx.color
+            color, ctx.used_color = ctx.color, True
         else:
             issues.append(Issue(f'{n}: {s} without a colour', 'CSS uses the text colour, RmlUi black: write the '
                                 'colour'))
@@ -804,7 +989,8 @@ def h_text_shadow(n, toks, ws, s, ctx, issues):
     effects = []
     for p in V.split(toks):
         lens, color, _ = _shadow_parts(p)
-        color = color or ctx.color
+        if color is None and ctx.color:
+            color, ctx.used_color = ctx.color, True
         if color is None or len(lens) < 2:
             issues.append(Issue(f'text-shadow: {s}', 'write offsets and a colour'))
             return []
@@ -822,8 +1008,8 @@ def h_box_shadow(n, toks, ws, s, ctx, issues):
     out = []
     for p in V.split(toks):
         lens, color, inset = _shadow_parts(p)
-        if color is None:
-            color = ctx.color
+        if color is None and ctx.color:
+            color, ctx.used_color = ctx.color, True
         if color is None:
             issues.append(Issue(f'box-shadow: {s} without a colour', 'CSS uses the text colour: write the colour'))
             return []
@@ -839,7 +1025,8 @@ def h_filter(n, toks, ws, s, ctx, issues):
         t = w[0]
         if t[0] == 'func' and t[1] == 'drop-shadow':
             lens, color, _ = _shadow_parts(t[2])
-            color = color or ctx.color
+            if color is None and ctx.color:
+                color, ctx.used_color = ctx.color, True
             if color is None:
                 issues.append(Issue(f'{n}: drop-shadow without a colour', 'write the colour'))
                 continue
@@ -858,9 +1045,10 @@ def h_transition(n, toks, ws, s, ctx, issues):
     if s in ('none', 'all 0s', '0s'):
         return [(n, 'none')]
     out = []
-    for p in V.split(toks):
+    items = V.split(toks)
+    for k, p in enumerate(items):
         words = V.words(V.strip_ws(p))
-        props, times, tween = [], [], None
+        props, times, tween, named = [], [], None, False
         for w in words:
             if is_time(w):
                 times.append(V.ser(w))
@@ -869,7 +1057,8 @@ def h_transition(n, toks, ws, s, ctx, issues):
             if tw:
                 tween = tw
             elif w[0][0] == 'ident':
-                pn = w[0][1]
+                named = True
+                pn = w[0][1].lower()
                 pn = {'background': 'background-color'}.get(pn, pn)
                 if pn != 'all' and pn not in PROPERTIES and pn not in SHORTHANDS:
                     issues.append(Issue(f'transition of {pn}', 'RmlUi has no such property: dropped'))
@@ -879,6 +1068,14 @@ def h_transition(n, toks, ws, s, ctx, issues):
             if props:
                 issues.append(Issue(f'transition {V.ser(p)} has no duration', 'dropped'))
             continue
+        if named and not props:
+            continue   # every property of this item was dropped: it must not turn into `all`
+        if 'all' in (props or ['all']) and len(items) > 1:
+            if k < len(items) - 1:
+                issues.append(Issue(f'transition: {s}', 'RmlUi takes `all` only on its own: kept the `all` item; the '
+                                    'other items\' timings are lost (write the properties instead of all)'))
+            out = [' '.join(['all'] + times[:2] + [tween or EASE_MAP['ease']])]
+            break
         out.append(' '.join((props or ['all']) + times[:2] + [tween or EASE_MAP['ease']]))
     return [(n, ', '.join(out))] if out else []
 
@@ -898,7 +1095,12 @@ def h_animation(n, toks, ws, s, ctx, issues):
                 if t[1] != int(t[1]):
                     issues.append(Issue(f'animation iteration count {V.fmt(t[1])}', 'RmlUi counts whole runs: '
                                         'rounded'))
-                count = str(max(1, int(round(t[1]))))
+                if round(t[1]) < 1:
+                    issues.append(Issue(f'animation iteration count {V.fmt(t[1])}', 'RmlUi runs an animation at least '
+                                        'once: dropped (leave the animation out instead)'))
+                    count = '0'
+                else:
+                    count = str(int(round(t[1])))
             elif t[0] == 'ident' and t[1] == 'infinite':
                 count = 'infinite'
             elif t[0] == 'ident' and t[1] == 'alternate':
@@ -926,6 +1128,8 @@ def h_animation(n, toks, ws, s, ctx, issues):
         if not times or float(times[0][:-1]) == 0:
             issues.append(Issue(f'animation {name} has no duration', 'dropped'))
             continue
+        if count == '0':
+            continue
         if ctx.keyframes and name not in ctx.keyframes:
             issues.append(Issue(f'animation {name}: no @keyframes {name} in the sheets', 'dropped'))
             continue
@@ -940,17 +1144,43 @@ def h_animation(n, toks, ws, s, ctx, issues):
     return [(n, ', '.join(out))] if out else []
 
 
+TRANSFORM_FUNCS = {'translate', 'translatex', 'translatey', 'translatez', 'translate3d', 'rotate', 'rotatex', 'rotatey',
+                   'rotatez', 'rotate3d', 'scale', 'scalex', 'scaley', 'scalez', 'scale3d', 'skew', 'skewx', 'skewy',
+                   'matrix', 'matrix3d', 'perspective'}
+
+
+def _transform_fn(t, issues, s):
+    """one transform function in the forms RmlUi's parser takes (PropertyParserTransform.cpp): translate() and skew()
+    with both arguments, scale*() with numbers (CSS allows %), an angle 0 with a unit"""
+    name, args = t[1], [V.strip_ws(a) for a in V.split(t[2])]
+    if name in ('scale', 'scalex', 'scaley', 'scalez', 'scale3d'):
+        args = [[('num', a[0][1] / 100, '')] if len(a) == 1 and a[0][0] == 'num' and a[0][2] == '%' else a
+                for a in args]
+    if name == 'translate' and len(args) == 1:
+        args.append([('num', 0, 'dp')])
+    if name == 'skew' and len(args) == 1:
+        args.append([('num', 0, 'deg')])
+    if name.startswith(('rotate', 'skew')):
+        args = [[('num', 0, 'deg')] if len(a) == 1 and a[0] == ('num', 0, '') and (name != 'rotate3d' or k == 3) else a
+                for k, a in enumerate(args)]
+    out = []
+    for k, a in enumerate(args):
+        if k:
+            out.append(('comma',))
+        out += a
+    return (t[0], name, out)
+
+
 def h_transform(n, toks, ws, s, ctx, issues):
-    ok = {'translate', 'translatex', 'translatey', 'translatez', 'translate3d', 'rotate', 'rotatex', 'rotatey',
-          'rotatez', 'rotate3d', 'scale', 'scalex', 'scaley', 'scalez', 'scale3d', 'skew', 'skewx', 'skewy',
-          'matrix', 'matrix3d', 'perspective'}
     if s == 'none':
         return [(n, 'none')]
-    for w in ws:
-        if w[0][0] != 'func' or w[0][1] not in ok:
-            issues.append(Issue(f'{n}: {s}', 'RmlUi has no %s: dropped' % V.ser(w)))
+    out = []
+    for t in [t for w in ws for t in w]:
+        if t[0] != 'func' or t[1] not in TRANSFORM_FUNCS:
+            issues.append(Issue(f'{n}: {s}', 'RmlUi has no %s: dropped' % V.ser([t])))
             return []
-    return [(n, s)]
+        out.append(V.ser([_transform_fn(t, issues, s)]))
+    return [(n, ' '.join(out))]
 
 
 def h_pointer_events(n, toks, ws, s, ctx, issues):

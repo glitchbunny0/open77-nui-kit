@@ -1,0 +1,49 @@
+<rml>
+<head>
+    <title>page</title>
+    <link type="text/rcss" href="page.rcss"/>
+</head>
+<!-- converted by html2rml from index.html; what it could not map: page.report.md -->
+<body>
+<div id="r1">r1</div>
+<div id="t1">t1</div>
+<div id="t2">t2</div>
+<div id="t3">t3</div>
+<div id="t4">t4</div>
+<div id="tr1">tr1</div>
+<div id="tr2">tr2</div>
+<div id="tr3">tr3</div>
+<div id="g1">g1</div>
+<div id="g2">g2</div>
+<div id="g3">g3</div>
+<div id="g4">g4</div>
+<div id="g5">g5</div>
+<div id="g6">g6</div>
+<div id="g7">g7</div>
+<div id="b1">b1</div>
+<div id="b2">b2</div>
+<div id="b3">b3</div>
+<div id="b4">b4</div>
+<div id="b5">b5</div>
+<div id="b6">b6</div>
+<div id="b7">b7</div>
+<div id="b8">b8</div>
+<div id="b9">b9</div>
+<div id="b10">b10</div>
+<div id="c1">c1</div>
+<div id="c2">c2</div>
+<div id="c3">c3</div>
+<div id="c4">c4</div>
+<div id="k1"><span>k1</span></div>
+<div id="k2">k2</div>
+<div id="k3">k3</div>
+<div id="k4">k4</div>
+<div id="k5">k5</div>
+<div id="k6">k6</div>
+<div id="k7">k7</div>
+<div id="k8">k8</div>
+<div id="k11">k11</div><div id="k9">k9</div><div id="k10">k10</div>
+<div id="stage"><div class="cq">c</div></div><div id="cq0">c</div><div id="loose"><div class="cq">c</div></div>
+<div id="cp">c</div><div id="f1">f</div><div id="f2">f</div>
+</body>
+</rml>

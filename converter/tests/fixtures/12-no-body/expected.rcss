@@ -1,0 +1,8 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div, p { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+p { margin: 1em 0; }
+
+.a { width: 40dp; height: 2dp; }
+.late { width: 7dp; height: 3dp; }

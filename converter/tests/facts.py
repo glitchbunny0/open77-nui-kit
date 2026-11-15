@@ -11,7 +11,8 @@ KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 
 def host():
-    r = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+    tools = os.environ.get('HTML2RML_KIT') or KIT   # the mutation runs point it at the real kit
+    r = subprocess.run(['bash', os.path.join(tools, 'scripts', 'build.sh')], capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit('facts: building the host failed:\n' + r.stderr)
     return r.stdout.strip().splitlines()[-1]
@@ -21,18 +22,19 @@ HOST = None
 TMP = tempfile.mkdtemp(prefix='html2rml-facts-')
 
 
-def doc(rcss, body):
+def doc(rcss, body, body_attrs=''):
     with open(os.path.join(TMP, 'f.rcss'), 'w') as fh:
         fh.write('div { display: block; }\nbody { font-family: x; }\n' + rcss)
     with open(os.path.join(TMP, 'f.rml'), 'w') as fh:
-        fh.write('<rml><head><link type="text/rcss" href="f.rcss"/></head><body data-model="m">%s</body></rml>' % body)
+        fh.write('<rml><head><link type="text/rcss" href="f.rcss"/></head><body data-model="m"%s>%s</body></rml>'
+                 % (body_attrs, body))
     return os.path.join(TMP, 'f.rml')
 
 
-def warnings(rcss, body='<div id="e"></div>'):
+def warnings(rcss, body='<div id="e"></div>', body_attrs=''):
     """the RmlUi warnings for this sheet (font warnings left out)"""
-    r = subprocess.run([HOST, 'check', doc(rcss, body), 'm'], input=json.dumps([{'name': 'c', 'model': {'x': 1}}]),
-                       capture_output=True, text=True)
+    r = subprocess.run([HOST, 'check', doc(rcss, body, body_attrs), 'm'],
+                       input=json.dumps([{'name': 'c', 'model': {'x': 1}}]), capture_output=True, text=True)
     return [l for l in r.stdout.splitlines() if l.startswith('WARN') and 'font face' not in l]
 
 
@@ -42,15 +44,20 @@ def outline(rcss, body):
     return r.stdout
 
 
-def boxes(rcss, body):
-    """layout mode: {id: element json}, text runs under '#text'"""
+def layout(rcss, body, model=None):
+    """layout mode: the element list"""
     fj = os.path.join(TMP, 'fonts.json')
     with open(fj, 'w') as fh:
         json.dump({'x|400': {'ascent': 900, 'descent': 300, 'def': 500, 'adv': {}}}, fh)
-    r = subprocess.run([HOST, 'layout', doc(rcss, body), 'm', fj], input=json.dumps([{'name': 'c', 'model': {'x': 1}}]),
-                       capture_output=True, text=True)
+    r = subprocess.run([HOST, 'layout', doc(rcss, body), 'm', fj],
+                       input=json.dumps([{'name': 'c', 'model': model or {'x': 1}}]), capture_output=True, text=True)
+    return json.loads(r.stdout)[0]['els']
+
+
+def boxes(rcss, body, model=None):
+    """layout mode: {id: element json}, text runs under '#text'"""
     out = {}
-    for e in json.loads(r.stdout)[0]['els']:
+    for e in layout(rcss, body, model):
         out[e.get('id') or ('#text' if 'text' in e else e.get('tag'))] = e
     return out
 
@@ -199,7 +206,7 @@ def _():
             and 'WARN' not in o.replace('No font face', ''))
 
 
-@fact('attribute selectors match; a hidden attribute hides nothing -> it becomes the .hidden class')
+@fact('attribute selectors match; a hidden attribute hides nothing -> it becomes the html2rml-hidden class')
 def _():
     o = outline('#w [data-x="1"] { height: 3dp; }', '<div id="w"><div class="a" data-x="1"></div><div class="b" hidden=""></div></div>')
     a = [l for l in o.splitlines() if 'div.a' in l][0]
@@ -217,6 +224,75 @@ def _():
 def _():
     o = outline('@import url(x.css);\n#e { width: 1dp; height: 1dp; }', '<div id="e"></div>')
     return "Invalid at-rule identifier 'import'" in o and [l for l in o.splitlines() if 'div#e' in l][0].endswith('0x0')
+
+
+@fact('custom properties cascade and inherit and var() resolves at compute time, with fallbacks; a var() inside a '
+      'custom property resolves where that property is declared (as in CSS) -> html2rml --vars native keeps them')
+def _():
+    b = boxes('body { --w: 10dp; --b: var(--w); } .s { --w: 30dp; } #a { --w: 20dp; width: var(--b); height: var(--h, 2dp); }'
+              '#c { width: var(--w); height: 1dp; }', '<div id="a"></div><div class="s"><div id="c"></div></div>')
+    return (b['a']['w'], b['a']['h'], b['c']['w']) == (10.0, 2.0, 30.0)
+
+
+@fact('var() overrides by attribute and :nth-child reach data-for rows (what static folding cannot do)')
+def _():
+    els = layout('.row { --c: #ff0000; background-color: var(--c); height: 1dp; } .row:nth-child(even) { --c: #00ff00; }'
+                 '.row[data-s="x"] { --c: #0000ff; }', '<div class="row" data-for="it : items" data-attr-data-s="it">'
+                 '{{it}}</div>', {'items': ['a', 'b', 'x']})
+    return [e['bg'] for e in els if e.get('cls') == 'row'] == ['#ff0000ff', '#00ff00ff', '#0000ffff']
+
+
+@fact('custom properties: !important makes the value invalid where it is used; a quoted string next to other values is '
+      'a syntax error; on body, a variable set through body\'s class warns once (the class arrives after a first '
+      'style pass), through the body tag it does not -> a lone :root is written as body')
+def _():
+    return (warnings('body { --c: #ff0000 !important; } #e { background-color: var(--c); }') != []
+            and warnings('body { --f: "a", b; }') != [] and warnings('body { --f: "a"; }') == []
+            and warnings('.k { --c: #f00; } body { color: var(--c); }', body_attrs=' class="k"') != []
+            and warnings('body { --c: #f00; } body { color: var(--c); }') == [])
+
+
+@fact(':last-child, :nth-last-child and :last-of-type never match data-for rows: the template element stays after them')
+def _():
+    els = layout('.r { height: 1dp; } .r:last-child { height: 3dp; } .r:nth-last-child(1) { width: 3dp; }'
+                 '.r:last-of-type { width: 3dp; }', '<div><div class="r" data-for="it : items">{{it}}</div></div>',
+                 {'items': [1, 2]})
+    return [(e['h'], e['w'] == 3.0) for e in els if e.get('cls') == 'r'] == [(1.0, False), (1.0, False)]
+
+
+@fact('the image decorator tiles (repeat, repeat-x, repeat-y) and aligns with px, % or keywords, not dp')
+def _():
+    return (ok_decl('decorator: image(a.png repeat left top)') and ok_decl('decorator: image(a.png repeat-x 10px 20px)')
+            and ok_decl('decorator: image(a.png repeat-y 25% 75%)') and ok_decl('decorator: image("a b.png" scale-none left top)')
+            and not ok_decl('decorator: image(a.png scale-none 10dp 20dp)'))
+
+
+@fact('transform: translate() and skew() take two arguments, scale() numbers: translate(10dp), skew(10deg) and '
+      'scale(50%) are errors')
+def _():
+    return (not ok_decl('transform: translate(10dp)') and ok_decl('transform: translate(10dp, 0dp)')
+            and not ok_decl('transform: skew(10deg)') and ok_decl('transform: skew(10deg, 0deg)')
+            and not ok_decl('transform: scale(50%)') and ok_decl('transform: scale(0.5)'))
+
+
+@fact('transition: `all` can not be part of a list')
+def _():
+    return (not ok_decl('transition: all 0.2s linear-in-out, opacity 0.3s linear-in-out')
+            and ok_decl('transition: all 0.2s linear-in-out'))
+
+
+@fact('gradients: a radial shape goes before its size; `in <colour space>` and a 4-value `at` position are errors')
+def _():
+    return (ok_decl('decorator: radial-gradient(circle closest-side, #fff, #000)')
+            and not ok_decl('decorator: radial-gradient(closest-side circle, #fff, #000)')
+            and not ok_decl('decorator: linear-gradient(90deg in oklab, #fff, #000)')
+            and not ok_decl('decorator: radial-gradient(circle at left 10dp top 20dp, #fff, #000)'))
+
+
+@fact('lab(), lch(), oklab(), oklch() parse (space syntax, alpha 0-1); a CSS system colour (canvastext) is an error')
+def _():
+    return (ok_decl('color: oklch(63% 0.25 30 / 0.8)') and ok_decl('background-color: lab(50% 40 59.5)')
+            and ok_decl('color: lch(50% 40 180)') and not ok_decl('color: canvastext'))
 
 
 def main(argv):

@@ -11,6 +11,7 @@
   .row { display: flex; }
   #note[hidden] { display: none; }
 </style>
+<div class="inhead">content written in the head</div>
 </head>
 <!-- a comment before the body -->
 <body data-model="m">
@@ -30,12 +31,18 @@
   <x-widget class="w">custom</x-widget>
   <ul><li>one<li>two</ul>
   <h1>Head</h1><small>small</small>
+  <select><option value="a">A<option value="b">B</select>
+  <dl><dt>term<dd>definition</dl>
+  <div class="sc"/>after a self-closed div
+  <img src="{{icon}}" width="8" height="8"><div data-attr-src="'assets/' + name + '.png'"></div>
 </div>
 <script>
   const el = document.getElementById("note");
   document.querySelector(".panel .row").classList.toggle("on", true);
-  el.hidden = false; el.textContent = "x";
+  el.hidden = false; el.textContent = "x"; el.style.color = "#A09A96";
 </script>
 <script src="lrbind.js"></script>
 </body>
+<div class="late">after the body</div>
+<!-- a comment after the body -->
 </html>

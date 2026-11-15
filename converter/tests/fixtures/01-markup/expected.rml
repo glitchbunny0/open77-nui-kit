@@ -5,13 +5,13 @@
 </head>
 <!-- converted by html2rml from index.html; what it could not map: page.report.md -->
 <!-- a comment before the body -->
-<body data-model="m">
+<body data-model="m"><div class="inhead">content written in the head</div>
 <div id="root" class="panel">
   <div class="row"><span>Bare text in a flex box</span> <b>bold</b> <span>tail</span></div>
   <div class="row"><span>already wrapped</span></div>
   <p>A paragraph<br/>with a break &amp; an entity &lt;tag&gt; nbsp</p>
   <p>Unclosed paragraph
-  </p><div id="note" class="hidden">hidden note</div>
+  </p><div id="note" class="html2rml-hidden">hidden note</div>
   <div class="if" data-if="a &amp;&amp; b" data-class-on="n > 2" data-event-click="go('x', n)">{{ a ? 'yes' : 'no' }}</div>
   <img src="../../fixtures/01-markup/assets/dot.png" width="8" height="8"/>
   <input type="text" value="3" placeholder="n"/>
@@ -22,8 +22,14 @@
   <x-widget class="w">custom</x-widget>
   <ul><li>one</li><li>two</li></ul>
   <h1>Head</h1><small>small</small>
+  <select><option value="a">A</option><option value="b">B</option></select>
+  <dl><dt>term</dt><dd>definition</dd></dl>
+  <div class="sc">after a self-closed div
+  <img src="{{icon}}" width="8" height="8"/><div data-attr-src="'assets/' + name + '.png'"></div>
 </div>
 
 
-</body>
+</div>
+<div class="late">after the body</div>
+<!-- a comment after the body --></body>
 </rml>

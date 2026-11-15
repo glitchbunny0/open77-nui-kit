@@ -1,5 +1,5 @@
 css      c.css:2  outline-color: #FF0000  =>  RmlUi has no outline: use a border or an extra element
-css      c.css:7  border-top: 1px solid currentColor: currentColor  =>  RmlUi has no currentColor: write the colour
-css      c.css:7  box-shadow: 0 0 4px currentColor: currentColor  =>  RmlUi has no currentColor: write the colour
+css      c.css:7  border-top: 1px solid currentColor uses the text colour  =>  RmlUi has no currentColor: written as #663399, the colour these elements get on the page as written (a state that changes their color does not change this)
+css      c.css:7  box-shadow: 0 0 4px currentColor uses the text colour  =>  RmlUi has no currentColor: written as #663399, the colour these elements get on the page as written (a state that changes their color does not change this)
 css      c.css:8  background-color: hwb(0 0% 0%): colour function hwb()  =>  write the colour as #RRGGBBAA
 css      c.css:9  border-color: currentColor: currentColor  =>  RmlUi has no currentColor: write the colour

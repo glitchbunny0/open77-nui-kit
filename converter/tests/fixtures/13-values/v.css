@@ -1,0 +1,63 @@
+/* rem: the root font size as the cascade computes it (0.5vw of the 1920 canvas: 9.6px) */
+html, body { font-size: 0.5vw; }
+#r1 { width: 2rem; }
+/* transforms: the arity and units RmlUi's parser takes */
+#t1 { transform: translate(10px); }
+#t2 { transform: skew(10deg) scale(50%); }
+#t3 { transform: translateX(5px)rotate(0); }
+#t4 { transform: scale(1.5, 50%) translate(10px, 20px); }
+/* transitions: an item whose properties are all dropped is dropped, `all` stands alone */
+#tr1 { transition: transform .2s, -webkit-transform .2s; }
+#tr2 { transition: all .2s, opacity .3s ease-in; }
+#tr3 { transition: opacity .3s, all .2s; }
+/* gradients: the first argument in the order RmlUi parses */
+#g1 { background: radial-gradient(closest-side circle, #fff, #000); }
+#g2 { background: linear-gradient(to right in oklab, #f00, #00f); }
+#g3 { background: radial-gradient(circle at left 10px top 20%, #fff, #000); }
+#g4 { background: radial-gradient(farthest-corner ellipse at right 25% bottom 10px, #fff, #000); }
+#g5 { background: -webkit-linear-gradient(left, #fff, #000); }
+#g6 { background: -webkit-linear-gradient(30deg, #fff, #000); }
+#g7 { background: -webkit-radial-gradient(center, circle cover, #fff, #000); }
+/* background images: tiling, alignment, paths; gradient layers sized or placed */
+#b1 { background: url(assets/dot.png) repeat-x; }
+#b2 { background: url(assets/dot.png); }
+#b3 { background: url(assets/dot.png) 10px 20px no-repeat; }
+#b4 { background: url(assets/dot.png) right 10px top 5px no-repeat; }
+#b5 { background: url("assets/a dot.png") no-repeat; }
+#b6 { background-image: linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 20px 20px; }
+#b7 { background: linear-gradient(#000, #fff) 0 0 / 50% 50% no-repeat; }
+#b8 { background: url(assets/dot.png) round; }
+#b9 { background: linear-gradient(transparent 50%, #0004 50%); background-size: 100% 4px; }
+/* a position it cannot read */
+#b10 { background: url(assets/dot.png) 1px 2px 3px no-repeat; }
+/* colours: lab()/lch()/oklab()/oklch() as RmlUi reads them, names RmlUi does not know */
+#c1 { color: oklch(63% 0.25 30 / 0.8); background-color: lab(50% 40 59.5); }
+#c2 { background: linear-gradient(lch(50% 40 0.5turn), transparent); }
+#c3 { color: canvastext; }
+#c4 { border-color: red buttonface; }
+/* keywords in any case, back tweens, zero borders, strings, a zero animation count, calc() spacing, ; and } inside url() */
+#k1 { display: FLEX; position: ABSOLUTE; }
+#k2 { transition: opacity .2s cubic-bezier(.34, 1.56, .64, 1); }
+#k3 { border: 0; border-right: 2px solid #f00; border-left: 0; }
+#k4 { text-overflow: '"'; }
+#k5 { animation: pulse 1s 0; }
+#k6 { margin-left: calc(1px+2px); margin-top: calc(0 + 5px); margin-right: calc(1px*(2+3)); }
+#k7 { background: url(assets/x;}.png) no-repeat; color: #0f0; }
+#k8 { font-family: \5FAE\8F6F\96C5\9ED1, sans-serif; }
+@keyframes pulse { from { opacity: 0; } to { opacity: 1; } }
+/* container query units: the container's fixed size, the canvas without one, reported when the size is not fixed */
+#stage { width: 1000px; container-type: inline-size; }
+#stage .cq { font-size: 2cqw; height: 1cqh; }
+#cq0 { width: 10cqw; }
+#loose { width: 50%; container-type: inline-size; }
+#loose .cq { width: 10cqw; }
+/* a property RmlUi lacks is reported as that, whatever its value; one font fallback item per family list */
+#cp { clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 100%); }
+#f1 { font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+#f2 { font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+/* an unterminated string ends at its line (a browser's bad string) */
+#k11 { content: "abc
+; color: #00f; }
+#k9 { content: "abc; color: red }
+#k10 { color: blue }
+#k12 { width: 1px; }

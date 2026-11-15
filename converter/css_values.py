@@ -14,7 +14,20 @@ class ValueIssue(Exception):
 # ---- tokens: (kind, ...). kinds: ws, comma, slash, op (+ - *), str, num (value, unit), hash, ident,
 # func (name, args), paren (args), url (path), delim
 NUM_RE = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?')
-IDENT_START = re.compile(r'-?-?[A-Za-z_\u00a0-\uffff\\]|--')
+IDENT_START = re.compile(r'-?-?(?:[A-Za-z_\u00a0-\uffff]|\\[^\n])|--')
+# an ident: name characters and CSS escapes (`\5FAE `, `\:`), decoded by _unescape
+IDENT_RE = re.compile(r'(?:--|-?)(?:\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n0-9a-fA-F]|[\w\u00a0-\uffff-])*')
+ESCAPE_RE = re.compile(r'\\(?:([0-9a-fA-F]{1,6})[ \t\n]?|([^\n]))')
+
+
+def _unescape(s):
+    """CSS escapes decoded: `\\5FAE` -> the code point, `\\:` -> `:` (an out-of-range code point -> U+FFFD)"""
+    def one(m):
+        if m.group(1):
+            cp = int(m.group(1), 16)
+            return chr(cp) if 0 < cp <= 0x10FFFF and not 0xD800 <= cp <= 0xDFFF else '\ufffd'
+        return m.group(2)
+    return ESCAPE_RE.sub(one, s) if '\\' in s else s
 
 
 def tokenize(s):
@@ -28,9 +41,15 @@ def tokenize(s):
                 return t
         return None
 
+    last = -1
     while i < n:
         c = s[i]
         cur = stack[-1]
+        if i == last:   # no branch below consumed anything: take the character as a delim (never loop forever)
+            cur.append(('delim', c))
+            i += 1
+            continue
+        last = i
         if c in ' \t\r\n\f':
             j = i
             while j < n and s[j] in ' \t\r\n\f':
@@ -45,7 +64,7 @@ def tokenize(s):
             i += 1
         elif c in '"\'':
             j = i + 1
-            while j < n and s[j] != c:
+            while j < n and s[j] != c and s[j] != '\n':   # a newline ends a string (CSS: a bad string)
                 j += 2 if s[j] == '\\' else 1
             cur.append(('str', s[i + 1:j]))
             i = j + 1
@@ -75,9 +94,9 @@ def tokenize(s):
             cur.append(('op', c))
             i += 1
         elif IDENT_START.match(s, i):
-            m = re.match(r'(?:--|-?)[\w\u00a0-\uffff-]*', s[i:])
-            name = m.group(0)
-            j = i + len(name)
+            raw = IDENT_RE.match(s, i).group(0)
+            j = i + len(raw)
+            name = _unescape(raw)
             if j < n and s[j] == '(':
                 if name.lower() == 'url':
                     k = j + 1
@@ -86,8 +105,10 @@ def tokenize(s):
                     if k < n and s[k] in '"\'':
                         q = s[k]
                         e = s.find(q, k + 1)
+                        e = n if e < 0 else e
                         path = s[k + 1:e]
                         e = s.find(')', e)
+                        e = n if e < 0 else e
                     else:
                         e = s.find(')', k)
                         e = n if e < 0 else e
@@ -132,8 +153,8 @@ def ser(toks):
             out.append(' / ')
         elif k == 'op':
             out.append(' %s ' % t[1] if t[1] in '+-' else t[1])
-        elif k == 'str':
-            out.append('"%s"' % t[1])
+        elif k == 'str':   # RCSS strings are double-quoted: a `"` inside one (from '"') is escaped
+            out.append('"%s"' % re.sub(r'(?<!\\)"', r'\\"', t[1]))
         elif k == 'num':
             out.append(fmt(t[1]) + t[2])
         elif k in ('hash', 'ident', 'delim'):
@@ -250,10 +271,17 @@ def var_names(toks, out=None):
 class Units:
     def __init__(self, px_per_dp=1.0, canvas=(1920, 1080), root_px=16.0):
         self.ppd, self.canvas, self.root_px = px_per_dp, canvas, root_px
+        self.cq = canvas   # the query container's size in px for cq* units (CSS: the viewport when there is none)
 
     def px(self, v, unit):
-        """length in CSS px for absolute and canvas-relative units, else None"""
+        """length in CSS px for absolute, canvas- and container-relative units, else None"""
         w, h = self.canvas
+        if unit.startswith('cq'):
+            if self.cq is None:
+                return None
+            cw, ch = self.cq
+            base = {'cqw': cw, 'cqi': cw, 'cqh': ch, 'cqb': ch, 'cqmin': min(cw, ch), 'cqmax': max(cw, ch)}.get(unit)
+            return None if base is None else v * base / 100
         return {'px': v, 'vw': v * w / 100, 'vh': v * h / 100, 'vmin': v * min(w, h) / 100,
                 'vmax': v * max(w, h) / 100, 'rem': v * self.root_px, 'pt': v * 4 / 3, 'pc': v * 16, 'in': v * 96,
                 'cm': v * 96 / 2.54, 'mm': v * 96 / 25.4, 'q': v * 96 / 101.6}.get(unit)
@@ -306,8 +334,20 @@ def fold_math(toks):
     return out
 
 
+def _spaced(toks):
+    """CSS wants whitespace on both sides of + and - in calc(); without it the browser drops the declaration"""
+    for i, t in enumerate(toks):
+        if t[0] == 'op' and t[1] in '+-' and not (0 < i < len(toks) - 1 and toks[i - 1][0] == 'ws'
+                                                  and toks[i + 1][0] == 'ws'):
+            raise ValueIssue('calc() without spaces around + or -: the browser ignores the whole declaration',
+                             'write calc(a + b), with the spaces')
+        if t[0] == 'paren' or (t[0] == 'func' and t[1] in MATH_FUNCS):
+            _spaced(t[-1])
+
+
 def _eval_func(t):
     name, args = t[1], t[2]
+    _spaced(args)
     if name in ('calc', '-webkit-calc'):
         return _Calc(args).run()
     vals = [_Calc(a).run() for a in split(args)]
@@ -387,7 +427,7 @@ class _Calc:
 
     @staticmethod
     def add(a, b, op):
-        if a[1] != b[1] and not (a[0] == 0 and not a[1]) and not (b[0] == 0 and not b[1]):
+        if a[1] != b[1]:   # a unitless 0 is a number here, not a length: calc(0 + 5px) is invalid CSS
             raise ValueIssue(f'calc() mixes {a[1] or "numbers"} and {b[1] or "numbers"}',
                              'RmlUi has no calc(): pick the value for the design canvas (or set it from the client '
                              'with ui:style)')
@@ -396,7 +436,8 @@ class _Calc:
 
 # ---- colours
 def _hex(r, g, b, a=1.0):
-    r, g, b = [max(0, min(255, int(round(x)))) for x in (r, g, b)]
+    # half rounds up, as browsers do (round() rounds half to even, and float noise lands 59.5 at 59.4999...)
+    r, g, b = [max(0, min(255, int(math.floor(x + 0.5 + 1e-7)))) for x in (r, g, b)]
     al = max(0, min(255, int(a * 255 + 0.5)))
     return '#%02X%02X%02X' % (r, g, b) + ('' if al == 255 else '%02X' % al)
 
@@ -442,6 +483,8 @@ def color_of(t):
             return 'transparent'
         if n in NAMED:
             return NAMED[n]
+        if re.match(r'^(ok)?(lab|lch)\(', n):
+            return t[1]   # a lab/lch colour convert_colors already wrote in RmlUi's form
         return None
     if t[0] == 'func' and t[1] in ('rgb', 'rgba'):
         ch, al = _func_args(t[2])
@@ -454,9 +497,40 @@ def color_of(t):
         s, l = _chan(ch[1], 100) / 100, _chan(ch[2], 100) / 100
         r, g, b = colorsys.hls_to_rgb((hh % 360) / 360, l, s)
         return _hex(r * 255, g * 255, b * 255, a=_alpha(al) if al else 1.0)
-    if t[0] == 'func' and t[1] in ('hwb', 'lab', 'lch', 'oklab', 'oklch', 'color', 'color-mix'):
+    if t[0] == 'func' and t[1] in ('lab', 'lch', 'oklab', 'oklch'):
+        return _cielab(t)
+    if t[0] == 'func' and t[1] in ('hwb', 'color', 'color-mix', 'light-dark', 'device-cmyk'):
         raise ValueIssue(f'colour function {t[1]}()', 'write the colour as #RRGGBBAA')
     return None
+
+
+def _cielab(t):
+    """lab()/lch()/oklab()/oklch(): RmlUi 6.3 parses them itself (PropertyParserColour.cpp), space syntax only, the hue
+    as a plain number of degrees (it reads the number and ignores a unit) -> the function as RmlUi reads it"""
+    flat = [x for x in t[2] if x[0] != 'ws']
+    if any(x[0] == 'comma' for x in flat) or any(x[0] == 'ident' and x[1].lower() == 'from' for x in flat):
+        raise ValueIssue(f'colour function {t[1]}() ' + ser(t[2]), 'write it with spaces (no commas, no relative '
+                         'colour), or as #RRGGBBAA')
+    alpha = None
+    if any(x[0] == 'slash' for x in flat):
+        k = [i for i, x in enumerate(flat) if x[0] == 'slash'][0]
+        alpha, flat = flat[k + 1:], flat[:k]
+        if len(alpha) != 1:
+            raise ValueIssue(f'colour function {t[1]}() alpha', 'write the colour as #RRGGBBAA')
+    if len(flat) != 3 or any(not (x[0] == 'num' or (x[0] == 'ident' and x[1].lower() == 'none')) for x in flat):
+        raise ValueIssue(f'colour function {t[1]}() ' + ser(t[2]), 'write the colour as #RRGGBBAA')
+    vals = []
+    for k, x in enumerate(flat):
+        if x[0] == 'ident':
+            vals.append('none')
+        elif k == 2 and t[1] in ('lch', 'oklch'):
+            vals.append(fmt(math.degrees(x[1]) if x[2] == 'rad' else x[1]))
+        else:
+            vals.append(fmt(x[1]) + (x[2] if x[2] == '%' else ''))
+    if alpha:
+        a = alpha[0]
+        vals += ['/', 'none' if a[0] == 'ident' else fmt(a[1]) + (a[2] if a[2] == '%' else '')]
+    return '%s(%s)' % (t[1], ' '.join(vals))
 
 
 def convert_colors(toks, current=None):

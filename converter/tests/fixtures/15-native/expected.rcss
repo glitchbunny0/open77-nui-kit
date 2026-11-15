@@ -1,0 +1,68 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+i { font-style: italic; }
+.html2rml-hidden { display: none; }
+
+body { --c: #ff0000; --a: 1dp; }
+body { margin: 0; color: #ffffff; }
+body { margin: 4dp; }
+div { height: 2dp; }
+.a.b { --s: #00ff00; }
+.a { --s: #ff0000; }
+#spec { background-color: var(--s); }
+.t { --tc: #ff0000; }
+.t { --tc: #00ff00; }
+#tie { background-color: var(--tc); }
+.box { background-color: var(--c); }
+.i { --ic: #00ff00; }
+.i.j { --ic: #ff0000; }
+#imps { color: var(--ic); }
+.scope { --dc: #00ff00; }
+.d { --dc: #ff0000; background-color: var(--dc); }
+.scope .d { --dc: #00ff00; }
+body { --ec: #ff0000; }
+.e { background-color: var(--ec); }
+.vs { --a: 5dp; width: 2dp; }
+.btn { --bg: #112233; background-color: var(--bg); }
+.btn:hover { --bg: #ff0000; }
+.btn.on { --bg: #00ff00; }
+.card { --w: 100dp; width: var(--w); }
+.card[data-state="open"] { --w: 300dp; }
+.row { --rb: #222222; background-color: var(--rb); }
+.row:nth-child(odd) { --rb: #111111; }
+.row:last-child { --rb: #333333; }
+#mark { --len: 10dp; }
+#mark i { display: block; width: var(--len); }
+#mark.kill { --len: 14dp; }
+#mark i { width: 5dp; }
+.html2rml-root .x { color: #ff0000; }
+div .x { color: #0000ff; }
+.w { --wc: #00ff00; }
+.w b { color: var(--wc); }
+#list2 { font-size: 20dp; }
+#list2 .row2 { letter-spacing: 2dp; color: var(--c); }
+.nx { --nw: 10dp; width: var(--nw); }
+.nx:not(.x) { --nw: 20dp; }
+u { color: var(--c); }
+.hidden { opacity: 0.5; }
+.ico { --m: ../../fixtures/15-native/assets/a.png; mask-image: image(var(--m) repeat left top); width: 8dp; }
+#ram .ico { --m: ../../fixtures/15-native/assets/b.png; }
+.u { --u: 0.5dp; width: 40dp; }
+.u.big { width: 80dp; }
+.brd { --bc: #ff00ff; border: 2dp var(--bc); }
+.brd.on { --bc: #00ffff; }
+.ff { font-family: Rajdhani; }
+.tr { --t: 0.2s; transition: opacity var(--t) quadratic-out; }
+.mg { --mx: 3dp; margin: var(--mx) 0 var(--mx) 0; }
+.fb { width: 11dp; }
+.u.big { --u: 1dp; }
+.co { --cx: 3dp; padding: 3dp 3dp; }
+.dsp { --d: flex; display: flex; }
+.dsp.g { --d: grid; }
+.cc { --cw: 2dp; --cb: #0f0; color: #ff0000; border: 2dp #ff0000; }
+@keyframes k {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

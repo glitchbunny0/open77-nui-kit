@@ -1,0 +1,9 @@
+css      c.css:3  margin set on both html and body (0 at line 2, 4px here)  =>  RmlUi has one root element: both land on <body> and the later one wins there; a browser gives each box its own. Keep one
+css      c.css:13  --ic: #00ff00 !important  =>  RmlUi has no !important: written without it, so a more specific rule setting it wins there; raise this selector's specificity instead
+selector c.css:32  .row:last-child: :last-child on data-for rows  =>  RmlUi keeps the data-for template after the rows: it never matches one (measured); give the last row a class from the model (data-class-last="i == n - 1")
+css      c.css:59  width: var(--script-set): var(--script-set) has no value here and no fallback  =>  --script-set is set by a script at run time: the client sets the resulting width itself (ui:style), or a class per state does
+css      c.css:64  display: grid  =>  RmlUi has no grid: use flex rows/columns with widths (only a single centred child - place-items: center - is converted)
+css      c.css:66  background-color: color-mix(in srgb, red, var(--cw)): colour function color-mix()  =>  write the colour as #RRGGBBAA
+css      c.css:66  outline-color: #0f0  =>  RmlUi has no outline: use a border or an extra element
+css      c.css:67  --o inside @keyframes  =>  RmlUi cannot animate custom properties: dropped; animate the property itself
+script   index.html:26  inline <script>  =>  dropped: a script cannot run in NativeUI. Port its logic to the client Lua (it touches selectors .sc; custom properties --script-set: turn those into bindings or ui:set/ui:style calls)

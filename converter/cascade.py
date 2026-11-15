@@ -19,15 +19,18 @@ class Cascade:
             if not isinstance(r, css_parse.Rule) or not r.decls:
                 continue
             order += 1
-            dm = {}
+            dm, imp = {}, set()
             for d in r.decls:
-                dm[d.name] = d.value
+                if d.important or d.name not in imp:   # a later normal declaration does not beat an !important one
+                    dm[d.name] = d.value
+                if d.important:
+                    imp.add(d.name)
             for t in S.split_list(r.prelude):
                 try:
                     sel = S.parse_one(t)
                 except S.SelectorIssue:
                     continue
-                self.entries.append((sel, S.specificity(sel), order, dm, file, r.line))
+                self.entries.append((sel, S.specificity(sel), order, dm, file, r.line, imp))
         self.by_name = {}
         for e in self.entries:
             for n in e[3]:
@@ -35,35 +38,59 @@ class Cascade:
         self.version = 0
         self.memo = {}
         self.extra = {}
+        self.unread = []
+        self.resolving = set()
+        self.mcache = {}
 
     @contextmanager
     def assume(self, pairs):
-        """pairs: [(element, compound)]: the compound's classes count as set on that element"""
+        """pairs: [(element, compound)]: the compound's classes, attributes and pseudo-classes (:hover,
+        :nth-child(odd), [data-state="open"]) count as set on that element"""
         saved = {}
         for el, c in pairs:
-            saved.setdefault(id(el), (el, getattr(el, 'extra', set())))
+            saved.setdefault(id(el), (el, getattr(el, 'extra', set()), getattr(el, 'assumed', set())))
             el.extra = set(getattr(el, 'extra', set())) | set(c.classes)
+            el.assumed = set(getattr(el, 'assumed', set())) | {('attr',) + tuple(a) for a in c.attrs} \
+                | {('pseudo', n, a) for n, a in c.pseudos if n != 'not'}
         self.version += 1
         try:
             yield
         finally:
-            for el, old in saved.values():
-                el.extra = old
+            for el, old, olda in saved.values():
+                el.extra, el.assumed = old, olda
             self.version += 1
+
+    def match(self, sel, el, dynamic=False):
+        """S.matches, remembered (until the next assumption, where one touches the element or its ancestors)"""
+        a, touched = el, False
+        while isinstance(a, H.Element) and not touched:
+            touched = bool(getattr(a, 'extra', None) or getattr(a, 'assumed', None))
+            a = a.parent
+        key = (id(sel), id(el), dynamic, self.version if touched else -1)
+        r = self.mcache.get(key)
+        if r is None:
+            r = self.mcache[key] = S.matches(sel, el, dynamic)
+        return r
 
     def declared(self, el, name):
         """the winning declared value of `name` on el itself (inline style last), or None"""
         if not isinstance(el, H.Element):
             return None
+        inline = None
         st = el.attrs.get('style')
         if st:
-            for d in reversed(css_parse.parse_decls(st, el.line)):
-                if d.name == name:
-                    return d.value
+            for d in css_parse.parse_decls(st, el.line):
+                if d.name == name and (d.important or not (inline and inline[1])):
+                    inline = (d.value, d.important)
+        if inline and inline[1]:
+            return inline[0]
         best = None
-        for sel, spec, order, dm, f, l in self.by_name.get(name, ()):
-            if (best is None or (spec, order) >= best[0]) and S.matches(sel, el):
-                best = ((spec, order), dm[name])
+        for sel, spec, order, dm, f, l, imp in self.by_name.get(name, ()):
+            rank = (name in imp, spec, order)   # !important first, then specificity, then source order
+            if (best is None or rank >= best[0]) and self.match(sel, el):
+                best = (rank, dm[name])
+        if inline and not (best and best[0][0]):
+            return inline[0]
         return best[1] if best else None
 
     def inherited(self, el, name):
@@ -76,8 +103,24 @@ class Cascade:
         v = self.declared(el, name)
         if v is None:
             v = self.inherited(el.parent, name)
+        elif name.startswith('--') and 'var(' in v:
+            v = self._resolve_at(el, name, v)
         self.memo[key] = v
         return v
+
+    def _resolve_at(self, el, name, v):
+        """a custom property whose value uses var(): resolved on the element that declares it, as CSS (and RmlUi) do;
+        None when it can't be (a cycle, a missing variable without fallback: CSS's guaranteed-invalid value)"""
+        key = (id(el), name)
+        if key in self.resolving:
+            return None
+        self.resolving.add(key)
+        try:
+            return V.ser(V.resolve_vars(V.tokenize(v), lambda n: self.inherited(el, n)))
+        except V.ValueIssue:
+            return None
+        finally:
+            self.resolving.discard(key)
 
     def font_dp(self, el):
         """the element's font size in dp (CSS: 16 px at the root, em/% of the parent's)"""
@@ -118,16 +161,17 @@ class Cascade:
             toks = V.resolve_vars(V.tokenize(v), lambda n: self.inherited(el, n))
             toks = V.fold_math(V.convert_units(toks, self.units, []))
         except V.ValueIssue:
-            return parent
+            toks = []
         toks = V.strip_ws(toks)
         if len(toks) == 1 and toks[0][0] == 'num':
             n, u = toks[0][1], toks[0][2]
-            if u == 'dp':
+            if u == 'dp' or (u == '' and n == 0):
                 return n
             if u == 'em':
                 return parent * n
             if u == '%':
                 return parent * n / 100
+        self.unread.append((el, v))   # a font size the cascade can't read: the parent's is used
         return parent
 
 

@@ -1,1 +1,1 @@
-[{"name":"default","model":{"a":true,"b":false,"n":3},"events":["go"]}]
+[{"name": "default", "model": {"a": true, "b": false, "n": 3, "icon": "assets/dot.png", "name": "dot"}, "events": ["go"]}]
