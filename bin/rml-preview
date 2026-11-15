@@ -302,62 +302,344 @@ def path_polys(d):
     return polys
 
 
-# ---- gradients as RmlUi prints them back (approximate, enough for a preview)
-COL = re.compile(r'#([0-9a-fA-F]{8}|[0-9a-fA-F]{6})\s*([-\d.]+)?(%|dp|px)?')
+# ---- decorators as RmlUi instances them (DecoratorGradient.cpp, DecoratorTiled*.cpp)
+LENGTH = re.compile(r'^([-+]?(?:\d+\.?\d*|\.\d+))(px|dp|%|deg|rad|vw|vh|vmin|vmax|em|rem)?$')
 
 
-def gradient(w, h, deco, op):
-    w, h = max(1, int(round(w))), max(1, int(round(h)))
-    st = [('#' + m.group(1), float(m.group(2)) if m.group(2) else None, m.group(3)) for m in COL.finditer(deco)]
-    if not st:
-        return None
-    img = Image.new('RGBA', (w, h))
-    px = img.load()
-    ang = 180.0
-    m = re.search(r'([-\d.]+)deg', deco)
-    if m:
-        ang = float(m.group(1))
-    if deco.startswith('repeating-linear-gradient'):
-        period = max(1.0, st[-1][1] or 4)
-        segs = [(v or 0, rgba(c, op)) for c, v, _ in st]
-        for y in range(h):
-            for x in range(w):
-                t = y % period if ang % 180 == 0 else (x % period if ang % 180 == 90 else ((x + y) / math.sqrt(2)) % period)
-                c = segs[0][1]
-                for v, cc in segs:
-                    if t >= v:
-                        c = cc
-                px[x, y] = c
-        return img
-    pos, n = [], len(st)
-    for i, (c, v, unit) in enumerate(st):
-        if v is not None and unit == '%':
-            t = v / 100
-        elif v is not None and unit in ('dp', 'px'):
-            t = v / (w if ang % 180 == 90 else h)
+class Ctx:
+    """what a length resolves against: the case's viewport (vw/vh); em/rem are taken as 16px and said so"""
+    def __init__(self, size, notes):
+        self.size, self.notes = size, notes
+
+    def length(self, v, unit):
+        if unit in (None, 'px', 'dp'):
+            return v
+        if unit in ('vw', 'vh', 'vmin', 'vmax'):
+            W, H = self.size
+            return v / 100 * {'vw': W, 'vh': H, 'vmin': min(W, H), 'vmax': max(W, H)}[unit]
+        self.notes.add(f'APPROXIMATED {unit} length in a decorator as 16px per {unit}')
+        return v * 16
+
+
+def num_unit(tok):
+    m = LENGTH.match(tok)
+    return (float(m.group(1)), m.group(2)) if m else None
+
+
+def resolve_stops(raw, line_len, soft, ctx):
+    """ResolveColorStops: positions -> normalized numbers, autos spaced, nudged to increasing, soft-spaced"""
+    stops = []
+    for col, pos in raw:
+        p = None
+        if pos is not None:
+            v, u = pos
+            if u == '%':
+                p = v / 100
+            elif u in ('deg', 'rad'):
+                p = (math.radians(v) if u == 'deg' else v) / (2 * math.pi)
+            else:
+                p = ctx.length(v, u) / line_len
+        stops.append([p, col])
+    n = len(stops)
+    if stops[0][0] is None:
+        stops[0][0] = 0.0
+    if stops[-1][0] is None:
+        stops[-1][0] = 1.0
+    prev = [stops[0][0]]
+
+    def nudge(st, update=True):
+        st[0] = max(st[0], prev[0])
+        if update:
+            prev[0] = st[0]
+    auto_begin = -1
+    for i in range(1, n):
+        if stops[i][0] is None:
+            if auto_begin < 0:
+                auto_begin = i
+        elif auto_begin < 0:
+            nudge(stops[i])
         else:
-            t = i / max(1, n - 1)
-        pos.append((t, rgba(c, op)))
+            nudge(stops[i], False)
+            na = i - auto_begin
+            t0, t1 = stops[auto_begin - 1][0], stops[i][0]
+            for j in range(na):
+                stops[auto_begin + j][0] = t0 + (t1 - t0) * (j + 1) / (na + 1)
+                nudge(stops[auto_begin + j])
+            nudge(stops[i])
+            auto_begin = -1
+    for i in range(1, n - 1):
+        p0, p1, p2 = stops[i - 1][0], stops[i][0], stops[i + 1][0]
+        if p1 - p0 < soft:
+            stops[i][0] = 0.5 * (p2 + p0) if p2 - p0 < 2 * soft else p0 + soft
+    return stops
 
-    def at(t):
-        if t <= pos[0][0]:
-            return pos[0][1]
-        for (t0, c0), (t1, c1) in zip(pos, pos[1:]):
-            if t <= t1:
-                k = 0 if t1 == t0 else (t - t0) / (t1 - t0)
-                return tuple(int(c0[j] + (c1[j] - c0[j]) * k) for j in range(4))
-        return pos[-1][1]
-    if ang % 180 == 90:
-        row = [at((x / w) if ang % 360 == 90 else 1 - x / w) for x in range(w)]
-        for y in range(h):
-            for x in range(w):
-                px[x, y] = row[x]
+
+def parse_stops(items, angles=False):
+    """color-stop-list: '<colour> [pos] [pos]' items -> [(premultiplied colour, pos or None)], None if invalid"""
+    out = []
+    for it in items:
+        vals = split_top(it, ' ')
+        if not vals or len(vals) > 3:
+            return None
+        c = parse_colour(vals[0])
+        if c is None:
+            return None
+        pm = (c[0] * c[3] / 255, c[1] * c[3] / 255, c[2] * c[3] / 255, float(c[3]))
+        if len(vals) == 1:
+            out.append((pm, None))
+        for v in vals[1:]:
+            nu = num_unit(v)
+            ok = nu and (nu[1] in (('%', 'deg', 'rad') if angles else ('%', 'px', 'dp', 'vw', 'vh', 'vmin', 'vmax', 'em', 'rem')))
+            if not ok:
+                if v == 'auto':
+                    out.append((pm, None))
+                    continue
+                return None
+            out.append((pm, nu))
+    return out or None
+
+
+def smoothstep(a, b, t):
+    if b <= a:
+        return 1.0 if t > a else 0.0
+    k = min(1.0, max(0.0, (t - a) / (b - a)))
+    return k * k * (3 - 2 * k)
+
+
+def stop_colour(stops, t, repeating):
+    """the RmlUi renderers' gradient fragment: repeat, then mix stop colours with smoothstep (premultiplied)"""
+    if repeating:
+        t0, t1 = stops[0][0], stops[-1][0]
+        if t1 > t0:
+            t = t0 + math.fmod(t - t0, t1 - t0)
+            if t < t0:
+                t += t1 - t0
+    c = stops[0][1]
+    for i in range(1, len(stops)):
+        k = smoothstep(stops[i - 1][0], stops[i][0], t)
+        if k:
+            n = stops[i][1]
+            c = tuple(c[j] + (n[j] - c[j]) * k for j in range(4))
+    return c
+
+
+def straight(c, op):
+    a = c[3] * op
+    if a <= 0:
+        return (0, 0, 0, 0)
+    k = 255 / c[3]
+    return (min(255, int(c[0] * k + .5)), min(255, int(c[1] * k + .5)), min(255, int(c[2] * k + .5)), int(a + .5))
+
+
+def fill_field(w, h, tfun, colour):
+    """an RGBA image of w x h where pixel (x, y) is colour(tfun(x + .5, y + .5)); a fast path when t varies along one
+    axis only"""
+    img = Image.new('RGBA', (w, h))
+    ax = getattr(tfun, 'axis', None)
+    if ax == 'x':
+        row = [colour(tfun(x + .5, .5)) for x in range(w)]
+        img.putdata(row * h)
+    elif ax == 'y':
+        img.putdata([c for y in range(h) for c in [colour(tfun(.5, y + .5))] * w])
     else:
-        for y in range(h):
-            c = at(y / h if ang % 360 == 180 else 1 - y / h)
-            for x in range(w):
-                px[x, y] = c
+        img.putdata([colour(tfun(x + .5, y + .5)) for y in range(h) for x in range(w)])
     return img
+
+
+def position_of(tokens, w, h, ctx):
+    """position-x, position-y, position-x (FallThrough): keyword or length/% per axis -> (cx, cy) in px"""
+    pos = [('%', 50.0), ('%', 50.0)]
+    order, k = ['x', 'y', 'x'], 0
+    kw = {'x': {'left': 0, 'center': 50, 'right': 100}, 'y': {'top': 0, 'center': 50, 'bottom': 100}}
+    for tok in tokens:
+        while k < 3:
+            axis = order[k]
+            k += 1
+            if tok in kw[axis]:
+                pos[0 if axis == 'x' else 1] = ('%', float(kw[axis][tok]))
+                break
+            nu = num_unit(tok)
+            if nu and nu[1] not in ('deg', 'rad'):
+                pos[0 if axis == 'x' else 1] = (nu[1] or 'px', nu[0])
+                break
+        else:
+            return None
+    out = []
+    for (u, v), d in zip(pos, (w, h)):
+        out.append(d * v / 100 if u == '%' else ctx.length(v, u))
+    return out
+
+
+def gradient(kind, args, w, h, op, ctx):
+    """a gradient decorator over a paint area of w x h -> RGBA image, or None when RmlUi would reject it"""
+    W, H = max(1, int(round(w))), max(1, int(round(h)))
+    repeating = kind.startswith('repeating-')
+    base = kind[len('repeating-'):] if repeating else kind
+    if base in ('horizontal-gradient', 'vertical-gradient'):
+        cols = split_top(args, ' ')
+        if len(cols) != 2 or None in (parse_colour(cols[0]), parse_colour(cols[1])):
+            return None
+        c0, c1 = [parse_colour(c) for c in cols]
+        p0 = (c0[0] * c0[3] / 255, c0[1] * c0[3] / 255, c0[2] * c0[3] / 255, float(c0[3]))
+        p1 = (c1[0] * c1[3] / 255, c1[1] * c1[3] / 255, c1[2] * c1[3] / 255, float(c1[3]))
+        horiz = base == 'horizontal-gradient'
+
+        def tf(x, y):
+            return min(1.0, max(0.0, (x / w) if horiz else (y / h)))
+        tf.axis = 'x' if horiz else 'y'
+        return fill_field(W, H, tf, lambda t: straight(tuple(p0[j] + (p1[j] - p0[j]) * t for j in range(4)), op))
+    items = split_top(args, ',')
+    if not items:
+        return None
+    first = items[0].split()
+    if base == 'linear-gradient':
+        angle, corner = math.pi, None
+        if first and (first[0] == 'to' or (num_unit(first[0]) or (0, ''))[1] in ('deg', 'rad')):
+            items = items[1:]
+            if first[0] == 'to':
+                dx = [t for t in first[1:] if t in ('left', 'right')]
+                dy = [t for t in first[1:] if t in ('top', 'bottom')]
+                if len(dx) + len(dy) != len(first) - 1 or not first[1:] or len(dx) > 1 or len(dy) > 1:
+                    return None
+                if dx and dy:
+                    corner = {('right', 'top'): 0, ('right', 'bottom'): 1, ('left', 'bottom'): 2, ('left', 'top'): 3}[(dx[0], dy[0])]
+                else:
+                    angle = {'top': 0, 'right': .5 * math.pi, 'bottom': math.pi, 'left': 1.5 * math.pi}[(dx or dy)[0]]
+            else:
+                if len(first) != 1:
+                    return None
+                v, u = num_unit(first[0])
+                angle = math.radians(v) if u == 'deg' else v
+        stops = parse_stops(items)
+        if not stops:
+            return None
+        corners = [(w, 0), (w, h), (0, h), (0, 0)]
+        if corner is None:
+            na = angle % (2 * math.pi)
+            quadrant = int(na * 4 / (2 * math.pi)) % 4
+            lv = (math.sin(angle), -math.cos(angle))
+        else:
+            quadrant = corner
+            a, b = corners[(quadrant + 1) % 4], corners[(quadrant + 3) % 4]
+            vx, vy = a[0] - b[0], a[1] - b[1]
+            ln = math.hypot(vx, vy) or 1
+            lv = (vy / ln, -vx / ln)
+        cx, cy = w / 2, h / 2
+
+        def foot(p):
+            dx, dy = cx - p[0], cy - p[1]
+            dd = dx * lv[0] + dy * lv[1]
+            return (cx - dd * lv[0], cy - dd * lv[1])
+        s0, s1 = foot(corners[(quadrant + 2) % 4]), foot(corners[quadrant])
+        length = abs(w * lv[0]) + abs(h * lv[1])
+        st = resolve_stops(stops, length, 1 / max(length, 1e-6), ctx)
+        vx, vy = s1[0] - s0[0], s1[1] - s0[1]
+        d2 = vx * vx + vy * vy or 1
+
+        def tf(x, y):
+            return ((x - s0[0]) * vx + (y - s0[1]) * vy) / d2
+        if abs(vy) < 1e-9:
+            tf.axis = 'x'
+        elif abs(vx) < 1e-9:
+            tf.axis = 'y'
+        return fill_field(W, H, tf, lambda t: straight(stop_colour(st, t, repeating), op))
+    if base == 'radial-gradient':
+        shape_tokens = []
+        if first and parse_colour(first[0]) is None:
+            shape_tokens, items = first, items[1:]
+        shape, size_kw, sizes, at = None, None, [], None
+        for i, tok in enumerate(shape_tokens):
+            if tok == 'at':
+                at = shape_tokens[i + 1:]
+                break
+            if tok in ('circle', 'ellipse'):
+                shape = tok
+            elif tok in ('closest-side', 'farthest-side', 'closest-corner', 'farthest-corner'):
+                size_kw = tok
+            elif num_unit(tok) and num_unit(tok)[1] not in ('deg', 'rad'):
+                sizes.append(num_unit(tok))
+            else:
+                return None
+        if len(sizes) > 2 or (sizes and size_kw):
+            return None
+        if shape is None:
+            shape = 'circle' if len(sizes) == 1 else 'ellipse'
+        if shape == 'circle' and (len(sizes) > 1 or (sizes and sizes[0][1] == '%')):
+            return None   # RmlUi: a circle takes one length, not a percentage
+        c = position_of(at or [], w, h, ctx)
+        if c is None:
+            return None
+        stops = parse_stops(items)
+        if not stops:
+            return None
+        circle = shape == 'circle'
+        r = None
+        if sizes:
+            rx = (w * sizes[0][0] / 100) if sizes[0][1] == '%' else ctx.length(sizes[0][0], sizes[0][1] or 'px')
+            if circle or len(sizes) == 1:
+                ry = rx
+            else:
+                ry = (h * sizes[1][0] / 100) if sizes[1][1] == '%' else ctx.length(sizes[1][0], sizes[1][1] or 'px')
+            r = (abs(rx), abs(ry))
+        else:
+            kw = size_kw or 'farthest-corner'
+            near = (abs(min(c[0], w - c[0])), abs(min(c[1], h - c[1])))
+            far = (abs(max(c[0], w - c[0])), abs(max(c[1], h - c[1])))
+            if kw == 'closest-side':
+                r = (min(near),) * 2 if circle else near
+            elif kw == 'farthest-side':
+                r = (max(far),) * 2 if circle else far
+            else:
+                rr = near if kw == 'closest-corner' else far
+                if circle:
+                    r = (math.hypot(*rr),) * 2
+                else:
+                    rr = (max(rr[0], 1), max(rr[1], 1))
+                    rx = math.sqrt(2 * rr[0] * rr[0])
+                    r = (rx, rx * rr[1] / rr[0])
+        r = (max(r[0], 1.0), max(r[1], 1.0))
+        st = resolve_stops(stops, r[0], 1 / min(r), ctx)
+
+        def tf(x, y):
+            return math.hypot((x - c[0]) / r[0], (y - c[1]) / r[1])
+        return fill_field(W, H, tf, lambda t: straight(stop_colour(st, t, repeating), op))
+    if base == 'conic-gradient':
+        angle, at = 0.0, []
+        if first and first[0] in ('from', 'at'):
+            items = items[1:]
+            toks = list(first)
+            if toks[0] == 'from':
+                if len(toks) < 2 or not num_unit(toks[1]) or num_unit(toks[1])[1] not in ('deg', 'rad'):
+                    return None
+                v, u = num_unit(toks[1])
+                angle = math.radians(v) if u == 'deg' else v
+                toks = toks[2:]
+            if toks:
+                if toks[0] != 'at':
+                    return None
+                at = toks[1:]
+        c = position_of(at, w, h, ctx)
+        if c is None:
+            return None
+        c = (rnd(c[0]), rnd(c[1]))
+        stops = parse_stops(items, angles=True)
+        if not stops:
+            return None
+        st = resolve_stops(stops, 1.0, 0.0, ctx)
+        ca, sa = math.cos(angle), math.sin(angle)
+
+        def tf(x, y):
+            vx, vy = x - c[0], y - c[1]
+            rx, ry = ca * vx + sa * vy, -sa * vx + ca * vy
+            return 0.5 + math.atan2(-rx, ry) / (2 * math.pi)
+        return fill_field(W, H, tf, lambda t: straight(stop_colour(st, t, repeating), op))
+    return None
+
+
+# ---- shapes
+def rnd(v):
+    """Math::Round: halves go up"""
+    return int(math.floor(v + 0.5))
 
 
 class Painter:
@@ -437,10 +719,13 @@ class Painter:
             elif bgc[3] > 0:
                 d.rectangle([x, y, x + w - 1, y + h - 1], fill=bgc)
             deco = e.get('deco') or ''
-            if 'gradient' in deco:
-                g = gradient(w, h, deco, e['op'])
+            dm = re.match(r'^\s*([\w-]+)\s*\((.*)\)\s*$', deco, flags=re.S)
+            if dm and dm.group(1).endswith('gradient'):
+                g = gradient(dm.group(1), dm.group(2), w, h, e['op'], Ctx(img.size, missing))
                 if g:
                     layer.alpha_composite(g, (int(x), int(y)))
+                else:
+                    missing.add(f'NOT PAINTED decorator {deco!r} (RmlUi rejects it, or a colour form rml-preview does not read)')
             elif deco.startswith('image('):
                 mm = re.match(r'image\(\s*([^\s)]+)\s*([^)]*)\)', deco)
                 src = self.image(mm.group(1)) if mm else None
