@@ -380,6 +380,18 @@ MUTANTS += [
      '  function arrayAt(model, path) {\n    const address = parseAddress(path);', 'protocol', 'without a path'),
 ]
 
+# ==== model names RmlUi refuses (reserved, case-insensitively; not a letter first; other characters) are not bound
+MUTANTS += [
+    ('reserved names are bound', 'lrbind.js', '    if (RESERVED.has(l)) return "Name is reserved.";\n', '', 'parity',
+     'reserved and illegal model names'),
+    ('reserved names compared with their case', 'lrbind.js', 'if (RESERVED.has(l))', 'if (RESERVED.has(name))', 'parity',
+     'model names RmlUi refuses'),
+    ('any first character', 'lrbind.js', "if (!/^[a-z]/.test(l)) return", "if (false) return", 'protocol',
+     'illegal and reserved model names are refused'),
+    ('any character after it', 'lrbind.js', "if (!/^[a-z0-9_]*$/.test(l)) return", "if (false) return", 'protocol',
+     'illegal and reserved model names are refused'),
+]
+
 # ==== the run
 
 def plant(i, src, old, new):

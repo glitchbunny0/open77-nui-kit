@@ -98,6 +98,15 @@ function page(body, withBridge = true) {
   check(threw === null && p.$("#n").textContent === "3", "push/removeAt without a path, a fractional index, merge without fields: refused " + threw);
 }
 
+// ---- model names RmlUi refuses are not bound, and each says why
+{
+  const p = page(`<div data-model="m"><b id="ok">{{ok}}</b></div>`);
+  await p.fire("lrbind:init", { models: { m: { _x: 1, "1a": 2, "a-b": 3, Size: 4, it_index: 5, ok: 6 } }, events: {} });
+  const refused = p.sent.filter(([e, m]) => e === "lrbind:error" && /Could not bind data variable/.test(m.message)).map(([, m]) => m.message.match(/'([^']*)'/)[1]);
+  check(JSON.stringify(refused) === '["_x","1a","a-b","Size","it_index"]' && p.$("#ok").textContent === "6",
+    "illegal and reserved model names are refused one by one " + JSON.stringify(refused));
+}
+
 // ---- events and errors go back to Lua
 {
   const p = page(`<div data-model="m"><div id="b" data-event-click="pick(n, 'x'); n = n + 1">{{n}}</div><div id="bad">{{nope}}</div></div>`);

@@ -666,11 +666,28 @@
   const models = new Map();       // name -> Model
   let bridge = null;              // { emit(event, payload) } once Open77 is there
 
+  // DataModel.cpp LegalVariableName: what a model may bind (case-insensitive, ASCII)
+  const RESERVED = new Set(["it", "it_index", "ev", "true", "false", "size", "literal"]);
+  function illegalName(name) {
+    const l = asciiLower(name);
+    if (l === "") return "Name cannot be empty.";
+    if (!/^[a-z]/.test(l)) return "First character must be 'a-z' or 'A-Z'.";
+    if (!/^[a-z0-9_]*$/.test(l)) return "Name must strictly contain characters a-z, A-Z, 0-9 and under_score.";
+    if (RESERVED.has(l)) return "Name is reserved.";
+    return null;
+  }
+
   class Model {
     constructor(name, data, events) {
       this.name = name;
       this.data = data && typeof data === "object" && !Array.isArray(data) ? data : {};
-      this.variables = new Set(Object.keys(this.data));   // bound names are fixed at create, like DataModel
+      // bound names are fixed at create, like DataModel; a name RmlUi refuses is not bound at all
+      this.variables = new Set();
+      for (const k of Object.keys(this.data)) {
+        const why = illegalName(k);
+        if (why) warn("Could not bind data variable '" + k + "'. " + why);
+        else this.variables.add(k);
+      }
       this.events = new Set(events || []);   // only declared callbacks run, as natively
       this.views = [];
       this.dirty = new Set();

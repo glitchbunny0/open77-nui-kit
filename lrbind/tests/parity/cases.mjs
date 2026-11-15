@@ -174,5 +174,7 @@ export const cases = [
   T("click a checkbox", `<input id="cb" type="checkbox" data-checked="on"/><b>{{on}}</b>`, { on: false }, { steps: [{ event: "cb", type: "click" }, { event: "cb", type: "click" }] }),
   T("click a radio", `<input id="r1" type="radio" name="g" value="a" data-checked="p"/><input id="r2" type="radio" name="g" value="b" data-checked="p"/><b>{{p}}</b>`, { p: "a" }, { steps: [{ event: "r2", type: "click" }] }),
   T("value view on a text input", `<input id="t" type="text" data-value="v"/>`, { v: 2.5 }, { steps: [{ set: "v", value: "x" }] }),
+  T("reserved and illegal model names", `<div>[{{size}}]|[{{it}}]|[{{literal}}]|[{{Size2}}]|[{{x_1}}]</div>`, { size: 3, it: "x", literal: 5, Size2: 1, x_1: 2 }),
+  T("model names RmlUi refuses: case, first character, characters", `<div>[{{Size}}]|[{{TRUE}}]|[{{a1}}]|[{{ok_1}}]</div>`, { Size: 1, TRUE: 2, _x: 3, "1a": 4, "a-b": 5, a1: 6, ok_1: 7, "é": 8 }),
   T("for iterator named like a reserved word", `<div data-for="size : list">{{size}}</div>`, { list: ["p"] }),
 ];

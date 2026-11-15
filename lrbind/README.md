@@ -53,6 +53,9 @@ takes top-level fields of the model.
 
 - **Every field the markup names must be in the initial model.** An unknown name is a parse error: the binding is
   dropped and a `{{nope}}` text keeps its braces. Fields cannot be added later.
+- **Some model names cannot be bound:** `it`, `it_index`, `ev`, `true`, `false`, `size`, `literal` (in any case:
+  `Size` too), and any name that does not start with a letter or holds anything but `a-z A-Z 0-9 _`. Such a field is
+  refused with a warning at create, and markup naming it gets a parse error.
 - **An assignment writes an existing scalar or nothing.** In `data-event-*`, `obj.nope = 5` (a missing member),
   `list.size = 9`, `obj = 5` (a whole struct or list) and an alias that points past the end of a list are refused with
   a warning, and the rest of the chain does not run. Assignments take member paths (`a.b = 1`); `list[0] = 1` is a
