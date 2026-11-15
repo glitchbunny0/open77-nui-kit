@@ -1,0 +1,2 @@
+css      index.html:2  the root font size calc(1vw + 1em) could not be read  =>  rem is taken as 16px: write the root font-size in px or %
+css      index.html:5  font-size: calc(1vw + 1em): calc() mixes dp and em  =>  RmlUi has no calc(): pick the value for the design canvas (or set it from the client with ui:style)

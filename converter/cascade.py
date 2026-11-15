@@ -35,6 +35,7 @@ class Cascade:
         self.version = 0
         self.memo = {}
         self.extra = {}
+        self.unread = []
 
     @contextmanager
     def assume(self, pairs):
@@ -118,16 +119,17 @@ class Cascade:
             toks = V.resolve_vars(V.tokenize(v), lambda n: self.inherited(el, n))
             toks = V.fold_math(V.convert_units(toks, self.units, []))
         except V.ValueIssue:
-            return parent
+            toks = []
         toks = V.strip_ws(toks)
         if len(toks) == 1 and toks[0][0] == 'num':
             n, u = toks[0][1], toks[0][2]
-            if u == 'dp':
+            if u == 'dp' or (u == '' and n == 0):
                 return n
             if u == 'em':
                 return parent * n
             if u == '%':
                 return parent * n / 100
+        self.unread.append((el, v))   # a font size the cascade can't read: the parent's is used
         return parent
 
 

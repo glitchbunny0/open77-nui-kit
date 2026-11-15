@@ -1038,15 +1038,16 @@ class Converter:
                 self.report.add(self.where(file), line0, 'css', f'stylesheet for media {media}', 'not for the canvas: left out')
                 continue
             rules += self.flatten(self.parse_sheet(txt, line0, file), file)
-        # rem: the root font size of the page
-        for f, r in rules:
-            if isinstance(r, css_parse.Rule) and r.decls and re.match(r'^\s*(html|:root)\s*$', r.prelude):
-                for d in r.decls:
-                    if d.name == 'font-size':
-                        m = re.match(r'^([\d.]+)(px|%)$', d.value.strip())
-                        if m:
-                            self.units.root_px = float(m.group(1)) * (16 / 100 if m.group(2) == '%' else 1)
         self.custom_props([(f, r) for f, r in rules if isinstance(r, css_parse.Rule)], doc)
+        # rem: the root element's font size as the page's cascade computes it (units, var(), calc(), the font
+        # shorthand, selector lists); a rem inside it is the initial 16 px, as in CSS
+        self.casc.unread = []
+        self.units.root_px = self.casc.font_dp(self.top) * self.units.ppd
+        for el, v in self.casc.unread:
+            if el is self.top:
+                self.report.add(self.where(None), el.line, 'css', f'the root font size {v} could not be read',
+                                'rem is taken as 16px: write the root font-size in px or %')
+        self.casc.memo = {}
         out_rules = self.convert_rules(rules, doc)
         # markup
         self.used_tags = set()

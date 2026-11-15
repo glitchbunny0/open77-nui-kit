@@ -1,3 +1,6 @@
+/* rem: the root font size as the cascade computes it (0.5vw of the 1920 canvas: 9.6px) */
+html, body { font-size: 0.5vw; }
+#r1 { width: 2rem; }
 /* transforms: the arity and units RmlUi's parser takes */
 #t1 { transform: translate(10px); }
 #t2 { transform: skew(10deg) scale(50%); }

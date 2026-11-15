@@ -77,6 +77,11 @@ MUTANTS = [
      'fixture 05-colours'),
     ('currentcolor-note', 'convert.py', "in d.value.lower():\n                self.cascade_color_note(file, d, color)",
      "in d.value.lower():\n                pass", 'fixture 05-colours'),
+    # the rem root size (L5-9)
+    ('rem-root', 'convert.py', 'self.units.root_px = self.casc.font_dp(self.top) * self.units.ppd',
+     'self.units.root_px = 16.0', 'fixture 13-values'),
+    ('rem-root-unread', 'cascade.py', "self.unread.append((el, v))   # a font size", "pass   # a font size",
+     'fixture 12-no-body'),
 ]
 
 

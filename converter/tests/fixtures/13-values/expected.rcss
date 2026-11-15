@@ -3,6 +3,8 @@
 div { display: block; }
 body { margin: 8dp; font-size: 16dp; color: #000000; }
 
+body { font-size: 9.6dp; }
+#r1 { width: 19.2dp; }
 #t1 { transform: translate(10dp, 0dp); }
 #t2 { transform: skew(10deg, 0deg) scale(0.5); }
 #t3 { transform: translateX(5dp) rotate(0deg); }
