@@ -27,6 +27,9 @@ MUTANTS = [
      'fixture 13-values'),
     ('scale-pct', 'css_props.py', "a[0][0] == 'num' and a[0][2] == '%' else a", "a[0][0] == 'num' and a[0][2] == '%%' else a",
      'fixture 13-values'),
+    ('transition-dropped-item', 'css_props.py', 'if named and not props:', 'if False:', 'fixture 13-values'),
+    ('transition-all-alone', 'css_props.py', "if 'all' in (props or ['all']) and len(items) > 1:",
+     "if 'all' in (props or ['all']) and len(items) > 99:", 'fixture 13-values'),
 ]
 
 

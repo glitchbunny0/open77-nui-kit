@@ -3,3 +3,7 @@
 #t2 { transform: skew(10deg) scale(50%); }
 #t3 { transform: translateX(5px)rotate(0); }
 #t4 { transform: scale(1.5, 50%) translate(10px, 20px); }
+/* transitions: an item whose properties are all dropped is dropped, `all` stands alone */
+#tr1 { transition: transform .2s, -webkit-transform .2s; }
+#tr2 { transition: all .2s, opacity .3s ease-in; }
+#tr3 { transition: opacity .3s, all .2s; }

@@ -858,9 +858,10 @@ def h_transition(n, toks, ws, s, ctx, issues):
     if s in ('none', 'all 0s', '0s'):
         return [(n, 'none')]
     out = []
-    for p in V.split(toks):
+    items = V.split(toks)
+    for k, p in enumerate(items):
         words = V.words(V.strip_ws(p))
-        props, times, tween = [], [], None
+        props, times, tween, named = [], [], None, False
         for w in words:
             if is_time(w):
                 times.append(V.ser(w))
@@ -869,7 +870,8 @@ def h_transition(n, toks, ws, s, ctx, issues):
             if tw:
                 tween = tw
             elif w[0][0] == 'ident':
-                pn = w[0][1]
+                named = True
+                pn = w[0][1].lower()
                 pn = {'background': 'background-color'}.get(pn, pn)
                 if pn != 'all' and pn not in PROPERTIES and pn not in SHORTHANDS:
                     issues.append(Issue(f'transition of {pn}', 'RmlUi has no such property: dropped'))
@@ -879,6 +881,14 @@ def h_transition(n, toks, ws, s, ctx, issues):
             if props:
                 issues.append(Issue(f'transition {V.ser(p)} has no duration', 'dropped'))
             continue
+        if named and not props:
+            continue   # every property of this item was dropped: it must not turn into `all`
+        if 'all' in (props or ['all']) and len(items) > 1:
+            if k < len(items) - 1:
+                issues.append(Issue(f'transition: {s}', 'RmlUi takes `all` only on its own: kept the `all` item; the '
+                                    'other items\' timings are lost (write the properties instead of all)'))
+            out = [' '.join(['all'] + times[:2] + [tween or EASE_MAP['ease']])]
+            break
         out.append(' '.join((props or ['all']) + times[:2] + [tween or EASE_MAP['ease']]))
     return [(n, ', '.join(out))] if out else []
 

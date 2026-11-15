@@ -1,0 +1,2 @@
+css      v.css:7  transition of -webkit-transform  =>  RmlUi has no such property: dropped
+css      v.css:8  transition: all 0.2s, opacity 0.3s ease-in  =>  RmlUi takes `all` only on its own: kept the `all` item; the other items' timings are lost (write the properties instead of all)

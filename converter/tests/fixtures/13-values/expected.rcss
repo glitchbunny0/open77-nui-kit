@@ -7,3 +7,6 @@ body { margin: 8dp; font-size: 16dp; color: #000000; }
 #t2 { transform: skew(10deg, 0deg) scale(0.5); }
 #t3 { transform: translateX(5dp) rotate(0deg); }
 #t4 { transform: scale(1.5, 0.5) translate(10dp, 20dp); }
+#tr1 { transition: transform 0.2s quadratic-out; }
+#tr2 { transition: all 0.2s quadratic-out; }
+#tr3 { transition: all 0.2s quadratic-out; }
