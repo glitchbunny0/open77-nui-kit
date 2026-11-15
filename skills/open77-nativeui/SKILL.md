@@ -57,9 +57,9 @@ Where Lua 5.4 is called `lua` (Fedora, Arch, Homebrew), use that.
    `sheet.png`. Pass every weight the sheet uses (comma-separated files under one family; RmlUi keeps family names
    lower case). `--bg <game screenshot>` paints over the game, and `--compare <dir of PNGs>` puts a mockup next to
    each state.
-5. **Look at every state PNG.** Open the images; don't infer them from the check. Look for overlapping text, cut
-   names, an underline under the wrong tab, an empty column, things off the panel. A clean `rml-check` says the
-   document loads and the buttons fire. It says nothing about whether it looks right (in the kit's own example,
+5. **Look at every state PNG,** one by one (`sheet.png` is an overview, not a check). Look for overlapping text,
+   cut names, an underline under the wrong tab, an empty column, squeezed rows, things off the panel. A clean
+   `rml-check` says the document loads and the buttons fire. It says nothing about whether it looks right (in the kit's own example,
    all three tab underlines sat under the middle tab with the check green).
 6. Fix and repeat from 3.
 
@@ -87,6 +87,8 @@ All of them, with the reasons: `$KIT/docs/rmlui-traps.md`. These come up on almo
 - **`.gone { display: none }` loses to `#id { display: flex }`:** write `#root .gone` and put it last.
 - **Every name the markup binds must be in the FIRST model:** fields can't be added later.
 - **A bracket mistake in text** (`{{a} }}`, a stray `}}`) stops the parser: the rest of the document never loads.
+- **A scrolling box needs scrollbar styles** (`scrollbarvertical { width: 8dp; }` and its `sliderbar`): without
+  them an overflowing list squeezes its rows to one word per line, and rml-check stays green.
 - **Markup arrays are 0-based, Lua paths 1-based** (`ui:set("m", "rows[1].name", ...)` is `rows[0]` in markup).
 - **The `x`/`y` motion channels move in screen pixels, not dp.** Place things with `ui:style(sel, { left =
   "<n>dp", top = "<n>dp" })`; keep the channels for flourishes.
@@ -105,7 +107,19 @@ All of them, with the reasons: `$KIT/docs/rmlui-traps.md`. These come up on almo
   with `Open77.ui.loadFont(path, family)` under a family name of your own, and list every rml/rcss/png/ttf in the
   manifest's `files`.
 
-## 6. One markup for both surfaces (lrbind)
+## 6. The Open77 side
+
+The manifest, `Open77.ui.create`, `loadFont`, layers, input and the dev console are Open77's API, documented by
+Open77 (https://open2077.net/llms-full.txt, the NativeUI section), not by the kit. The parts every screen needs:
+
+- Every file the document opens goes in the manifest's `files` (globs work): `files { "ui/*.rml", "ui/*.rcss",
+  "ui/img/*", "fonts/*.ttf" }`, next to `client_script "client/<screen>.lua"`. An undeclared file fails with
+  `undeclared_file:<path>`.
+- In a document in a sub-folder, image paths are written from the resource root (`/ui/img/logo.png`).
+- How the server receives a choice is the resource's own business (an event, an export): the kit doesn't model it.
+  Say in the hand-off which call you assumed.
+
+## 7. One markup for both surfaces (lrbind)
 
 `lrbind.js` runs RmlUi's data bindings in a WebUI page, and `lrbind.lua` gives client Lua one API for both surfaces.
 So the same markup serves a WebUI page and its NativeUI twin, and its behaviour is measured against real RmlUi case by
