@@ -97,6 +97,14 @@ check("GetGameTimer follows the passes", function()
     eq(GetGameTimer(), 48)
 end)
 
+check("F.frames() is one pass of 16 ms, F.settle() sixty, F.advance(ms) as many as cover the time", function()
+    local F = fresh()
+    F.frames(); eq(GetGameTimer(), 16, "F.frames()")
+    F.settle(); eq(GetGameTimer(), 16 + 60 * 16, "F.settle()")
+    local t = GetGameTimer()
+    F.advance(40); eq(GetGameTimer(), t + 48, "F.advance(40)")
+end)
+
 check("print keeps every argument", function()
     local F = fresh()
     F.quiet = true

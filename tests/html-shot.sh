@@ -130,11 +130,11 @@ hang_checks() {   # hang_checks TOOL
 find_checks() {   # find_checks TOOL
     local tool="$1" h="$tmp/find$RANDOM"
     local sh=chromium_headless_shell- sfx=chrome-headless-shell-linux64/chrome-headless-shell
-    mkdir -p "$h/home/.cache/ms-playwright/${sh}999/$(dirname $sfx)" "$h/home/.cache/ms-playwright/${sh}1000/$(dirname $sfx)" \
+    mkdir -p "$h/hm/.cache/ms-playwright/${sh}999/$(dirname $sfx)" "$h/hm/.cache/ms-playwright/${sh}1000/$(dirname $sfx)" \
              "$h/xdg/ms-playwright/${sh}5/$(dirname $sfx)" "$h/pw/${sh}7/$(dirname $sfx)" "$h/bin"
-    for f in "$h/home/.cache/ms-playwright/${sh}999/$sfx" "$h/home/.cache/ms-playwright/${sh}1000/$sfx" \
+    for f in "$h/hm/.cache/ms-playwright/${sh}999/$sfx" "$h/hm/.cache/ms-playwright/${sh}1000/$sfx" \
              "$h/xdg/ms-playwright/${sh}5/$sfx" "$h/pw/${sh}7/$sfx"; do : > "$f"; chmod +x "$f"; done
-    local env0=(env -i PATH="$h/bin" HOME="$h/home")
+    local env0=(env -i PATH="$h/bin" HOME="$h/hm")
     run "${env0[@]}" "$py" "$tool" --find
     want "find: the highest revision wins (1000 over 999, a number not a string)" bash -c '[ "$1" = 0 ] && grep -q "ms-playwright/chromium_headless_shell-1000/" <<<"$2"' _ "$rc" "$out"
     run "${env0[@]}" XDG_CACHE_HOME="$h/xdg" "$py" "$tool" --find
@@ -142,7 +142,7 @@ find_checks() {   # find_checks TOOL
     run "${env0[@]}" XDG_CACHE_HOME="$h/xdg" PLAYWRIGHT_BROWSERS_PATH="$h/pw" "$py" "$tool" --find
     want "find: PLAYWRIGHT_BROWSERS_PATH comes first" bash -c 'grep -q "/pw/" <<<"$1"' _ "$out"
     run "${env0[@]}" XDG_CACHE_HOME="$h/empty-xdg" "$py" "$tool" --find
-    want "find: an XDG_CACHE_HOME without a browser falls back to ~/.cache" bash -c '[ "$1" = 0 ] && grep -q "/home/.cache/" <<<"$2"' _ "$rc" "$out"
+    want "find: an XDG_CACHE_HOME without a browser falls back to ~/.cache" bash -c '[ "$1" = 0 ] && grep -q "/hm/.cache/" <<<"$2"' _ "$rc" "$out"
     run "${env0[@]}" NUIKIT_CHROME="$tmp/fake-chrome" PLAYWRIGHT_BROWSERS_PATH="$h/pw" "$py" "$tool" --find
     want "find: NUIKIT_CHROME wins over everything" bash -c 'grep -qx "$1" <<<"$2"' _ "$tmp/fake-chrome" "$out"
     run "${env0[@]}" NUIKIT_CHROME="$h/does-not-exist" "$py" "$tool" --find

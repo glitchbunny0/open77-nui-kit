@@ -51,6 +51,9 @@ mutant "CreateThread starts the task on the next pass" 'wake[co] = { at = F.now,
 mutant "SetTimeout fires once after its time" 'Wait(ms); if timers[id]' 'Wait(0); if timers[id]'
 mutant "SetTimeout fires once after its time" 'timers[id] = nil; return had end' 'return had end'
 mutant "GetGameTimer follows the passes" 'GetGameTimer = function() return F.now end' 'GetGameTimer = function() return 0 end'
+mutant "F.frames() is one pass" 'for _ = 1, n or 1 do' 'for _ = 1, n or 2 do'
+mutant "F.frames() is one pass" 'for _ = 1, maxFrames or 60 do' 'for _ = 1, maxFrames or 30 do'
+mutant "F.frames() is one pass" 'F.frames(math.ceil(ms / FRAME))' 'F.frames(math.floor(ms / FRAME))'
 mutant "print keeps every argument" 'table.concat(t, "\t", 1, t.n)' 'table.concat(t, "\t", 1, 1)'
 # the instruction counter
 mutant "instruction counter: a resume's" 'n = n + STEP' 'n = n + 0'
