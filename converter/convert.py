@@ -45,6 +45,11 @@ SVG_PAINT = ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoi
              'stroke-dashoffset', 'opacity', 'fill-opacity', 'stroke-opacity')
 
 
+# declarations that take the text colour when they name none (a colourless border or shadow)
+COLOUR_FALLBACK = {'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'box-shadow', 'text-shadow',
+                   'filter'}
+
+
 class Report:
     def __init__(self):
         self.items = []
@@ -549,7 +554,8 @@ class Converter:
             for g, f in fields.items():
                 if f:
                     for sel in sels:
-                        self.layer_src.append((sel, S.specificity(sel), order, g, f, it))
+                        self.layer_src.append((sel, S.specificity(sel), order, g, f, it,
+                                               {id(el) for el in all_els if S.matches(sel, el, True)}))
         self.root_merge(flat)
         svgs = [el for el in all_els if el.tag == 'svg']
 
@@ -934,7 +940,8 @@ class Converter:
         for d in sorted(decls, key=lambda d: d.name != 'color'):
             if d.name != 'color' and color_from is None:
                 color_from = 'rule' if color else 'cascade'
-                color = color or self.cascade_color(matched)
+                if not color and any('currentcolor' in x.value.lower() or x.name in COLOUR_FALLBACK for x in decls):
+                    color = self.cascade_color(matched)   # only where something needs it (it walks the cascade)
             if not d.name:
                 self.report.add(self.where(file), d.line, 'css', f'declaration {d.value!r} has no property name',
                                 'fix the sheet')
@@ -1061,8 +1068,10 @@ class Converter:
         prio = max(((e[1], e[2]) for e in own), default=((-1, -1, -1), -1))
         own_fields = set(k for e in own for k in e[4] if k != 'image')
         best, has_image = {}, any(e[4].get('image') for e in own)
-        for sel, spec, order, g, f, it in self.layer_src:
-            if g != group or it is rule or not any(S.matches(sel, el, True) for el in matched):
+        ids = {id(el) for el in matched}
+        for sel, spec, order, g, f, it, hits in self.layer_src:   # hits: the elements it matches (as data-class-* allow)
+            if g != group or it is rule or not (hits & ids or any(getattr(el, 'virtual', False) and
+                                                                     S.matches(sel, el, True) for el in matched)):
                 continue
             has_image = has_image or bool(f.get('image'))
             for k in ('size', 'pos', 'repeat'):

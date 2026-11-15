@@ -40,6 +40,7 @@ class Cascade:
         self.extra = {}
         self.unread = []
         self.resolving = set()
+        self.mcache = {}
 
     @contextmanager
     def assume(self, pairs):
@@ -59,6 +60,18 @@ class Cascade:
                 el.extra, el.assumed = old, olda
             self.version += 1
 
+    def match(self, sel, el, dynamic=False):
+        """S.matches, remembered (until the next assumption, where one touches the element or its ancestors)"""
+        a, touched = el, False
+        while isinstance(a, H.Element) and not touched:
+            touched = bool(getattr(a, 'extra', None) or getattr(a, 'assumed', None))
+            a = a.parent
+        key = (id(sel), id(el), dynamic, self.version if touched else -1)
+        r = self.mcache.get(key)
+        if r is None:
+            r = self.mcache[key] = S.matches(sel, el, dynamic)
+        return r
+
     def declared(self, el, name):
         """the winning declared value of `name` on el itself (inline style last), or None"""
         if not isinstance(el, H.Element):
@@ -74,7 +87,7 @@ class Cascade:
         best = None
         for sel, spec, order, dm, f, l, imp in self.by_name.get(name, ()):
             rank = (name in imp, spec, order)   # !important first, then specificity, then source order
-            if (best is None or rank >= best[0]) and S.matches(sel, el):
+            if (best is None or rank >= best[0]) and self.match(sel, el):
                 best = (rank, dm[name])
         if inline and not (best and best[0][0]):
             return inline[0]
