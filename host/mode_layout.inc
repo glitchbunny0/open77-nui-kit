@@ -1,4 +1,5 @@
 // layout: a font engine with real advances (bin/rml-preview measures the TTFs into fonts.json), boxes + text out.
+// Per case: { name, els: [box or text run, ...], warnings: [what RmlUi and the font engine warned about] }.
 namespace layout {
 static std::string fnum(float v) { char b[32]; snprintf(b, 32, "%.1f", v); return b; }
 static std::string col(Colourb c) { char b[16]; snprintf(b, 16, "#%02x%02x%02x%02x", c.red, c.green, c.blue, c.alpha); return b; }
@@ -103,6 +104,8 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 	int n = 0;
 	std::cout << "[";
 	for (J& c : cases.a) {
+		warnings.clear();
+		Factory::ClearStyleSheetCache();   // every case parses the sheets again, so their warnings show in each case
 		std::string name = "c" + std::to_string(n);
 		Context* context = CreateContext(name, sizeOf(c));
 		context->SetDensityIndependentPixelRatio(1.0f);
@@ -129,6 +132,14 @@ int run(const std::string& docPath, const std::string& modelName, const std::str
 			emit(doc, out, first);
 			std::cout << out.str();
 		}
+		// what RmlUi (and the font engine) warned about in this case, each message once, in the order first seen
+		std::cout << "],\"warnings\":[";
+		std::vector<std::string> seen;
+		for (auto& w : warnings)
+			if (std::find(seen.begin(), seen.end(), w) == seen.end()) {
+				std::cout << (seen.empty() ? "" : ",") << q(w);
+				seen.push_back(w);
+			}
 		std::cout << "]}";
 		RemoveContext(name);
 	}

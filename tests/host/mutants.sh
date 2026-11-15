@@ -108,3 +108,8 @@ mutant host host/mode_layout.inc "layout: nothing clips an unclipped box, whatev
     'if (!ElementUtilities::GetClippingRegion(el, r)) return "null";' 'if (!ElementUtilities::GetClippingRegion(el, r)) return "[0.0,0.0,1920.0,1080.0]";'
 mutant host host/mode_layout.inc "layout: text comes as RmlUi draws it, text-transform applied, with no flag to apply it again" \
     '<< ",\"clip\":" << clipOf(t) << "}";' '<< ",\"clip\":" << clipOf(t) << ",\"upper\":" << (cv.text_transform() == Style::TextTransform::Uppercase ? "true" : "false") << "}";'
+mutant host host/mode_layout.inc "layout: each case lists its own warnings" \
+    '	for (J& c : cases.a) {
+		warnings.clear();' '	for (J& c : cases.a) {'
+mutant host host/mode_check.inc "check: a stylesheet warning shows in every case" \
+    'Factory::ClearStyleSheetCache();' ''

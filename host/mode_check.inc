@@ -46,6 +46,7 @@ int run(const std::string& docPath, const std::string& modelName) {
 	int n = 0;
 	for (J& c : cases.a) {
 		warnings.clear();
+		Factory::ClearStyleSheetCache();   // every case parses the sheets again, so their warnings land in each case
 		std::string name = "c" + std::to_string(n++);
 		Context* context = CreateContext(name, sizeOf(c));
 		J* evs = c.get("events");

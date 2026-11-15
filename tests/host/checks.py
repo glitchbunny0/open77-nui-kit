@@ -418,6 +418,23 @@ def _():
     expect(run['text'] == 'STRA\u00dfE CAF\u00e9' and 'upper' not in run, f'{run}')
 
 
+@check('layout: each case lists its own warnings')
+def _():
+    out = layout('<p>{{x}}</p>', cases=[{'name': 'a', 'model': {}}, {'name': 'b', 'model': {'x': 1}}], name='warn')
+    wa, wb = out[0].get('warnings'), out[1].get('warnings')
+    expect(any("'x'" in w for w in wa or []) and wb == [], f'a: {wa}, b: {wb}')
+
+
+@check('check: a stylesheet warning shows in every case')
+def _():
+    with open(os.path.join(WORK, 'sheetwarn.rcss'), 'w') as f:
+        f.write('p { colr: red; }')
+    r = host('check', doc('sheetwarn', '<p>x</p>', head='<link type="text/rcss" href="sheetwarn.rcss"/>'), 'm',
+             cases=[{'name': 'one', 'model': {}}, {'name': 'two', 'model': {}}])
+    per = [l for l in r.out.split('=== case ') if l]
+    expect(len(per) == 2 and all('colr' in p for p in per), r.out[-400:])
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:
