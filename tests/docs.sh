@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# The docs and the CI file describe the code as it is: the commands in README.md and examples/side-menu/README.md are
-# RUN (in a copy of the kit) and must leave the hand-written example alone, the Lua snippet of docs/cases.md must write
-# cases rml-check accepts, the numbers the docs quote (Node floor, instruction budget) must be the code's, and CI must
-# make Chromium and Pillow required, bound its run time and use a Node jsdom supports. Each check has a mutant (a copy of
-# the doc or the CI file with ONE bug). Contract: tests/README.md.
+# The docs and the CI file describe the code as it is: the commands in README.md, examples/side-menu/README.md and the
+# agent skill are RUN (in a copy of the kit) and must leave the hand-written example alone; the skill's metadata
+# follows the Agent Skills spec, every link names a file, references/output.md explains every line the tools print,
+# the agent docs name no home path, tailnet address or account (NUIKIT_PRIVATE_RE adds a project's own names); the
+# Lua snippet of docs/cases.md must write cases rml-check accepts, the numbers the docs quote (Node floor, instruction
+# budget) must be the code's, and CI must make Chromium and Pillow required, bound its run time and use a Node jsdom
+# supports. Each check has a mutant (a copy of the doc or the CI file with ONE bug). Contract: tests/README.md.
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
@@ -11,7 +13,9 @@ fail=0
 export LUA="${LUA:-$(command -v lua5.4 || command -v lua)}"
 have_pil=0; python3 -c 'import PIL' 2>/dev/null && have_pil=1
 have_chrome=0; bin/html-shot --find >/dev/null 2>&1 && have_chrome=1
-files=(README.md docs/cases.md docs/rmlui-traps.md examples/side-menu/README.md .github/workflows/ci.yml)
+SK=skills/open77-nativeui
+files=(README.md docs/cases.md docs/rmlui-traps.md examples/side-menu/README.md .github/workflows/ci.yml
+       AGENTS.md "$SK/SKILL.md" "$SK/references/output.md" "$SK/references/porting.md")
 
 ok() { echo "ok   $1"; }
 bad() { echo "FAIL $1${2:+: $2}"; }
@@ -46,7 +50,7 @@ PY
     for b in "$kc"/.blocks/b*.sh; do
         [ -e "$b" ] || continue
         n=$((n + 1))
-        if ! (cd "$cwd" && bash "$b" >"$b.log" 2>&1); then echo "block $n of $doc failed:"; tail -5 "$b.log" | sed 's/^/     /'; return 1; fi
+        if ! (cd "$cwd" && KIT="$kc" bash "$b" >"$b.log" 2>&1); then echo "block $n of $doc failed:"; tail -5 "$b.log" | sed 's/^/     /'; return 1; fi
     done
     [ "$n" -gt 0 ]
 }
@@ -154,7 +158,86 @@ PY
     else bad "ci.yml: Chromium and Pillow required, run time bounded, Node fits jsdom, Chromium installed first" "$why"; fi
 }
 
-all_checks="chk_readme_run chk_example_readme_run chk_cases_snippet chk_node_floor chk_lua_names chk_clone_url chk_budget chk_print chk_stubs_documented chk_ci"
+chk_skill_run() {   # the skill's shell blocks run against the example ($KIT = a copy of the kit) and leave it alone
+    local d="$1" kc="$tmp/kc-skill$RANDOM"
+    copy_kit "$kc"; cp "$d/$SK/SKILL.md" "$kc/$SK/SKILL.md"
+    local o; o=$(run_blocks "$kc/$SK/SKILL.md" "$kc" "$kc" 2>&1) && o2=$(same_example "$kc") && ok "skill: its commands run, and leave the example alone" \
+        || bad "skill: its commands run, and leave the example alone" "$o ${o2:-}"
+}
+chk_skill_meta() {   # SKILL.md frontmatter as agentskills.io/specification says: name = folder, charset, lengths
+    local d="$1" why
+    why=$(python3 - "$d/$SK/SKILL.md" "$(basename "$SK")" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding='utf-8').read()
+m = re.match(r'---\n(.*?)\n---\n', text, re.S)
+if not m:
+    print('no frontmatter'); sys.exit()
+meta = dict(l.split(':', 1) for l in m.group(1).splitlines() if ':' in l and not l.startswith(' '))
+meta = {k.strip(): v.strip() for k, v in meta.items()}
+name, desc = meta.get('name', ''), meta.get('description', '')
+why = []
+if name != sys.argv[2]: why.append(f'name {name!r} is not the folder {sys.argv[2]!r}')
+if not re.fullmatch(r'[a-z0-9]+(-[a-z0-9]+)*', name) or len(name) > 64: why.append('name: 1-64 of a-z 0-9 and single hyphens')
+if not 1 <= len(desc) <= 1024: why.append(f'description is {len(desc)} chars (1-1024)')
+if len(meta.get('compatibility', 'x')) > 500: why.append('compatibility over 500 chars')
+if text.count('\n') >= 500: why.append('SKILL.md has 500 lines or more')
+print('; '.join(why))
+PY
+)
+    if [ -z "$why" ]; then ok "skill: metadata as the Agent Skills spec says"; else bad "skill: metadata as the Agent Skills spec says" "$why"; fi
+}
+chk_links() {   # every relative link, and every $KIT/<path>, in the README, AGENTS.md and the skill names a file of the kit
+    local d="$1" missing
+    missing=$(python3 - "$d" "$kit" README.md AGENTS.md "$SK/SKILL.md" "$SK/references/output.md" "$SK/references/porting.md" <<'PY'
+import os, re, sys
+d, kit, docs = sys.argv[1], sys.argv[2], sys.argv[3:]
+miss = []
+for doc in docs:
+    text = open(os.path.join(d, doc), encoding='utf-8').read()
+    base = os.path.dirname(doc)
+    for target in re.findall(r'\]\(([^)\s]+)\)', text):
+        if re.match(r'[a-z]+:', target) or target.startswith('#'):
+            continue
+        if not os.path.exists(os.path.normpath(os.path.join(kit, base, target.split('#')[0]))):
+            miss.append(f'{doc}: {target}')
+    for path in re.findall(r'\$KIT"?/([\w./-]+)', text):
+        path = path.rstrip('.')
+        if not os.path.exists(os.path.join(kit, path)):
+            miss.append(f'{doc}: $KIT/{path}')
+print(' '.join(miss))
+PY
+)
+    if [ -z "$missing" ]; then ok "docs: every link and \$KIT path names a file of the kit"; else bad "docs: every link and \$KIT path names a file of the kit" "$missing"; fi
+}
+chk_output_forms() {   # every kind of line the tools print is explained in the skill's references/output.md
+    local d="$1" missing
+    missing=$(python3 - "$d/$SK/references/output.md" <<'PY'
+import re, sys
+doc = open(sys.argv[1], encoding='utf-8').read()
+src = lambda p: open(p, encoding='utf-8').read()
+forms = set(re.findall(r"print\(f?'([A-Z]+(?: [A-Z]+)*)\b", src('bin/rml-check')))            # WARN, EVENT, CLICK FAIL, ...
+forms |= set(re.findall(r"""notes\.add\(f?['"]([A-Z]+(?: [A-Z]+)*)\b""", src('bin/rml-preview')))   # NOT PAINTED, MISSING, ...
+forms |= set(re.findall(r"print\('(not painted \(see rml-preview --help\))", src('bin/rml-preview')))
+host = src('host/mode_check.inc')
+for line in host.splitlines():                                   # what a click line says happened instead
+    if re.search(r'\bgot\s*\+?=', line):
+        forms |= {s.strip() for s in re.findall(r'"([a-z ,][a-z -]*[a-z])', line) if len(s.strip()) > 3}
+if 'do not list' in src('bin/rml-check'):
+    forms.add('do not list')
+print(' '.join(sorted(repr(f) for f in forms if f not in doc)))
+PY
+)
+    if [ -z "$missing" ]; then ok "skill: references/output.md explains every kind of line the tools print"
+    else bad "skill: references/output.md explains every kind of line the tools print" "$missing"; fi
+}
+chk_private() {   # agent docs name no home path, tailnet address or account; NUIKIT_PRIVATE_RE adds your own names
+    local d="$1" hits re='(^|[^[:alnum:]./])(/home/|/Users/)[[:alnum:]]|\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]+\.[0-9]+|github\.com/[[:alnum:]-]+/'
+    [ -n "${NUIKIT_PRIVATE_RE:-}" ] && re="$re|$NUIKIT_PRIVATE_RE"
+    hits=$(grep -n -i -E "$re" "$d/AGENTS.md" "$d/$SK/SKILL.md" "$d/$SK/references/"*.md || true)
+    if [ -z "$hits" ]; then ok "agent docs: no home paths, tailnet addresses or accounts"; else bad "agent docs: no home paths, tailnet addresses or accounts" "$hits"; fi
+}
+
+all_checks="chk_readme_run chk_example_readme_run chk_cases_snippet chk_node_floor chk_lua_names chk_clone_url chk_budget chk_print chk_stubs_documented chk_ci chk_skill_run chk_skill_meta chk_links chk_output_forms chk_private"
 real="$tmp/real"
 for f in "${files[@]}"; do mkdir -p "$real/$(dirname "$f")"; cp "$f" "$real/$f"; done
 out=$(for c in $all_checks; do $c "$real"; done)
@@ -209,6 +292,12 @@ mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml ' 
 mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml 'node-version: 22 ' 'node-version: 18 '
 mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml 'run: npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell' 'run: echo skipped'
 
+mutant chk_skill_run "skill: its commands run" "$SK/SKILL.md" '"$KIT"/bin/rml-check ui/menu.rml "$o/cases.json"' '"$KIT"/bin/rml-chek ui/menu.rml "$o/cases.json"'
+mutant chk_skill_meta "skill: metadata as the Agent Skills spec says" "$SK/SKILL.md" 'name: open77-nativeui' 'name: open77-NativeUI'
+mutant chk_links "docs: every link and" "$SK/SKILL.md" '[references/porting.md](references/porting.md): a WebUI' '[references/porting.md](references/port.md): a WebUI'
+mutant chk_links "docs: every link and" "$SK/SKILL.md" '`$KIT/docs/cases.md`: the case format' '`$KIT/docs/case.md`: the case format'
+mutant chk_output_forms "skill: references/output.md explains every kind" "$SK/references/output.md" '| `off screen at x,y` |' '| `outside at x,y` |'
+mutant chk_private "agent docs: no home paths" AGENTS.md 'Instructions for agents changing open77-nui-kit itself.' 'Instructions for agents changing open77-nui-kit itself (clone in /home/someone/kit).'
 echo "docs: $reds of $i mutants turn their check red"
 [ "$reds" = "$i" ] || fail=1
 exit $fail
