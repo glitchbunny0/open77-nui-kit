@@ -9,7 +9,7 @@ set -uo pipefail
 kit="${NUIKIT:-$(cd "$(dirname "$0")/.." && pwd)}"
 tmp="${NUIKIT_TMP:-$(mktemp -d)}"
 cd "$kit"
-export NUIKIT_HOST; NUIKIT_HOST="$(bash scripts/build.sh)" || { echo "FAIL: scripts/build.sh"; exit 1; }
+export NUIKIT_HOST; NUIKIT_HOST="${NUIKIT_HOST:-$(bash scripts/build.sh)}" || { echo "FAIL: scripts/build.sh"; exit 1; }
 fx="$tmp/fx"; mkdir -p "$fx" "$tmp/tmpdir"
 export TMPDIR="$tmp/tmpdir"
 RC="$kit/bin/rml-check"        # the tool under test; a mutant run points it at a broken copy
@@ -29,12 +29,13 @@ cat > "$fx/ui.rml" <<'EOF'
 <div id="hid" data-if="show"><div class="x" data-event-click="a()">A</div></div>
 <div class="x" data-event-click="b(true, 2.5)">B</div>
 <div class="btn" data-event-click="close">close</div>
+<div class="f" data-for="r : rows" data-event-click="f(r.f)">{{r.f}}</div>
 </body>
 </rml>
 EOF
 cat > "$fx/ok.json" <<'EOF'
-[{"name":"state","model":{"title":"T","rows":[{"id":2,"name":"n"}],"show":false},
-  "events":["pick","a","b","close"],
+[{"name":"state","model":{"title":"T","rows":[{"id":2,"name":"n","f":0.3333333}],"show":false},
+  "events":["pick","a","b","close","f"],
   "clicks":[{"sel":".row","event":"pick","args":["2"]},
             {"sel":".x","event":"b","args":["1","2.5"]},
             {"sel":".btn","event":"close","args":[]}]}]
@@ -60,6 +61,17 @@ chk_click_nothing(){ variant c.json 's/"sel":"\.btn"/"sel":"#title"/'; rc "$fx/u
 chk_exit_click()   { variant c.json 's/\["2"\]/["3"]/'; rc "$fx/ui.rml" "$fx/c.json" --quiet; want 1 'CLICK FAIL' && wantnot 'WARN'; }
 chk_property()     { variant p.rcss 's/color/colr/'; cp "$fx/ui.rml" "$fx/p.rml"; sed -i 's/ui.rcss/p.rcss/' "$fx/p.rml"
                      rc "$fx/p.rml" "$fx/ok.json"; want 1 "WARN +Syntax error parsing property declaration 'colr: red;'" 'rml-check: FAIL'; }
+chk_click_undeclared() { variant c.json '0,/"event":"pick"/s//"event":"zzz"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 "CLICK FAIL state: \\.row -> the case's \"events\" do not list 'zzz'"; }
+# click args as JSON numbers and bools: compared as RmlUi prints them
+mdl='"model":{"title":"T","rows":[{"id":2,"name":"n","f":0.3333333}],"show":false},"events":["pick","a","b","close","f"]'
+typed() { printf '[{"name":"state",%s,"clicks":[%s]}]' "$mdl" "$1" > "$fx/t.json"; rc "${doc:-$fx/ui.rml}" "$fx/t.json"; }
+chk_arg_types()    { local row='{"sel":".row","event":"pick","args":[2]}' x='{"sel":".x","event":"b","args":[true,2.5]}' f='{"sel":".f","event":"f","args":[0.3333333]}'
+                     typed "$row,$x,$f,{\"sel\":\".row\",\"event\":\"pick\",\"args\":[2.0]},{\"sel\":\".row\",\"event\":\"pick\",\"args\":[\"2\"]}"; want 0 'clicks ok: 5' || return 1
+                     typed '{"sel":".row","event":"pick","args":[3]}'; want 1 'want pick\(3\)' || return 1
+                     typed '{"sel":".row","event":"pick","args":[]}'; want 1 'pick\(2\) \(want pick\(\)\)' || return 1   # a forgotten arg fails
+                     typed '{"sel":".x","event":"b","args":[false,2.5]}'; want 1 'b\(1,2.5\) \(want b\(0,2.5\)\)' || return 1
+                     typed '{"sel":".f","event":"f","args":[0.33]}'; want 1 'f\(0.333\) \(want f\(0.33\)\)'; }
+
 # the Open77 allow-list: what Open77 adds passes, a typo next to it does not
 open77='.row { fill: #FFFFFF; stroke: #000000; stroke-width: 2dp; filter: glow(2dp #FFFFFF 1); decorator: fx(border-flow 1 2); }'
 scoped() { printf 'body { width: 400dp; }\n%s\n' "$1" > "$fx/s.rcss"; sed 's/ui.rcss/s.rcss/' "$fx/ui.rml" > "$fx/s.rml"; rc "$fx/s.rml" "$fx/ok.json"; }
@@ -134,7 +146,7 @@ chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$
                       echo '[{"name":"one","model":{"title":"T","rows":[],"show":false}},{"name":"two","model":{"title":"T","rows":[],"show":false}}]' > "$fx/two.json"
                       rc "$fx/p.rml" "$fx/two.json"; want 1 "colr: red;'.*\[one, two\]"; }
 
-CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_exit_click
+CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_exit_click
         chk_property chk_allow_open77 chk_allow_scope chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
         chk_no_cases chk_cases_shape chk_exit_codes chk_emoji chk_name_inject chk_outline_path
@@ -155,8 +167,8 @@ mut() { mname+=("$1"); mold+=("$2"); mnew+=("$3"); mexp+=("$4"); }
 mut emoji_escaped    'ensure_ascii=False' 'ensure_ascii=True' "chk_emoji"
 mut load_failed_lost "elif line == 'LOAD FAILED':" "elif line == 'LOAD FAILED!':" "chk_load_failed"
 mut warnings_dropped 'if not any(p.search(msg) for p in allowed):' 'if False:' "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
-mut click_fail_lost  "fails += [f'{name}: {f}' for f in res['fails']]" 'pass' "chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_event_name chk_exit_click"
-mut click_exit_lost  'if bad or fails or loadfail:' 'if bad or loadfail:' "chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_exit_click"
+mut click_fail_lost  "fails += [f'{name}: {f}' for f in res['fails']]" 'pass' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_event_name chk_exit_click"
+mut click_exit_lost  'if bad or fails or loadfail:' 'if bad or loadfail:' "chk_arg_types chk_click_args chk_click_event chk_click_hidden chk_click_nothing chk_click_undeclared chk_exit_click"
 mut allow_everything "ALLOWED_BASE = [r'^No font face defined']" "ALLOWED_BASE = [r'']" "chk_allow_flag chk_allow_scope chk_binding chk_property chk_warn_each_case chk_warn_lines chk_forged_lines chk_event_name"
 mut allow_too_wide   "property declaration '(fill|stroke|stroke-width" "property declaration '([a-z]+|fill|stroke|stroke-width" "chk_allow_flag chk_allow_scope chk_property chk_warn_each_case"
 mut allow_filter_gone '\b(glow|chromatic|scanlines)\(' '\b(chromatic|scanlines)\(' "chk_allow_open77"
@@ -167,6 +179,11 @@ mut size_unchecked   "if 'size' in c and not" "if False and not" "chk_cases_shap
 mut name_unescaped   "name = esc(c['name'])" "name = c['name']" "chk_name_inject"
 mut crlf_unescaped   "{'r': '\\\\u000d', 'f': '\\\\u000c', 'b': '\\\\u0008'}.get(m.group(1), m.group())" 'm.group()' "chk_emoji"
 mut forged_lines_in  "        if r['warns']:" "        if False:" "chk_forged_lines chk_warn_lines"
+mut args_untyped     "args=[fmt_arg(x) for x in k.get('args', [])]" "args=k.get('args', [])" "chk_arg_types"
+mut args_bool_text   "return '1' if v else '0'" "return 'true' if v else 'false'" "chk_arg_types"
+mut args_two_places  "s = '%.3f' % v" "s = '%.2f' % v" "chk_arg_types"
+mut args_float_zeros "return s.rstrip('0').rstrip('.') if '.' in s else s" "return s" "chk_arg_types"
+mut click_undeclared_ok "if k['event'] not in events:" "if False:" "chk_click_undeclared"
 mut warn_lines_split "r['warns'][-1] += '\n' + line" 'pass' "chk_warn_lines"
 mut no_header_ok     "if not lines or lines[0] != f'=== case {idx}':" 'if False:' "chk_no_header"
 mut exit_is_1        'def die(msg, code=2):' 'def die(msg, code=1):' "chk_cases_shape chk_exit_codes chk_host_crash chk_model_none chk_no_cases chk_no_header"
@@ -191,7 +208,10 @@ if src.count(old) != 1:
 open(dst, 'w', encoding='utf-8').write(src.replace(old, new))
 os.chmod(dst, 0o755)
 EOF
-    RC="$tmp/mut/$name"; verbose=0; run_checks; RC="$kit/bin/rml-check"; verbose=1
+    # RML_CHECK_ALL=1 runs every check against every mutant and demands exactly the named ones red; the default
+    # runs only the named checks (they must all go red), which is much faster
+    all=("${CHECKS[@]}"); [ -n "${RML_CHECK_ALL:-}" ] || CHECKS=($expect)
+    RC="$tmp/mut/$name"; verbose=0; run_checks; RC="$kit/bin/rml-check"; verbose=1; CHECKS=("${all[@]}")
     # red ON ITS OWN: exactly the named checks fail, nothing else
     got=$(printf '%s\n' "${failed[@]}" | sort | tr '\n' ' '); want_set=$(printf '%s\n' $expect | sort | tr '\n' ' ')
     if [ "$got" != "$want_set" ]; then echo "FAIL: mutant $name: red in [${got}], expected [${want_set}]"; status=1

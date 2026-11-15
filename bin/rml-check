@@ -7,7 +7,7 @@ is reported for every case that sees it). Fails when:
   - RmlUi logs a warning or error that is not on the allowed list (unknown property, bad value, a binding to a model
     member that does not exist, an XML error, a data-for over a non-array, ...);
   - a click listed in the case does not call the model event it should (dispatched on the first VISIBLE element
-    the selector matches, with real RmlUi event handling);
+    the selector matches, with real RmlUi event handling), or names an event the case does not declare;
   - the document does not load, or there are no cases.
 Allowed by default: "No font face defined" (the check runs without fonts) and the properties Open77's NativeUI adds
 to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
@@ -18,8 +18,10 @@ to RmlUi (see ALLOWED_OPEN77 below). Add your own with --allow REGEX.
              a note says so when the document has several)
   --outline  where to write the element outline of every case (default: a fresh rml-check-*.outline.txt in the
              temp dir; its path is printed)
+Click args: JSON numbers and bools are compared as RmlUi prints them (`pick(2)`, `toggle(1)`, three decimals at most,
+trailing zeros cut), so `"args": [2]` and `"args": ["2"]` both want `pick(2)`.
 Environment: NUIKIT_HOST=/path/to/rmlhost uses that host binary instead of building one with scripts/build.sh.
-Exit status: 0 clean, 1 warnings or failed clicks, 2 usage, input or build problem.
+Exit status: 0 clean, 1 warnings, failed clicks, 2 usage, input or build problem.
 """
 import argparse, difflib, html, json, os, re, subprocess, sys, tempfile
 
@@ -94,6 +96,19 @@ def model_names(txt):
 
 # ---- the cases
 
+def fmt_arg(v):
+    """A click arg as RmlUi prints the Variant: ints as they are, bools 1/0, other numbers %.3f with the trailing
+    zeros cut (so `pick(2)`, `toggle(1)`, `scale(0.333)`); strings as they are."""
+    if isinstance(v, bool):
+        return '1' if v else '0'
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        s = '%.3f' % v
+        return s.rstrip('0').rstrip('.') if '.' in s else s
+    return v
+
+
 def validate(cases):
     if not isinstance(cases, list):
         die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
@@ -132,8 +147,10 @@ def validate(cases):
 
 def host_input(idx, c):
     """The one-case JSON the host reads. The case is renamed to its index (a name with a newline cannot forge host
-    output lines), and the text is plain UTF-8 instead of \\u escapes: the host never sees a surrogate pair."""
-    txt = json.dumps([dict(c, name=str(idx))], ensure_ascii=False)
+    output lines), click args become the text RmlUi prints for them, and the text is plain UTF-8 instead of \\u
+    escapes: the host never sees a surrogate pair."""
+    c = dict(c, name=str(idx), clicks=[dict(k, args=[fmt_arg(x) for x in k.get('args', [])]) for k in c.get('clicks', [])])
+    txt = json.dumps([c], ensure_ascii=False)
     # \r \f \b as \u00XX: the host's string reader knows \n \t \uXXXX only
     txt = re.sub(r'\\(.)', lambda m: {'r': '\\u000d', 'f': '\\u000c', 'b': '\\u0008'}.get(m.group(1), m.group()), txt)
     try:
@@ -224,6 +241,11 @@ def main():
     # stylesheet warning for the first case only
     for idx, c in enumerate(cases):
         name = esc(c['name'])
+        events = c.get('events', [])
+        for k in c.get('clicks', []):
+            if k['event'] not in events:
+                fails.append(f'{name}: {k["sel"]} -> the case\'s "events" do not list {k["event"]!r}')
+        c = dict(c, clicks=[k for k in c.get('clicks', []) if k['event'] in events])
         try:
             r = subprocess.run([host, 'check', a.doc, model or 'model'], input=host_input(idx, c), capture_output=True)
         except OSError as e:
