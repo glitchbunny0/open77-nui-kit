@@ -2,20 +2,33 @@
 """rml-preview: what an RmlUi document really looks like, without the game.
 
 Real RmlUi (the kit's host, `layout` mode) lays the document out for every case with the real glyph advances of your
-TTFs; this script paints the boxes, borders, gradients, image decorators, masks, backdrop blur, vector <path>s (fill
-and stroke read from the sheets, as vanilla RmlUi drops them) and text lines with Pillow over a backdrop.
+TTFs; this script paints the result with Pillow over a backdrop:
 
-It shows layout, sizes, wrapping, clipping and colours as the document gets them. It does NOT show Open77's additions
-(glow/chromatic/scanlines filters, fx(), <shape> paint, motion, <scene3d>), hover states or anti-aliasing exactly as the
-game draws them. A --hook module can paint those for your screen.
+- backgrounds (padding box) and borders, with border-radius (one radius for all corners unless the host gives four)
+- decorators, back to front, in their paint area (padding box unless `border-box`): linear-, radial-, conic-gradient
+  and their repeating forms (any angle, `to <side|corner>`, sizes, `at <position>`, stops in any RmlUi colour form;
+  stops blend with smoothstep like RmlUi's own GL3/DX11/DX12 renderers), horizontal-/vertical-gradient, and image()
+  with RmlUi's fit (default `fill`), orientation and alignment
+- mask-image (image or gradient) on the box's own paint; backdrop-filter blur inside the box and its clip
+- vector <path>s with every SVG command (curves and arcs flattened), fill and stroke read from the sheets (vanilla
+  RmlUi drops those properties)
+- text lines as RmlUi lays them out (text-transform already applied), in the face RmlUi would pick: same family and
+  style, nearest weight. Where RmlUi has no face (unknown family, italic without an italic face) it draws nothing,
+  and neither does the preview: the case line says NO FONT FACE.
+- clipping from the host's clip rectangle for every box and text run
+
+Not painted, and listed when the sheets use them: transform, box-shadow, filter, font-effect, text-decoration,
+text-overflow, image-color, z-index (paint order is document order), the <img> element, tiled-*/ninepatch/text/
+shader decorators, and Open77's additions (glow/chromatic/scanlines filters, fx(), <shape> paint, motion,
+<scene3d>). Hover states and the game's anti-aliasing are not shown either. A --hook module can paint what your
+screen needs.
 
   rml-preview DOC.rml CASES.json|- --font FAMILY=a.ttf,b.ttf [--font ...] [--model NAME] [--out DIR]
               [--bg IMAGE] [--root DIR] [--compare DIR] [--hook hook.py] [--sheet-crop X0,Y0,X1,Y1] [--strict]
 
   FAMILY      the font-family name your sheet uses; each TTF's weight and style are read from the font (OS/2
               usWeightClass and the italic flags, as RmlUi does). Two files with the same family, weight and style
-              are an error. Text RmlUi has no face for (unknown family, italic without an italic face) is not
-              painted, as in the game. The first file given labels the sheet.
+              are an error. The first file given labels the sheet.
   --root      where `image(/path)` resolves (default: the current directory); `image(rel/path)` resolves against
               the sheet that declares it, as in RmlUi
   --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview
@@ -33,6 +46,9 @@ KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # measured besides ASCII: Latin-1, general punctuation, currency, arrows, a few symbols
 EXTRA = list(range(0xA0, 0x180)) + list(range(0x2010, 0x2040)) + list(range(0x20A0, 0x20C0)) + \
     list(range(0x2190, 0x21A0)) + [0x3A3, 0x2122, 0x2212, 0x2022, 0x25B2, 0x25B6, 0x25BC, 0x25C0]
+# properties of vanilla RmlUi 6.3 this painter does not paint (listed per document when a sheet uses them)
+NOT_PAINTED = ('transform', 'perspective', 'box-shadow', 'filter', 'font-effect', 'text-decoration', 'text-overflow',
+               'image-color', 'z-index')
 
 
 def die(msg):
@@ -196,8 +212,8 @@ def split_top(s, sep=','):
     return [p.strip() for p in out if p.strip()]
 
 
-# ---- the sheets: fill/stroke for <path> (vanilla RmlUi drops these properties, so they are read from the RCSS)
-# and the declaring sheet of an image() (RmlUi resolves relative paths against it)
+# ---- the sheets: fill/stroke for <path> (vanilla RmlUi drops these properties, so they are read from the RCSS),
+# the declaring sheet of an image() (RmlUi resolves relative paths against it), and the properties not painted
 def resolve_ref(href, base, root):
     return os.path.join(root, href.lstrip('/')) if href.startswith('/') else os.path.join(base, href)
 
@@ -247,6 +263,25 @@ def sheet_rules(texts):
                 rules.append((spec, i, comps, paint))
     rules.sort(key=lambda r: (r[0], r[1]))
     return rules
+
+
+def not_painted(texts):
+    """{property: [selectors]} for the vanilla properties this painter does not paint (`none`/`auto` values skipped)"""
+    out = {}
+    for _, txt in texts:
+        txt = re.sub(r'/\*.*?\*/', '', txt, flags=re.S)
+        blocks = re.findall(r'([^{}]+)\{([^}]*)\}', txt) or [('style=""', txt)]
+        for sel, body in blocks:
+            for d in body.split(';'):
+                if ':' not in d:
+                    continue
+                k, v = (x.strip() for x in d.split(':', 1))
+                if k in NOT_PAINTED and v not in ('none', 'auto', '0', 'clip'):
+                    out.setdefault(k, [])
+                    s = ' '.join(sel.split())
+                    if s not in out[k]:
+                        out[k].append(s)
+    return out
 
 
 def node_of(s):
@@ -916,7 +951,6 @@ class Painter:
             self.fonts[k] = ImageFont.truetype(path, max(1, int(round(size))))
         return self.fonts[k]
 
-
     def image_path(self, ref, doc_dir):
         """RmlUi's JoinPath: '/x' from the root, 'x' from the sheet that declares it (else the document)"""
         if ref.startswith('/'):
@@ -1008,6 +1042,8 @@ class Painter:
                    (max(0, r[2] - br), max(0, r[2] - bb)), (max(0, r[3] - bl), max(0, r[3] - bb))]
         outer = rrect_mask(img.size, (X0, Y0, X1, Y1), outer_r)
         inner = rrect_mask(img.size, P, inner_r)
+        if e.get('tag') == 'img':
+            notes.add('NOT PAINTED <img> element' + (f" #{e['id']}" if e.get('id') else ''))
         back = e.get('backdrop') or ''
         if 'blur' in back and w > 4 and h > 4:
             m = re.search(r'blur\(\s*([\d.]+)', back)
@@ -1103,7 +1139,6 @@ class Painter:
         return img.convert('RGB')
 
 
-
 def model_name(doc):
     m = re.search(r'data-model\s*=\s*"([^"]+)"', open(doc, encoding='utf-8').read())
     return m.group(1) if m else 'model'
@@ -1190,6 +1225,10 @@ def main():
         die('layout failed:\n' + res.stderr.decode('utf-8', 'replace'))
     shots = json.loads(res.stdout.decode('utf-8', 'replace'))
     texts = sheet_texts(a.doc, a.root)
+    unp = not_painted(texts)
+    if unp:
+        print('not painted (see rml-preview --help):', '; '.join(f'{k} ({", ".join(v[:4])}{", ..." if len(v) > 4 else ""})'
+                                                           for k, v in sorted(unp.items())))
     painter = Painter(faces, a.root, texts, sheet_rules(texts), hook)
     names, sizes, bad = [], [], False
     for c, s, fn in zip(cases, shots, files):
