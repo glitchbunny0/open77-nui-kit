@@ -1,11 +1,11 @@
 -- fake_nui.lua: a fake Open77.ui and a coroutine scheduler, so a NativeUI screen's client Lua runs offline (plain
 -- lua5.4) and produces the models rml-check / rml-preview need. It records every document call, stores merged model
--- tables BY REFERENCE (a copy would be counted against the instruction budget it measures), runs CreateThread / Wait
--- as coroutines on 16 ms frames, and counts the Lua instructions of every resume and every direct call (F.maxInstr,
--- F.maxWhere: a client resume gets roughly 10k before the game complains).
+-- tables BY REFERENCE (a copy would be counted against the instruction budget it measures), runs CreateThread / Wait /
+-- SetTimeout as coroutines on 16 ms frames, and counts the Lua instructions of every resume and every direct call
+-- (F.maxInstr, F.maxWhere; F.budget = 1,500,000 per resume, what Open77 documents, 500,000 on older clients).
 -- Load: local F = dofile("<kit>/fake-nui/fake_nui.lua"); F.install()      Example: examples/side-menu/models.lua
 local F = { docs = {}, threads = {}, now = 0, maxInstr = 0, maxWhere = "", fonts = {}, refuse = nil, focusResult = true,
-    focusWhy = nil, logs = {}, quiet = false }
+    focusWhy = nil, logs = {}, quiet = false, budget = 1500000 }
 local FRAME = 16
 local wake = {}
 
@@ -16,18 +16,33 @@ local function exists(path)
 end
 F.exists = exists
 
--- instructions of one piece of work, counted in steps of 10 on the running coroutine (or the main thread)
+-- Instructions of one piece of work, counted on the running coroutine (or the main thread) in steps of STEP. The count
+-- hook is a Lua function whose own instructions eat into the next interval, so a small step overcounts (10 gave +60%);
+-- STEP = 1000 keeps that near 1%. Open77 documents 1,500,000 instructions per coroutine resume (500,000 on older
+-- clients) and raises "Open77 script execution budget exceeded" past it; F.budget is that limit (nil switches it off),
+-- F.maxInstr / F.maxWhere the worst piece seen.
+local STEP = 1000
 local function counted(where, co, fn, ...)
     local n = 0
-    local hook = function() n = n + 10 end
-    if co then debug.sethook(co, hook, "", 10) else debug.sethook(hook, "", 10) end
-    local res = table.pack(fn(...))
-    if co then debug.sethook(co) else debug.sethook() end
+    local limit = F.budget
+    local hook = function()
+        n = n + STEP
+        if limit and n > limit then error("Open77 script execution budget exceeded", 0) end
+    end
+    local oldHook, oldMask, oldCount
+    if not co then oldHook, oldMask, oldCount = debug.gethook() end
+    if co then debug.sethook(co, hook, "", STEP) else debug.sethook(hook, "", STEP) end
+    local res = table.pack(pcall(fn, ...))
+    if co then debug.sethook(co) else debug.sethook(oldHook, oldMask, oldCount) end   -- also after an error
     if n > F.maxInstr then F.maxInstr, F.maxWhere = n, where end
-    return table.unpack(res, 1, res.n)
+    if not res[1] then error(res[2], 0) end
+    return table.unpack(res, 2, res.n)
 end
 F.counted = counted
 
+-- Open77 starts a task on the NEXT scheduler pass (there is no CreateThreadNow), and wakes the waiting ones in order of
+-- their wake time, then of their creation. Every task is one coroutine; F.frames(n) is n passes of 16 ms.
+local seq = 0
 local function resume(co, where)
     local ok, err = counted(where or "thread", co, coroutine.resume, co)
     if not ok then error(debug.traceback(co, tostring(err)), 0) end
@@ -36,13 +51,33 @@ end
 function F.install()
     CreateThread = function(fn)
         local co = coroutine.create(fn)
+        seq = seq + 1
         F.threads[#F.threads + 1] = co
-        wake[co] = F.now
-        resume(co, "thread start")
+        wake[co] = { at = F.now, seq = seq }
+        return co
     end
-    Wait = function(ms) wake[coroutine.running()] = F.now + math.max(0, ms or 0); coroutine.yield() end
+    Wait = function(ms)
+        seq = seq + 1
+        wake[coroutine.running()] = { at = F.now + math.max(0, ms or 0), seq = seq }
+        coroutine.yield()
+    end
+    local timers, timerId = {}, 0
+    SetTimeout = function(ms, fn)
+        timerId = timerId + 1
+        local id = timerId
+        timers[id] = true
+        CreateThread(function() Wait(ms); if timers[id] then timers[id] = nil; fn() end end)
+        return id
+    end
+    ClearTimeout = function(id) local had = timers[id] == true; timers[id] = nil; return had end
     GetGameTimer = function() return F.now end
-    print = function(s) F.logs[#F.logs + 1] = tostring(s); if not F.quiet and os.getenv("FAKE_NUI_LOG") then io.stderr:write(tostring(s), "\n") end end
+    print = function(...)
+        local t = table.pack(...)
+        for i = 1, t.n do t[i] = tostring(t[i]) end
+        local line = table.concat(t, "\t", 1, t.n)
+        F.logs[#F.logs + 1] = line
+        if not F.quiet and os.getenv("FAKE_NUI_LOG") then io.stderr:write(line, "\n") end
+    end
     Open77 = Open77 or {}
     Open77.ui = {
         create = function(opts)
@@ -110,12 +145,20 @@ end
 function F.key(d, key) counted("keydown", nil, d.dom.keydown, { key = key, type = "keydown" }) end
 function F.docError(d, kind, msg) d.ev.error(kind, { message = msg }) end
 
--- run the scheduler for n frames (default: until nothing is waiting on a frame, at most 400)
+-- run the scheduler for n passes (default 1) of 16 ms: the tasks whose wake time has come, earliest first; a task
+-- created during a pass starts on the next one
 function F.frames(n)
     for _ = 1, n or 1 do
         F.now = F.now + FRAME
-        for _, co in ipairs(F.threads) do
-            if coroutine.status(co) == "suspended" and (wake[co] or 0) <= F.now then resume(co) end
+        local due = {}
+        for i = 1, #F.threads do
+            local co = F.threads[i]
+            local w = wake[co]
+            if coroutine.status(co) == "suspended" and w.at <= F.now then due[#due + 1] = { co = co, w = w } end
+        end
+        table.sort(due, function(x, y) if x.w.at ~= y.w.at then return x.w.at < y.w.at end return x.w.seq < y.w.seq end)
+        for _, d in ipairs(due) do
+            if coroutine.status(d.co) == "suspended" and wake[d.co] == d.w then resume(d.co) end
         end
     end
 end
