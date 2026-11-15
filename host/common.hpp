@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -371,6 +372,77 @@ public:
 	}
 };
 class NullFont : public FontEngineInterface {};
+
+// ---- a font engine with real advances (layout mode): bin/rml-preview measures the TTFs at 1000 units into fonts.json
+// { "<family>|<weight>": { "ascent", "descent", "adv": { "<codepoint>": width }, "def": width } }
+// Check mode runs it with one stand-in face for every family (every glyph half an em wide), so text gives its boxes a
+// size and a click can hit-test them as in the game.
+struct Face { std::string key; float ascent = 930, descent = 346, def = 500; std::map<unsigned, float> adv; };
+static std::vector<Face> faces;
+struct Handle { int face; int size; FontMetrics m; };
+static std::vector<Handle> handles;
+static bool standIn = false;
+static int faceFor(const std::string& family, int weight) {
+	if (standIn) return 0;
+	std::string want = family + "|" + std::to_string(weight);
+	for (size_t i = 0; i < faces.size(); i++) if (faces[i].key == want) return (int)i;
+	for (size_t i = 0; i < faces.size(); i++) if (faces[i].key.rfind(family + "|", 0) == 0) return (int)i;
+	return 0;
+}
+static std::vector<unsigned> utf8(StringView s) {
+	std::vector<unsigned> out;
+	const unsigned char* p = (const unsigned char*)s.begin();
+	const unsigned char* e = (const unsigned char*)s.end();
+	while (p < e) {
+		unsigned c = *p++;
+		if (c >= 0xF0 && p + 2 < e) { c = ((c & 7) << 18) | ((p[0] & 63) << 12) | ((p[1] & 63) << 6) | (p[2] & 63); p += 3; }
+		else if (c >= 0xE0 && p + 1 < e) { c = ((c & 15) << 12) | ((p[0] & 63) << 6) | (p[1] & 63); p += 2; }
+		else if (c >= 0xC0 && p < e) { c = ((c & 31) << 6) | (p[0] & 63); p += 1; }
+		out.push_back(c);
+	}
+	return out;
+}
+class MeasureFont : public FontEngineInterface {
+public:
+	FontFaceHandle GetFontFaceHandle(const String& family, Style::FontStyle, Style::FontWeight weight, int size) override {
+		int w = (int)weight; if (w == 0) w = 400;
+		int f = faceFor(family, w);
+		Handle h{f, size, {}};
+		h.m.size = size;
+		h.m.ascent = faces[f].ascent * size / 1000.f;
+		h.m.descent = faces[f].descent * size / 1000.f;
+		h.m.line_spacing = h.m.ascent + h.m.descent;
+		h.m.x_height = 0.5f * size;
+		h.m.underline_position = 0.1f * size; h.m.underline_thickness = 1;
+		h.m.has_ellipsis = false;
+		handles.push_back(h);
+		return (FontFaceHandle)handles.size();
+	}
+	FontEffectsHandle PrepareFontEffects(FontFaceHandle, const FontEffectList&) override { return 0; }
+	const FontMetrics& GetFontMetrics(FontFaceHandle h) override { return handles[h - 1].m; }
+	int GetStringWidth(FontFaceHandle h, StringView s, const TextShapingContext& ctx, Character) override {
+		Handle& hd = handles[h - 1];
+		Face& f = faces[hd.face];
+		float w = 0;
+		auto cps = utf8(s);
+		for (unsigned c : cps) { auto it = f.adv.find(c); w += (it != f.adv.end() ? it->second : f.def) * hd.size / 1000.f; }
+		w += ctx.letter_spacing * cps.size();
+		return (int)(w + 0.5f);
+	}
+	int GenerateString(RenderManager&, FontFaceHandle h, FontEffectsHandle, StringView s, Vector2f, ColourbPremultiplied, float, const TextShapingContext& ctx, TexturedMeshList&) override {
+		return GetStringWidth(h, s, ctx, Character::Null);
+	}
+	int GetVersion(FontFaceHandle) override { return 1; }
+};
+
+// tag#id.class1.class2 of an element, as the outline and the click lines name it
+static std::string label(Element* e) {
+	std::string s = e->GetTagName();
+	if (!e->GetId().empty()) s += "#" + e->GetId();
+	std::string c = e->GetClassNames();
+	if (!c.empty()) { for (auto& ch : c) if (ch == ' ') ch = '.'; s += "." + c; }
+	return s;
+}
 
 // ---- a case's models: "model" binds under the name given on the command line, "models" adds more by name
 static void bindModels(Context* context, J& c, const std::string& defName,

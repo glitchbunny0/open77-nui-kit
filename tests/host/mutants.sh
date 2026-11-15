@@ -62,3 +62,19 @@ mutant host host/common.hpp "input: click args that are not scalars are an error
     'if (a.t == J::Arr || a.t == J::Obj || a.t == J::Null) badInput' 'if (false) badInput'
 mutant host host/mode_check.inc "click: an event an ancestor also fires makes the click fail" \
     'bool ok = fired.size() == 1 && fired[0] == want;' 'bool ok = !fired.empty() && fired[0] == want;'
+mutant host host/mode_check.inc "click: a press on a child of the target reaches the target" \
+    'while (up && up != el) up = up->GetParentNode();' 'if (up != el) up = nullptr;'
+mutant host host/mode_check.inc "click: an element with pointer-events none is not hit" \
+    'context->ProcessMouseMove(x, y, 0);
+						Element* hit = context->GetHoverElement();' 'context->ProcessMouseMove(x, y, 0);
+						Element* hit = el;'
+mutant host host/mode_check.inc "click: an element under an overlay is not hit" \
+    'Element* hit = context->GetHoverElement();' 'Element* hit = context->GetElementAtPoint(Vector2f((float)x, (float)y), nullptr, el);'
+mutant host host/mode_check.inc "click: a zero-size element is not hit" \
+    'if (sz.x <= 0 || sz.y <= 0)' 'if (sz.x < 0 || sz.y < 0)'
+mutant host host/mode_check.inc "click: an element outside the context is not hit" \
+    'x >= dim.x || y >= dim.y' 'false'
+mutant host host/mode_check.inc "click: a box sized by its text alone can be clicked" \
+    'NullRender render; Sys sys; MeasureFont font;' 'NullRender render; Sys sys; NullFont font;'
+mutant host host/mode_check.inc "click: events the pointer calls on its way there are not the click" \
+    'fired.clear();   // what moving there' '// what moving there'

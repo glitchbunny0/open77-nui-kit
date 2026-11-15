@@ -204,6 +204,7 @@ def _():
 
 # ---- clicks
 def clicks(body, model, events, clicks, rcss='', name='clicks'):
+    rcss = 'div { display: block; width: 100dp; height: 20dp; } ' + rcss
     r = host('check', doc(name, body, rcss), 'm', cases=[{'name': 'c', 'model': model, 'events': events, 'clicks': clicks}])
     expect(r.rc == 0, f'rc {r.rc}: {r.err[:300]}')
     return [l for l in r.out.splitlines() if l.startswith('CLICK')]
@@ -229,6 +230,59 @@ def _():
     got = clicks(body, {}, ['pick', 'buy'], [{'sel': '#buy', 'event': 'buy', 'args': [2]},
                                              {'sel': '#buy', 'event': 'pick', 'args': [1]}])
     expect(len(got) == 2 and all(l.startswith('CLICK FAIL #buy -> buy(2), then pick(1)') for l in got), f'{got}')
+
+
+HIT_RCSS = ('body { width: 100%; height: 100%; } div { display: block; width: 100dp; height: 20dp; }'
+            '#cover { position: absolute; left: 0; top: 180dp; width: 400dp; height: 100dp; z-index: 10; }')
+
+
+def hit(body, sel, rcss=''):
+    got = clicks(body + '<div id="cover"></div>', {}, ['go'], [{'sel': sel, 'event': 'go', 'args': [1]}],
+                 HIT_RCSS + rcss, name='hit')
+    expect(len(got) == 1, f'{got}')
+    return got[0]
+
+
+@check('click: a press on a child of the target reaches the target')
+def _():
+    got = hit('<div id="t" data-event-click="go(1)"><div id="c">x</div></div>', '#t')
+    expect(got == 'CLICK ok   #t -> go(1) (want go(1))', got)
+
+
+@check('click: an element with pointer-events none is not hit')
+def _():
+    got = hit('<div id="t" data-event-click="go(1)">x</div>', '#t', '#t { pointer-events: none; }')
+    expect(got == 'CLICK FAIL #t -> covered by body at 50,10 (want go(1))', got)
+
+
+@check('click: an element under an overlay is not hit')
+def _():
+    got = hit('<div id="t" data-event-click="go(1)" style="position: absolute; top: 200dp;">x</div>', '#t')
+    expect(got == 'CLICK FAIL #t -> covered by div#cover at 50,210 (want go(1))', got)
+
+
+@check('click: a zero-size element is not hit')
+def _():
+    got = hit('<div id="t" data-event-click="go(1)"></div>', '#t', '#t { width: 0; }')
+    expect(got.startswith('CLICK FAIL #t -> zero-size box (0x20)'), got)
+
+
+@check('click: an element outside the context is not hit')
+def _():
+    got = hit('<div id="t" data-event-click="go(1)" style="position: absolute; left: 3000dp;">x</div>', '#t')
+    expect(got.startswith('CLICK FAIL #t -> off screen at 3050,'), got)
+
+
+@check('click: events the pointer calls on its way there are not the click')
+def _():
+    got = hit('<div id="t" data-event-mouseover="go(0)" data-event-click="go(1)">x</div>', '#t')
+    expect(got == 'CLICK ok   #t -> go(1) (want go(1))', got)
+
+
+@check('click: a box sized by its text alone can be clicked')
+def _():
+    got = hit('<p id="t" data-event-click="go(1)" style="display: inline-block;">BUY</p>', '#t', 'p { width: auto; }')
+    expect(got == 'CLICK ok   #t -> go(1) (want go(1))', got)
 
 
 def main():

@@ -1,8 +1,11 @@
 namespace check {
-// check: load the document (its stylesheets too) with the case's data models, print the warnings and an outline of the
-// element tree (tag#id.classes, [none] for display: none, @x,y WxH, inline style, text nodes). Each click is
-// dispatched on the first VISIBLE element the selector matches; the model event it must call (name + arguments as text) is
-// compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
+// check: load the document (its stylesheets too) with the case's data models and a stand-in font (every family, each
+// glyph half an em), print the warnings and an outline of the element tree (tag#id.classes, [none] for display: none, @x,y WxH, inline style, text nodes). Each click is
+// dispatched as the player's mouse would: on the first VISIBLE element the selector matches, the pointer moves to its
+// centre and presses there. When something else is under the pointer (pointer-events: none on the element, an
+// overlay on top) the line says "covered by <that element> at x,y"; a box with no width or height says "zero-size box",
+// one whose centre is outside the context "off screen". The model event the click must call
+// (name + arguments) is compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
 // (a JSON 2 and the markup's pick(2) both print 2, true prints 1). A click that bubbles into an ancestor's
 // data-event-click calls that event too, as in the game: the click passes only when the wanted event is the one call.
 static std::string collapse(const std::string& s) {
@@ -34,7 +37,9 @@ static void outline(Element* el, int depth, bool hiddenParent) {
 static std::vector<std::string> fired;
 int run(const std::string& docPath, const std::string& modelName) {
 	J cases = readCases(Mode::Check);
-	NullRender render; Sys sys; NullFont font;
+	faces = {Face{"stand-in", 800, 200, 500, {}}};
+	standIn = true;
+	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
 	Initialise();
 	int n = 0;
@@ -71,9 +76,35 @@ int run(const std::string& docPath, const std::string& modelName) {
 					Element* el = nullptr;
 					for (Element* e : list) if (e->IsVisible(true)) { el = e; break; }
 					fired.clear();
-					if (el) { el->Click(); context->Update(); }
+					std::string got;
+					if (el) {
+						// the player's pointer at the element's centre: what is under it there gets the click
+						// (pointer-events: none, a zero-size box and an overlay on top all keep it from the target)
+						Vector2f off = el->GetAbsoluteOffset(BoxArea::Border);
+						Vector2f sz = el->GetBox().GetSize(BoxArea::Border);
+						int x = (int)std::floor(off.x + sz.x / 2), y = (int)std::floor(off.y + sz.y / 2);
+						std::string at = " at " + std::to_string(x) + "," + std::to_string(y);
+						Vector2i dim = context->GetDimensions();
+						context->ProcessMouseMove(x, y, 0);
+						Element* hit = context->GetHoverElement();
+						Element* up = hit;
+						while (up && up != el) up = up->GetParentNode();
+						if (sz.x <= 0 || sz.y <= 0)
+							got = "zero-size box (" + std::to_string((int)sz.x) + "x" + std::to_string((int)sz.y) + ")" + at;
+						else if (x < 0 || y < 0 || x >= dim.x || y >= dim.y)
+							got = "off screen" + at;
+						else if (!up) {
+							got = "covered by " + (hit && hit != context->GetRootElement() ? label(hit) : std::string("nothing")) + at;
+						}
+						else {
+							fired.clear();   // what moving there called (mouseover, ...) is not the click's
+							context->ProcessMouseButtonDown(0, 0);
+							context->ProcessMouseButtonUp(0, 0);
+							context->Update();
+						}
+					}
 					// every event the click calls, in dispatch order: the target's first, then each ancestor's as it bubbles
-					std::string got = fired.empty() ? std::string(el ? "nothing" : "no element") : fired[0];
+					if (got.empty()) got = fired.empty() ? std::string(el ? "nothing" : "no element") : fired[0];
 					for (size_t i = 1; i < fired.size(); i++) got += ", then " + fired[i];
 					bool ok = fired.size() == 1 && fired[0] == want;
 					std::cout << (ok ? "CLICK ok   " : "CLICK FAIL ") << k.get("sel")->s << " -> " << got << " (want " << want << ")\n";
