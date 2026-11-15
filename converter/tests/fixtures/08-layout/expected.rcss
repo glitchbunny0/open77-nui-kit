@@ -1,0 +1,14 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+
+#badge { display: flex; flex-direction: row; justify-content: center; align-items: center; width: 30dp; height: 30dp; }
+#grid { gap: 4dp; }
+#flow { display: flex; align-items: flex-start; justify-content: flex-end; gap: 0 8dp; flex-flow: row wrap; }
+#flow div { flex: 1 1 auto; }
+#dot { width: 10dp; height: 10dp; border-radius: 5dp; border: 1dp #fff; }
+#misc { position: relative; inset: 0 auto auto 0; overflow: hidden; }
+#misc { margin-left: 4dp; margin-right: 8dp; padding-top: 2dp; padding-bottom: 2dp; }
+#misc { border-width: 0; border-bottom: 1dp #fff; visibility: hidden; }
+#misc { float: left; z-index: 3; }

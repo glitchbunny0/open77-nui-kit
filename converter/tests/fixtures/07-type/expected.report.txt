@@ -1,0 +1,9 @@
+font     t.css:1  @font-face Rajdhani 400  =>  in the client before creating the document: Open77.ui.loadFont("fonts/Rajdhani-Regular.ttf", "rajdhani"); (file not found: fonts/Rajdhani-Regular.ttf); the path is from the page's folder: write it from your resource's root (or convert with --root)
+font     t.css:2  @font-face Orbitron 400 900  =>  in the client before creating the document: Open77.ui.loadFont("fonts/Orbitron.woff2", "orbitron"); convert it to TTF first (NativeUI loads TTF/OTF); (file not found: fonts/Orbitron.woff2); a variable font (400 900): NativeUI loads its default instance; check the weights; the path is from the page's folder: write it from your resource's root (or convert with --root)
+css      t.css:3  font-family fallbacks Helvetica Neue  =>  RmlUi takes one family: kept Rajdhani (load it with Open77.ui.loadFont)
+css      t.css:5  white-space: break-spaces  =>  written as pre-wrap
+css      t.css:6  font-family: monospace  =>  RmlUi has no generic families: load a font with Open77.ui.loadFont(path, family) and name that family here
+css      t.css:6  font-weight: bolder  =>  write the weight number
+css      t.css:6  text-decoration: underline dotted #FF0000  =>  RmlUi takes one line keyword: kept underline
+css      t.css:7  word-spacing: 2dp  =>  RmlUi has no word-spacing
+css      t.css:7  font-variant: small-caps  =>  nothing to do

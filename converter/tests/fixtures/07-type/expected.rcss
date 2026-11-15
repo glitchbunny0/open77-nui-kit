@@ -1,0 +1,12 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+
+body { font-family: Rajdhani; }
+#a { font-style: italic; font-weight: 600; font-size: 18dp; line-height: 1.4; font-family: Rajdhani;
+    letter-spacing: 0.9dp; text-transform: uppercase; }
+#b { font-style: normal; font-weight: 400; line-height: 1.2; font-family: Orbitron; font-size: 13dp;
+    text-align: left; white-space: pre-wrap; }
+#c { text-decoration: underline; word-break: break-word; }
+#d { font-effect: shadow(1dp 1dp #000), glow(0dp 3dp 0dp 0dp #000000CC); }

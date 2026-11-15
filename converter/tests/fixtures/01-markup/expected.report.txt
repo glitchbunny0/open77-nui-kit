@@ -1,0 +1,14 @@
+markup   index.html:22  <div> inside an open <p>: the browser closes the <p> first (and so does this tree)  =>  close the <p> yourself; use <div>
+markup   index.html:6  <meta author>  =>  dropped
+markup   index.html:9  <link rel="icon">  =>  dropped
+markup   index.html:24  attribute alt on <img>  =>  dropped
+markup   index.html:25  <input type="number">  =>  RmlUi inputs are text, password, checkbox, radio, range, submit, button: written as text
+markup   index.html:27  <button onclick="go()">  =>  inline handler dropped: use data-event-click="..." and answer it in the client
+markup   index.html:27  attribute title on <button>  =>  RmlUi shows no tooltips: dropped
+markup   index.html:27  attribute aria-label on <button>  =>  RmlUi has no accessibility tree: dropped
+markup   index.html:27  attribute role on <button>  =>  RmlUi has no accessibility tree: dropped
+markup   index.html:28  <a href="https://example.org">  =>  RmlUi has no links: answer a data-event-click in the client
+markup   index.html:29  <canvas>  =>  RmlUi has no <canvas>: written as a <div> with the same id/class (draw it another way)
+markup   index.html:30  <x-widget>  =>  unknown element: kept as <x-widget>, styled by the sheet only
+script   index.html:34  inline <script>  =>  dropped: a script cannot run in NativeUI. Port its logic to the client Lua (it touches ids #note; selectors .panel .row; classes .on; the hidden attribute; the DOM (textContent): turn those into bindings or ui:set/ui:style calls)
+script   index.html:39  <script src="lrbind.js">  =>  nothing to do: RmlUi runs the data bindings natively; the client creates the models (LrBind.create or Open77.ui.create)

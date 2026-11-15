@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The kit's own tests: lrbind (parity with real RmlUi, page protocol, Lua facade), fake-nui, the example screen through
-# rml-check, a mutation the check must catch, and an rml-preview smoke run (when Pillow is there).
+# The kit's own tests: lrbind (parity with real RmlUi, page protocol, Lua facade), html2rml (RmlUi facts, fixtures),
+# fake-nui, the example screen through rml-check, a mutation the check must catch, and an rml-preview smoke run (when
+# Pillow is there).
 set -euo pipefail
 kit="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$kit"
@@ -10,6 +11,10 @@ step() { echo "== $1"; }
 step "lrbind parity";   bin/lrbind-parity || fail=1
 step "lrbind protocol"; node lrbind/tests/protocol.test.mjs | tail -1 || fail=1
 step "lrbind lua";      (cd lrbind && lua5.4 tests/lrbind_lua.lua | tail -1) || fail=1
+step "html2rml: the RmlUi facts it relies on"; python3 converter/tests/facts.py || fail=1
+step "html2rml: property table";  python3 converter/tests/test_spec.py || fail=1
+step "html2rml: fixtures (snapshot + rml-check)"
+if out=$(python3 converter/tests/run.py 2>&1); then echo "$out" | tail -1; else echo "$out"; fail=1; fi
 step "example: cases from the client Lua"
 (cd examples/side-menu && lua5.4 models.lua > "${TMPDIR:-/tmp}/nuikit-cases.json") || fail=1
 step "example: rml-check"

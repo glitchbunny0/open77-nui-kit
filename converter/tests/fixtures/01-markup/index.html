@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<meta name="author" content="someone">
+<title>Markup &amp; structure</title>
+<link rel="stylesheet" href="a.css">
+<link rel="icon" href="favicon.png">
+<style>
+  .row { display: flex; }
+  #note[hidden] { display: none; }
+</style>
+</head>
+<!-- a comment before the body -->
+<body data-model="m">
+<div id="root" class="panel">
+  <div class="row">Bare text in a flex box <b>bold</b> tail</div>
+  <div class="row"><span>already wrapped</span></div>
+  <p>A paragraph<br>with a break &amp; an entity &lt;tag&gt;&nbsp;nbsp</p>
+  <p>Unclosed paragraph
+  <div id="note" hidden>hidden note</div>
+  <div class="if" data-if="a &amp;&amp; b" data-class-on="n &gt; 2" data-event-click="go('x', n)">{{ a ? 'yes' : 'no' }}</div>
+  <img src="assets/dot.png" alt="a dot" width="8" height="8">
+  <input type="number" value="3" placeholder="n">
+  <input type="checkbox" checked>
+  <button onclick="go()" title="Go" aria-label="go" role="button">Go</button>
+  <a href="https://example.org">a link</a>
+  <canvas id="chart" width="100" height="50"></canvas>
+  <x-widget class="w">custom</x-widget>
+  <ul><li>one<li>two</ul>
+  <h1>Head</h1><small>small</small>
+</div>
+<script>
+  const el = document.getElementById("note");
+  document.querySelector(".panel .row").classList.toggle("on", true);
+  el.hidden = false; el.textContent = "x";
+</script>
+<script src="lrbind.js"></script>
+</body>
+</html>

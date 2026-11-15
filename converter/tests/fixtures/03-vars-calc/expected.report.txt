@@ -1,0 +1,4 @@
+css      v.css:13  width: var(--nope): var(--nope) has no value here and no fallback  =>  define it in :root (static value) or write the value; if a script sets it, the client must set the resulting property instead
+css      v.css:14  height: calc(100% - 20px): calc() mixes % and dp  =>  RmlUi has no calc(): pick the value for the design canvas (or set it from the client with ui:style)
+css      v.css:16  left: calc(var(--u) * var(--u)): calc() multiplies two lengths  =>  write the value
+css      v.css:20  var(--c) is also set under .dark, which this converter cannot re-state for this rule  =>  RmlUi has no custom properties: the value for the page as written is used; re-state the affected declarations under those selectors

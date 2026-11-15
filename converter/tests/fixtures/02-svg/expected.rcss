@@ -1,0 +1,12 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+path { display: inline-block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+path.svg-1 { width: 24dp; height: 24dp; fill: transparent; stroke: #5EF6FF; stroke-width: 2dp; }
+path.svg-2 { width: 20dp; height: 20dp; fill: #FF6159; }
+path.svg-3 { width: 10dp; height: 10dp; }
+div.svg-4 { display: inline-block; width: 30dp; height: 10dp; }
+
+.ic { margin: 4dp; }
+path.cur { stroke-width: 3dp; }

@@ -1,0 +1,23 @@
+:root {
+  --u: 0.5px;
+  --gap: calc(10 * var(--u));
+  --accent: #5EF6FF;
+  --accent-soft: var(--accent);
+  --w: 200px;
+}
+.box { --h: 30px; width: var(--w); height: var(--h); margin: var(--gap) calc(var(--gap) * 2); }
+.box.wide { --w: 300px; }
+#b { width: var(--w); }
+#b i { width: calc(var(--h) / -2); height: min(10px, 2 * var(--u), 20px); left: clamp(1px, 5px, 3px); }
+#c { color: var(--accent-soft); background: var(--missing, rgba(0, 0, 0, .5)); }
+#c { width: var(--nope); }
+#c { height: calc(100% - 20px); }
+#c { top: calc((2px + 4px) * 3); }
+#c { left: calc(var(--u) * var(--u)); }
+#mark { --c: #5EF6FF; --len: 9px; }
+#mark.kill { --c: #FF7167; --len: 14px; }
+.dark { --c: #000000; }
+#mark i { width: var(--len); left: calc(var(--len) / -2); background: var(--c); }
+.btn { --edge: 1px; }
+.btn.on { --edge: 3px; }
+.btn span { border-bottom: var(--edge) solid #fff; }

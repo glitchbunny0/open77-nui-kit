@@ -1,0 +1,12 @@
+css      r.css:3  @import "missing.css" could not be read  =>  copy its rules in
+css      r.css:9  @media (max-width: 800px) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
+css      r.css:11  @media (prefers-color-scheme: dark): (prefers-color-scheme = dark) taken as false (no colour scheme in the game)  =>  write the rules for the design canvas
+css      r.css:11  @media (prefers-color-scheme: dark) does not apply to the 1920x1080 canvas: 1 rules left out  =>  nothing to do, or convert with --canvas
+css      r.css:12  @supports (display: grid)  =>  RmlUi has no @supports: write the rules that apply
+css      r.css:13  @layer (cascade layers)  =>  RmlUi has no layers: its rules are kept in source order; check overrides
+css      r.css:14  @page  =>  RmlUi has no @page: dropped
+css      print.css:1  stylesheet for media print  =>  not for the canvas: left out
+selector r.css:17  #a span:not(.y, .z): :not(.y, .z) with a list or a combinator  =>  RmlUi's :not() takes one compound selector: chain :not(.a):not(.b)
+selector r.css:18  #a::before: pseudo-element ::before  =>  RmlUi has no generated content: put a real element in the markup (an empty <div class="..."/>) and style that
+selector r.css:19  #a span:is(.y): :is()  =>  RmlUi has no :is(): write each alternative as its own selector
+selector r.css:20  #a:focus-within: :focus-within  =>  RmlUi 6.3 never sets this pseudo-class (it knows active, checked, disabled, drag, focus, focus-visible, hover, placeholder-shown, selected and the structural ones): toggle a class from the client instead

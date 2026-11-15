@@ -1,0 +1,9 @@
+#badge { display: grid; place-items: center; width: 30px; height: 30px; }
+#grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+#flow { display: flex; align-items: start; justify-content: end; gap: normal 8px; flex-flow: row wrap; }
+#flow div { flex: auto; order: 2; }
+#dot { width: 10px; height: 10px; border-radius: 50%; border: 1px dashed #fff; }
+#misc { position: sticky; inset: 0 auto auto 0; overflow: clip; display: contents; width: fit-content; }
+#misc { margin-inline: 4px 8px; padding-block: 2px; border-radius: 20%; outline: 1px solid red; outline: none; }
+#misc { border: none; border-bottom: thin solid #fff; border-style: solid; visibility: collapse; }
+#misc { aspect-ratio: 1; object-fit: cover; float: left; z-index: 3; justify-items: center; }

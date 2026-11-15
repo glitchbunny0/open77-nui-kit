@@ -1,0 +1,16 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+i { font-style: italic; }
+
+.box { width: 200dp; height: 30dp; margin: 5dp 10dp; }
+.box.wide { width: 300dp; }
+#b { width: 300dp; }
+#b i { width: -15dp; height: 1dp; left: 3dp; }
+#c { color: #5EF6FF; background-color: #00000080; }
+#c { top: 18dp; }
+#mark i { width: 9dp; left: -4.5dp; background-color: #5EF6FF; }
+#mark.kill i { width: 14dp; left: -7dp; background-color: #FF7167; }
+.btn span { border-bottom: 1dp #fff; }
+.btn.on span { border-bottom: 3dp #fff; }

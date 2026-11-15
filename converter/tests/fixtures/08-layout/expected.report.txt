@@ -1,0 +1,12 @@
+css      l.css:2  grid-template-columns: 1fr 1fr  =>  RmlUi has no grid: use flex rows/columns with widths
+css      l.css:2  display: grid  =>  RmlUi has no grid: use flex rows/columns with widths (only a single centred child - place-items: center - is converted)
+css      l.css:4  order: 2  =>  reorder the elements in the markup
+css      l.css:5  border style dashed  =>  RmlUi draws solid borders only: written solid
+css      l.css:6  position: sticky  =>  RmlUi has no sticky positioning: written as relative
+css      l.css:6  display: contents  =>  RmlUi has no contents boxes: move the children up in the markup
+css      l.css:6  width: fit-content  =>  RmlUi has no intrinsic sizing keywords: auto (shrink-to-fit for absolute/inline-block/flex items) or a dp value
+css      l.css:7  border-radius: 20%  =>  RmlUi radii take lengths, not %: write half the box size in dp (the converter does it when the rule sets equal width and height)
+css      l.css:7  outline: 1dp solid #FF0000  =>  RmlUi has no outline: use a border or an extra element
+css      l.css:9  aspect-ratio: 1  =>  write width and height
+css      l.css:9  object-fit: cover  =>  size the <img> with width/height (or use a decorator: image(src contain|cover))
+css      l.css:9  justify-items: center  =>  grid only: RmlUi has no grid

@@ -1,0 +1,9 @@
+#a { color: #abc; background-color: #abcd; border-top-color: #a1b2c3; border-bottom-color: #a1b2c380; }
+#a { outline-color: red; }
+#b { color: rgb(255, 0, 0); background-color: rgba(255, 0, 0, .5); border-left-color: rgb(0 128 255 / 25%);
+     border-right-color: rgba(100%, 50%, 0%, 1); }
+#b { caret-color: hsl(120, 100%, 25%); image-color: hsla(240deg, 100%, 50%, 0.2); }
+#c { color: rebeccapurple; background-color: transparent; border: 2px solid; }
+#c { border-top: 1px solid currentColor; box-shadow: 0 0 4px currentColor; }
+#c { background-color: hwb(0 0% 0%); }
+.x { border-color: currentColor; }

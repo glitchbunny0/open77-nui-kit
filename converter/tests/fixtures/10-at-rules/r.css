@@ -1,0 +1,23 @@
+@charset "utf-8";
+@import url(more.css);
+@import "missing.css";
+* { box-sizing: border-box; margin: 0; }
+:root { --c: #fff; }
+html, body { width: 100%; }
+:root { font-size: 16px; }
+@media (min-width: 1200px) { #a { width: 600px; } }
+@media (max-width: 800px) { #a { width: 100px; } }
+@media screen and (orientation: landscape), print { #a { height: 10px; } }
+@media (prefers-color-scheme: dark) { #a { color: #000; } }
+@supports (display: grid) { #a { display: grid; } }
+@layer base { #a span { color: var(--c); } }
+@page { margin: 1cm; }
+#a span:nth-child(2) { color: red; }
+#a span:first-child:not(.y) { color: blue; }
+#a span:not(.y, .z) { color: green; }
+#a::before { content: "x"; }
+#a span:is(.y) { color: red; }
+#a:focus-within { color: red; }
+#a[class~="x"] > span + span { margin-left: 2px; }
+.ic path, svg.ic { stroke: #fff; }
+#a span:hover, #a span:active { color: #ff0; }

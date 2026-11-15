@@ -1,0 +1,14 @@
+css      e.css:1  cubic-bezier(0.2, 0.8, 0.2, 1)  =>  RmlUi has named tweens only: written as quintic-out (max error 0.02 of the range)
+css      e.css:3  steps() timing  =>  RmlUi has no steps: written as linear-in-out
+css      e.css:3  animation fill-mode both  =>  RmlUi has no fill modes: check the end state in the game (set the final value as the element's own style)
+css      e.css:3  animation nope: no @keyframes nope in the sheets  =>  dropped
+css      e.css:4  animation-delay: 0.2s  =>  write the animation shorthand (RmlUi has no animation longhands)
+css      e.css:6  @-webkit-keyframes  =>  vendor prefix: written as @keyframes
+css      e.css:7  filter: url(...)  =>  RmlUi has no SVG filters
+css      e.css:9  color: inherit !important  =>  RmlUi has no !important: kept without it; raise the selector's specificity if it must win
+css      e.css:9  color: inherit  =>  RmlUi has no inherit: write the value (inherited properties inherit anyway)
+css      e.css:9  -webkit-font-smoothing  =>  vendor prefix dropped
+css      e.css:9  user-select: none  =>  RmlUi has no text selection: nothing to do
+css      e.css:9  frobnicate: 1  =>  RmlUi 6.3 has no frobnicate property
+css      e.css:10  -webkit-backdrop-filter  =>  vendor prefix dropped; RmlUi has backdrop-filter
+css      e.css:10  will-change: transform  =>  nothing to do

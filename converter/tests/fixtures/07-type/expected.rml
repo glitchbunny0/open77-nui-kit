@@ -1,0 +1,8 @@
+<rml>
+<head>
+    <title>page</title>
+    <link type="text/rcss" href="page.rcss"/>
+</head>
+<!-- converted by html2rml from index.html; what it could not map: page.report.md -->
+<body><div id="a">a</div><div id="b">b</div><div id="c">c</div><div id="d">d</div></body>
+</rml>

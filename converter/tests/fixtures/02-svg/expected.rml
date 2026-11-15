@@ -1,0 +1,13 @@
+<rml>
+<head>
+    <title>page</title>
+    <link type="text/rcss" href="page.rcss"/>
+</head>
+<!-- converted by html2rml from index.html; what it could not map: page.report.md -->
+<body>
+<path class="ic svg-1" view-box="0 0 24 24" d="M4 12L20 12M12 4L12 20"/>
+<path id="tri" class="svg-2" view-box="0 0 10 10" d="M5 0L10 10L0 10Z"/>
+<path class="cur svg-3" view-box="0 0 10 10" d="M0 0L10 10"/>
+<div class="multi svg-4"></div>
+</body>
+</rml>

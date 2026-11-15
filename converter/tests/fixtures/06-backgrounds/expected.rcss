@@ -1,0 +1,18 @@
+/* converted by html2rml from index.html (canvas 1920x1080, 1 px = 1 dp). RmlUi has no default stylesheet: the
+   first block is the part of a browser's defaults this page relies on. */
+div { display: block; }
+body { margin: 8dp; font-size: 16dp; color: #000000; }
+
+#a { background-color: #102030; decorator: none; }
+#b { decorator: image(../../fixtures/06-backgrounds/assets/dot.png contain); }
+#c { decorator: image(../../fixtures/06-backgrounds/assets/dot.png cover); }
+#d { decorator: image(../../fixtures/06-backgrounds/assets/dot.png), linear-gradient(to right, #000, transparent); }
+#e { decorator: image(../../fixtures/06-backgrounds/assets/dot.png); }
+#h { background-color: transparent;
+    decorator: image(../../fixtures/06-backgrounds/assets/missing.png scale-none right bottom); }
+#a { decorator: linear-gradient(90deg, #fff 0dp, #fff 10dp, #000 10dp), radial-gradient(circle at top left, #FF0000, #0000FF); }
+#b { decorator: repeating-linear-gradient(45deg, #fff 0dp, #fff 2dp, transparent 2dp, transparent 6dp); }
+.mk { background-color: #5EF6FF; mask-image: image(../../fixtures/06-backgrounds/assets/dot.png); }
+#g { mask-image: image(../../fixtures/06-backgrounds/assets/dot.png); }
+#f { mask-image: linear-gradient(#000, #00000000); }
+#h:hover { background-color: #fff; decorator: none; }

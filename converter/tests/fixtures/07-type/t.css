@@ -1,0 +1,7 @@
+@font-face { font-family: "Rajdhani"; font-weight: 400; src: url(fonts/Rajdhani-Regular.ttf) format("truetype"); }
+@font-face { font-family: Orbitron; font-weight: 400 900; src: url(fonts/Orbitron.woff2) format("woff2"); }
+body { font-family: "Rajdhani", "Helvetica Neue", sans-serif; }
+#a { font: italic 600 18px / 1.4 "Rajdhani", sans-serif; letter-spacing: .05em; text-transform: uppercase; }
+#b { font: 12px Orbitron; line-height: normal; font-size: small; text-align: start; white-space: break-spaces; }
+#c { font-family: monospace; font-weight: bolder; text-decoration: underline dotted red; overflow-wrap: anywhere; }
+#d { text-shadow: 1px 1px #000, 0 0 3px rgba(0, 0, 0, .8); word-spacing: 2px; font-variant: small-caps; }

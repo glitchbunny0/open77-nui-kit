@@ -1,0 +1,2 @@
+markup   index.html:4  <svg> stroke="currentColor"  =>  write the stroke colour in the sheet (path.svg-3 or a class of yours)
+markup   index.html:5  inline <svg> with 2 shapes  =>  Open77's <path> draws one path with a view-box: merge the shapes into one path d, or export a PNG and use <img>/decorator: image(); a <div> of the same size stands in

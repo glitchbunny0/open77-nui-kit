@@ -1,0 +1,4 @@
+css      b.css:5  background size 20dp 10dp  =>  RmlUi's image decorator fills, contains or covers its box: written as fill; size the element to the image instead
+css      b.css:7  image assets/missing.png not found (looked at assets/missing.png)  =>  check the path
+css      b.css:10  conic-gradient() colour hint '50%'  =>  RmlUi stops need a colour each: write the midpoint as its own stop
+css      b.css:11  background-attachment  =>  RmlUi has no background-attachment: dropped

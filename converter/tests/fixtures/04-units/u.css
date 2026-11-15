@@ -1,0 +1,4 @@
+html { font-size: 20px; }
+#a { width: 50vw; height: 10vh; left: 2rem; top: 1.5em; margin: 12pt 1in 0 0; }
+#b { transition: opacity 250ms ease; transform: rotate(0.25turn) skewX(100grad); letter-spacing: 0.1em; }
+#c { width: 10ch; height: 2ex; padding: 1vmin 1vmax; }
