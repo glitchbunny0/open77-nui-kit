@@ -182,6 +182,13 @@ def _():
                                     'backdrop-filter: blur(4dp)'))
 
 
+@fact('a layer pinned with inset: 0 in a sized, positioned flex item gets exactly the parent box (once divs are blocks)')
+def _():
+    b = boxes('#row { display: flex; width: 400dp; } #p { position: relative; width: 30dp; height: 20dp; margin-top: 12dp; '
+              'flex: none; } #c { position: absolute; inset: 0; }', '<div id="row"><div id="p"><div id="c"></div></div></div>')
+    return (b['c']['x'], b['c']['y'], b['c']['w'], b['c']['h']) == (b['p']['x'], b['p']['y'], 30.0, 20.0)
+
+
 @fact('structural selectors match (nth-child, first-child, :not(compound)); :not() with a list, :is() and ::before never match, with no warning')
 def _():
     o = outline('#w .k:nth-child(2) { display: none; } #w .k:not(.z) { height: 5dp; } #w .k:not(.z, .y) { width: 7dp; }'

@@ -12,6 +12,9 @@ Lua. See what a screen really does before you start the game.
   twin; its behaviour is measured against real RmlUi case by case (`bin/lrbind-parity`).
 - **`fake-nui`** is a fake `Open77.ui` for plain `lua5.4`: run your screen's client Lua offline, click through it,
   and write the states out as cases for the two tools above.
+- **`html2rml`** converts a WebUI page (HTML + CSS, lrbind bindings kept) into an RmlUi document and sheet, and reports
+  everything it could not map with file:line and what to do instead. **`html-shot`** shoots the page per state so
+  `rml-preview --compare` shows the browser and NativeUI side by side.
 
 ![The example side menu, six states, painted by rml-preview](docs/img/side-menu-sheet.png)
 
@@ -47,18 +50,34 @@ does and the bug the preview caught while it was written.
    `--compare <folder of mockup shots>` puts your mockup next to each state.
 5. In the game: `nui.hotreload on`, then look at the effects the kit can't show.
 
+## Starting from a WebUI page
+
+```sh
+bin/html2rml web/index.html --out ui --name menu --root .   # ui/menu.rml + .rcss + menu.report.md
+bin/rml-check ui/menu.rml cases.json
+bin/html-shot web/index.html cases.json --out shots         # optional: needs Chromium (NUIKIT_CHROME or Playwright's)
+bin/rml-preview ui/menu.rml cases.json --font kitraj=fonts/Rajdhani-Regular.ttf --out out --compare shots
+```
+
+The report lists the scripts to port to the client Lua (with the ids, classes and styles each one touches), the
+`Open77.ui.loadFont` calls the client needs, and every rule, value and element RmlUi has no form for.
+[docs/converter.md](docs/converter.md) lists what converts, what is reported, and the RmlUi facts behind each mapping
+(measured in real RmlUi by `converter/tests/facts.py`).
+
 ## What's in the repo
 
 | Path | What |
 |---|---|
 | `bin/rml-check`, `bin/rml-preview` | the two CLIs (Python 3; preview needs Pillow) |
 | `bin/lrbind-parity`, `bin/lrbind-sync` | lrbind's parity runner and the copy helper for resources |
+| `bin/html2rml`, `converter/` | the WebUI -> NativeUI converter (Python stdlib), its fixtures and RmlUi fact tests |
+| `bin/html-shot` | screenshots of a WebUI page per case (optional Chromium) |
 | `host/` | `rmlhost`: real RmlUi with a JSON-fed dynamic data model; modes `check`, `layout`, `parity` |
 | `scripts/build.sh` | builds RmlUi (pinned tag, no CMake, no FreeType) and the host into a cache dir |
 | `lrbind/` | `lrbind.js`, `lrbind.lua`, their tests and the parity suite ([lrbind/README.md](lrbind/README.md)) |
 | `fake-nui/fake_nui.lua` | fake `Open77.ui`, a coroutine scheduler for `CreateThread`/`Wait`, an instruction counter, JSON out |
-| `examples/side-menu/` | a complete small screen: document, sheet, client Lua, offline driver, fonts |
-| `docs/` | the case format and the RmlUi traps every native document meets |
+| `examples/side-menu/` | a complete small screen: document, sheet, client Lua, offline driver, fonts, and its WebUI twin |
+| `docs/` | the case format, the RmlUi traps every native document meets, the converter |
 
 The RmlUi checkout and build live in `${XDG_CACHE_HOME:-~/.cache}/open77-nui-kit/` (override with
 `NUIKIT_RMLUI_DIR`); nothing is vendored. `scripts/test.sh` runs the kit's own tests.

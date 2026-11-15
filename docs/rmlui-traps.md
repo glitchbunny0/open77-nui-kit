@@ -14,14 +14,25 @@ screen just looks wrong. `rml-check` catches the ones RmlUi logs; `rml-preview` 
   first positioned ancestor instead (the example's tabs did exactly this until `position: relative` went on `.tab`).
 - **Text in a flex box needs a `<span>`.** A bare text node in a flex container lays out unpredictably.
 - **`.gone { display: none }` loses to `#id { display: flex }`** (specificity). Write `#root .gone` and put it last.
-- **No `var()`, `calc()`, grid, `background-size` or `-webkit-` prefixes.** Write the numbers. An underline, a
-  partial bar or a divider is its own element.
+- **No `var()`, `calc()`, grid, `background-size` or `-webkit-` prefixes.** Write the numbers (`bin/html2rml` folds
+  them from a web page). An underline, a partial bar or a divider is its own element.
 - **Text can't be measured from RCSS.** A long name either overflows or gets cut: measure in your client (the
   sum of the font's advances per character, read once from the TTF) and switch a class (`small`, `two-lines`).
 - **Mono text collapses spaces** unless `white-space: pre`.
-- **Size layers with width/height**, not left/top/right/bottom pinning.
+- **Size layers with width/height** where you can, not left/top/right/bottom pinning: a port's bar layers stretched
+  to the whole row that way, in a sheet that also lacked the `display: block` rule. Offline RmlUi lays pinned layers
+  out right once divs are blocks; check pinning in the game before relying on it.
 - **`data-if` / `data-visible` own the inline property.** When true they remove an inline `display`/`visibility`
   the markup set. Put display rules in the sheet.
+
+## Values
+
+- **`rgba()` alpha is 0-255.** `rgba(255, 97, 89, .5)` is fully transparent in RmlUi. Write `#FF615980`.
+- **`em` is resolved on every element.** A `letter-spacing: .06em` on a block spaces a bigger-font child wider than a
+  browser does (CSS computes it once, where it is declared). Write dp.
+- **CSS easing names and `ms` are syntax errors** in `transition`/`animation` (`ease-out`, `250ms`); write
+  `sine-out`, `0.25s`. `animation` needs its duration first and the name last.
+- **`drop-shadow` takes the colour first**: `drop-shadow(#000000D9 0dp 0dp 2dp)`.
 
 ## Data bindings
 
