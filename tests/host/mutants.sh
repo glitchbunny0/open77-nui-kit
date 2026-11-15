@@ -54,3 +54,9 @@ mutant host host/common.hpp "model: assigning to an array warns as RmlUi does" \
     'Log::Message(Log::LT_WARNING, "Values can only be assigned to scalar data types.");' ''
 mutant host host/common.hpp "model: a member of an empty table reads as a missing struct member" \
     '(j->t == J::Obj && j->o.empty() && (e.index >= 0 || e.name == "size"))' '(j->t == J::Obj && j->o.empty())'
+
+# clicks
+mutant host host/mode_check.inc "click: number and boolean args compare as RmlUi prints them" \
+    'toVariant(args->a[i]).Get<String>()' 'args->a[i].s'
+mutant host host/common.hpp "input: click args that are not scalars are an error" \
+    'if (a.t == J::Arr || a.t == J::Obj || a.t == J::Null) badInput' 'if (false) badInput'

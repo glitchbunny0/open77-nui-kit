@@ -2,7 +2,8 @@ namespace check {
 // check: load the document (its stylesheets too) with the case's data models, print the warnings and an outline of the
 // element tree (tag#id.classes, [none] for display: none, @x,y WxH, inline style, text nodes). Each click is
 // dispatched on the first VISIBLE element the selector matches; the model event it must call (name + arguments as text) is
-// compared: "CLICK ok" / "CLICK FAIL".
+// compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
+// (a JSON 2 and the markup's pick(2) both print 2, true prints 1).
 static std::string collapse(const std::string& s) {
 	std::string o; bool sp = false;
 	for (char c : s) { if (c == ' ' || c == '\n' || c == '\t' || c == '\r') { sp = true; continue; } if (sp && !o.empty()) o += ' '; sp = false; o += c; }
@@ -61,7 +62,7 @@ int run(const std::string& docPath, const std::string& modelName) {
 				for (J& k : clicks->a) {
 					std::string want = k.get("event")->s + "(";
 					J* args = k.get("args");
-					for (size_t i = 0; args && i < args->a.size(); i++) want += (i ? "," : "") + args->a[i].s;
+					for (size_t i = 0; args && i < args->a.size(); i++) want += (i ? "," : "") + toVariant(args->a[i]).Get<String>();
 					want += ")";
 					// the first match the player can see (data-if keeps hidden copies in the tree)
 					ElementList list;

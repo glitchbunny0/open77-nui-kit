@@ -187,6 +187,17 @@ struct P {
 	}
 };
 static J parseJson(const std::string& text, const std::string& what) { return P(text, what).all(); }
+// A JSON scalar as the Variant RmlUi would hold for it: Get<String>() then prints it as RmlUi prints a value
+// (numbers with up to three decimals, trailing zeros cut, booleans 1/0).
+static Variant toVariant(const J& j) {
+	switch (j.t) {
+	case J::Bool: return Variant(j.b);
+	case J::Int: return Variant((int64_t)j.i);
+	case J::Num: return Variant(j.n);
+	case J::Str: return Variant(j.s);
+	default: return Variant();
+	}
+}
 static double num(const J& j) { return j.t == J::Int ? (double)j.i : j.n; }
 static bool isNum(const J* j) { return j && (j->t == J::Int || j->t == J::Num); }
 
@@ -229,6 +240,9 @@ static void validateCases(J& cases, Mode mode) {
 					if (!sel || sel->t != J::Str) badInput(kw + ".sel must be a string");
 					if (!ev || ev->t != J::Str) badInput(kw + ".event must be a string");
 					if (args && args->t != J::Arr) badInput(kw + ".args must be an array");
+					if (args)
+						for (J& a : args->a)
+							if (a.t == J::Arr || a.t == J::Obj || a.t == J::Null) badInput(kw + ".args must hold strings, numbers or booleans");
 				}
 		if (mode == Mode::Layout)
 			if (J* place = need("place", J::Obj, "an object", false))

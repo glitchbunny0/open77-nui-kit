@@ -146,6 +146,12 @@ def _():
     bad_case('check', [d, 'm'], [{'name': 'a', 'clicks': [{'sel': 'p'}]}], 'clicks[0].event must be a string')
 
 
+@check('input: click args that are not scalars are an error')
+def _():
+    bad_case('check', [doc('plain', '<p>x</p>'), 'm'], [{'name': 'a', 'clicks': [{'sel': 'p', 'event': 'x', 'args': [[1]]}]}],
+             'clicks[0].args must hold strings, numbers or booleans')
+
+
 @check('input: a parity step without its fields is an error')
 def _():
     case = {'name': 'a', 'rml': '<body data-model="m"></body>', 'model': {}}
@@ -194,6 +200,27 @@ def _():
     r = parity('<p>{{cfg.title}}</p>', {'cfg': {}})
     w = r['snapshots'][0]['warnings']
     expect(any('Member title not found in data struct.' in x for x in w), f'warnings {w}')
+
+
+# ---- clicks
+def clicks(body, model, events, clicks, rcss='', name='clicks'):
+    r = host('check', doc(name, body, rcss), 'm', cases=[{'name': 'c', 'model': model, 'events': events, 'clicks': clicks}])
+    expect(r.rc == 0, f'rc {r.rc}: {r.err[:300]}')
+    return [l for l in r.out.splitlines() if l.startswith('CLICK')]
+
+
+@check('click: number and boolean args compare as RmlUi prints them')
+def _():
+    body = ('<div id="a" data-event-click="pick(2)">a</div><div id="b" data-event-click="pick(r.id)">b</div>'
+            '<div id="c" data-event-click="tog(true)">c</div><div id="d" data-event-click="pick()">d</div>'
+            '<div id="e" data-event-click="qty(1.5)">e</div>')
+    got = clicks(body, {'r': {'id': 2}}, ['pick', 'tog', 'qty'],
+                 [{'sel': '#a', 'event': 'pick', 'args': [2]}, {'sel': '#b', 'event': 'pick', 'args': [2]},
+                  {'sel': '#c', 'event': 'tog', 'args': [True]}, {'sel': '#d', 'event': 'pick', 'args': [2]},
+                  {'sel': '#e', 'event': 'qty', 'args': [1.5]}])
+    want = ['ok', 'ok', 'ok', 'FAIL', 'ok']
+    expect([l.split()[1] for l in got] == want, f'{got}')
+    expect('#d -> pick() (want pick(2))' in got[3], got[3])
 
 
 def main():
