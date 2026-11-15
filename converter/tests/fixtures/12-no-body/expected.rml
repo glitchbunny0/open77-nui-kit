@@ -1,0 +1,12 @@
+<rml>
+<head>
+    <title>no body tag</title>
+    <link type="text/rcss" href="page.rcss"/>
+</head>
+<!-- converted by html2rml from index.html; what it could not map: page.report.md -->
+<body><div id="a" class="a">content with no body tag</div>
+<p>more</p>
+
+<div id="late" class="late">after the html end tag</div>
+</body>
+</rml>

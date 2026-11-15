@@ -1026,12 +1026,11 @@ class Converter:
             elif el.tag in ('script', 'noscript', 'base', 'template'):
                 self.emit(el, [], 0)
         parts = []
-        for c in (html.children if html is not None else doc.root.children):
-            if isinstance(c, H.Comment):
-                parts.append('<!--' + c.text.replace('--', '- -') + '-->\n')
-        if body is None:
-            body = H.Element('body', [], 1)
-            body.children = [c for c in doc.root.children if not (isinstance(c, H.Element) and c.tag in ('head', 'html'))]
+        # comments outside the body (before it, and in <head>) stay before the body, in their order
+        for c in html.children:
+            for x in (head.children if c is head else [c]):
+                if isinstance(x, H.Comment):
+                    parts.append('<!--' + x.text.replace('--', '- -') + '-->\n')
         self.emit(body, parts, 0)
         body_txt = ''.join(parts)
         title_txt = ''.join(c.text for c in title.children if isinstance(c, H.Text)).strip() if title is not None else self.name

@@ -14,6 +14,12 @@ KIT = os.path.dirname(os.path.dirname(HERE))
 MUTANTS = [
     ('escape-ident', 'css_values.py', r"(?:\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n0-9a-fA-F]|[\w\u00a0-\uffff-])*')",
      r"[\w\u00a0-\uffff-]*')", 'unit escape'),
+    # implied <html>/<head>/<body>, content outside the body (L6-2, L6-12, L7-1)
+    ('implied-html', 'html_parse.py', "html = Element('html', [], first.line", "html = Element('div', [], first.line",
+     'fixture 11-no-tags'),
+    ('no-body-flow', 'html_parse.py', '_adopt(body, before, 0)', '_adopt(body, [], 0)', 'fixture 12-no-body'),
+    ('head-flow', 'html_parse.py', 'before = moved + before', 'before = before', 'fixture 01-markup'),
+    ('after-body', 'html_parse.py', '_adopt(body, after)', '_adopt(body, [])', 'fixture 01-markup'),
 ]
 
 

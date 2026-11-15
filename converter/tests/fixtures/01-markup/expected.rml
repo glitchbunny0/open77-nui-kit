@@ -5,7 +5,7 @@
 </head>
 <!-- converted by html2rml from index.html; what it could not map: page.report.md -->
 <!-- a comment before the body -->
-<body data-model="m">
+<body data-model="m"><div class="inhead">content written in the head</div>
 <div id="root" class="panel">
   <div class="row"><span>Bare text in a flex box</span> <b>bold</b> <span>tail</span></div>
   <div class="row"><span>already wrapped</span></div>
@@ -25,5 +25,7 @@
 </div>
 
 
-</body>
+
+<div class="late">after the body</div>
+<!-- a comment after the body --></body>
 </rml>
