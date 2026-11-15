@@ -44,4 +44,6 @@ body { font-size: 9.6dp; }
 #stage .cq { font-size: 20dp; height: 10.8dp; }
 #cq0 { width: 192dp; }
 #loose { width: 50%; }
+#f1 { font-family: Bahnschrift; }
+#f2 { font-family: Bahnschrift; }
 #k11 { color: #00f; }

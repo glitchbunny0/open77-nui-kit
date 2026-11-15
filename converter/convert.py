@@ -87,6 +87,7 @@ class Converter:
         self.quiet = False
         self.last_folded = set()
         self.native_memo = {}
+        self.fallbacks_seen = set()
         self.svg_rules = []
         self.svg_n = 0
 
@@ -1024,6 +1025,11 @@ class Converter:
             try:
                 d.toks = CP.prepare(d.name, d.value, ctx, issues_at)
             except ValueIssue as e:
+                if d.name in CP.UNSUPPORTED and d.name not in CP.HANDLERS:
+                    # a property RmlUi lacks: say that, not what its value would need (calc() in a clip-path)
+                    self.report.add(self.where(file), d.line, 'css', f'{d.name}: {" ".join(d.value.split())}',
+                                    CP.UNSUPPORTED[d.name])
+                    continue
                 todo = e.todo
                 sv = [n for n in V.var_names(V.tokenize(d.value)) if n in self.script_vars]
                 if sv and 'no value' in e.what:
@@ -1071,6 +1077,10 @@ class Converter:
             if ctx.used_color and color_from == 'cascade':
                 self.cascade_color_note(file, d, color)
             for iss in issues:
+                if iss.what.startswith('font-family fallbacks'):   # one item per family list, not per declaration
+                    if (file, iss.what) in self.fallbacks_seen:
+                        continue
+                    self.fallbacks_seen.add((file, iss.what))
                 self.report.add(self.where(file), d.line, iss.kind, iss.what, iss.todo)
             for k, v in got:
                 rule_decls[k] = v

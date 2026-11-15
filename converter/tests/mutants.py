@@ -194,6 +194,10 @@ MUTANTS = [
      "if False:\n                        return None", 'fixture 13-values'),
     ('decl-block-runs-on', 'css_parse.py', "it runs on to its ';'\n                r.until(';{}')", "it runs on to its ';'\n                break",
      'fixture 13-values'),
+    ('unsupported-first', 'convert.py', "                if d.name in CP.UNSUPPORTED and d.name not in CP.HANDLERS:",
+     "                if False:", 'fixture 13-values'),
+    ('font-fallback-once', 'convert.py', "                    if (file, iss.what) in self.fallbacks_seen:\n                        continue",
+     "                    if False:\n                        continue", 'fixture 13-values'),
 ]
 
 

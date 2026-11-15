@@ -51,6 +51,10 @@ html, body { font-size: 0.5vw; }
 #cq0 { width: 10cqw; }
 #loose { width: 50%; container-type: inline-size; }
 #loose .cq { width: 10cqw; }
+/* a property RmlUi lacks is reported as that, whatever its value; one font fallback item per family list */
+#cp { clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 100%); }
+#f1 { font-family: "Bahnschrift", "Segoe UI", sans-serif; }
+#f2 { font-family: "Bahnschrift", "Segoe UI", sans-serif; }
 /* an unterminated string ends at its line (a browser's bad string) */
 #k11 { content: "abc
 ; color: #00f; }
