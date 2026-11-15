@@ -19,7 +19,7 @@ local SHOP = {
 
 local cases = {}
 local function state(name, steps, clicks)
-    local doc = Menu.open(SHOP, 2400) and F.last
+    local doc = F.counted("Menu.open", nil, Menu.open, SHOP, 2400) and F.last   -- counted: the instructions are measured
     for _, s in ipairs(steps) do F.event(doc, s[1], table.unpack(s, 2)); F.settle(2) end
     cases[#cases + 1] = F.case(name, doc, clicks)
 end
@@ -31,3 +31,5 @@ state("bought", { { "pick", "unity" }, { "buy" }, { "confirm" } })
 state("mods", { { "tab", "mods" } })
 state("empty", { { "tab", "ammo" } })
 io.write(F.json(cases), "\n")
+-- the most Lua instructions one resume or event took (Open77 allows 1,500,000 per resume: F.budget raises past it)
+io.stderr:write(("max instructions in one resume or event: %d (%s)\n"):format(F.maxInstr, F.maxWhere))
