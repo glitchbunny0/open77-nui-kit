@@ -67,6 +67,11 @@ ui:merge("voice", { distance = 8, state = "talking" })        -- identical call 
   the markup set (`style="display: flex"` is gone after the first true). Put display rules in the stylesheet.
 - **Global names shadow `data-for` iterators**; a misspelled event or one missing from `events` stops the rest of a
   `data-event` chain. Array paths are 0-based in markup and 1-based from Lua (`lrbind.lua` shifts them).
+- **`data-checked`:** a bool is the state; any other value checks the box only when it equals the box's non-empty
+  `value` attribute (`data-checked="s"` with `s = 'a'` checks `value="a"`; `'true'` checks nothing). Every change of
+  the checked state (a click, a view, `data-attrif-checked`) fires `change`, so `data-event-change` sees it and the
+  box's `data-checked`/`data-value` writes the state back: a checkbox `true`/`false`, a radio its value. Checking a
+  radio unchecks every other radio with the same `name` (an empty name counts) in its `<form>`, or outside any form.
 - **A failing call keeps the old text, or prints `#rmlui#`.** `{{nofn(a)}}` alone stays as written; next to a working
   binding in the same text it shows RmlUi's placeholder `#rmlui#`. Only the four transforms above exist.
 

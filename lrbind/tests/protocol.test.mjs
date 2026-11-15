@@ -99,6 +99,8 @@ function page(body, withBridge = true) {
   p.$("#cb").dispatchEvent(new p.w.Event("change", { bubbles: true }));
   await tick();
   check(p.$("#loud").textContent === "1" && p.last("lrbind:change")[1].value === true, "checkbox writes a bool");
+  await p.fire("lrbind:set", { model: "f", path: "loud", value: false });
+  check(p.$("#cb").checked === false && !p.$("#cb").hasAttribute("checked"), "a later set unchecks a checkbox the user clicked (live state and attribute)");
   p.$("#r1").checked = true;
   p.$("#r1").dispatchEvent(new p.w.Event("change", { bubbles: true }));
   await tick();

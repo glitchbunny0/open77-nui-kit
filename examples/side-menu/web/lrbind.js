@@ -808,16 +808,56 @@
     return view;
   }
 
+  // A checkbox or radio keeps its state in the checked attribute natively, and every change of that attribute fires
+  // "change" (InputTypeCheckbox/InputTypeRadio::OnAttributeChange), which data-checked/data-value controllers and
+  // data-event-change see, whoever changed it: a click, a view, the markup. A radio that gets checked first unchecks
+  // every other radio with the same name (PopRadioSet: in its form, else in the document outside any form; an empty
+  // name is a name too).
+  const isToggle = (el) => el.nodeType === 1 && el.tagName.toLowerCase() === "input" && (el.type === "checkbox" || el.type === "radio");
+
+  function setChecked(el, on) {
+    if ("checked" in el && el.checked !== on) el.checked = on;
+    if (el.hasAttribute("checked") === on) return;
+    if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked");
+    checkedChanged(el, on);
+  }
+
+  function checkedChanged(el, on) {
+    if (!isToggle(el)) return;
+    if (on && el.type === "radio") popRadioSet(el);
+    const win = el.ownerDocument.defaultView || global;
+    el.dispatchEvent(new win.Event("change", { bubbles: true }));
+  }
+
+  function popRadioSet(el) {
+    const form = el.closest("form");
+    const name = el.getAttribute("name") || "";
+    for (const r of Array.from((form || el.ownerDocument).querySelectorAll("input"))) {
+      if (r === el || r.type !== "radio" || (r.getAttribute("name") || "") !== name || (!form && r.closest("form"))) continue;
+      setChecked(r, false);
+    }
+  }
+
+  // A click changed .checked: the attribute follows (RmlUi's default action sets it), before any listener runs.
+  function syncToggle(e) {
+    const el = e.target;
+    if (!isToggle(el) || el.hasAttribute("checked") === el.checked) return;
+    if (el.checked) el.setAttribute("checked", ""); else el.removeAttribute("checked");
+    if (el.checked && el.type === "radio") popRadioSet(el);
+  }
+
   const VIEWS = {
     attr(el, value, mod) {
       const v = toStr(value);
-      if (el.getAttribute(mod) !== v) el.setAttribute(mod, v);
+      const changed = el.getAttribute(mod) !== v;
+      if (changed) el.setAttribute(mod, v);
       if (mod === "value" && "value" in el && el.value !== v) el.value = v;
+      if (mod === "checked" && changed) { if ("checked" in el) el.checked = true; checkedChanged(el, true); }
     },
     attrif(el, value, mod) {
       const on = toBool(value);
+      if (mod === "checked") return setChecked(el, on);
       if (el.hasAttribute(mod) !== on) { if (on) el.setAttribute(mod, ""); else el.removeAttribute(mod); }
-      if (mod === "checked" && "checked" in el) el.checked = on;
       if (mod === "disabled" && "disabled" in el) el.disabled = on;
     },
     class(el, value, mod) { el.classList.toggle(mod, toBool(value)); },
@@ -842,10 +882,10 @@
       el.innerHTML = v;
       view.children = bindChildren(view.model, el);
     },
+    // DataViewChecked: a bool is the state; any other value checks only when it equals a non-empty value attribute
     checked(el, value) {
-      const on = el.type === "radio" ? toStr(value) === (el.getAttribute("value") || "") : toBool(value);
-      if (el.hasAttribute("checked") !== on) { if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked"); }
-      if (el.checked !== on) el.checked = on;
+      const s = toStr(value);
+      setChecked(el, typeof value === "boolean" ? value : s !== "" && s === (el.getAttribute("value") || ""));
     },
   };
 
@@ -1105,13 +1145,20 @@
     if (!address) { warn("Could not find data variable with name '" + source + "'."); return; }
     const expr = { program: [[I.Variable, 0]], addresses: [address], deps: new Set([address[0]]) };
     out.push(addView(model, { kind: kind === "value" ? "attr" : "checked", element: el, mod: "value", expr, deps: expr.deps }));
+    // DataControllerValue (data-value and data-checked alike): the element's own change event writes the variable
     el.addEventListener(changeEventFor(el), () => {
-      let value;
-      if (kind === "checked") value = el.type === "radio" ? el.value : el.checked;
-      else value = el.value;
-      if (el.type === "radio" && !el.checked) return;
+      const value = controllerValue(el);
+      if (value === NONE) return;
       if (model.setValue(address, value)) send("lrbind:change", { model: model.name, path: addressString(address), value });
     });
+  }
+
+  // What the change event hands the controller (data-binding-override-value, else value): a checkbox its checked state,
+  // a radio its value when it got checked (nothing when it got unchecked), any other control its value.
+  function controllerValue(el) {
+    if (el.type === "checkbox") return el.checked;
+    if (el.type === "radio") return el.checked ? el.value : NONE;
+    return el.value;
   }
 
   function bindTree(model, root) {
@@ -1209,6 +1256,7 @@
       if (!root) { warn("no element with data-model=\"" + model.name + "\""); continue; }
       model.root = root;
       root.__lrbindModel = model;
+      root.addEventListener("change", syncToggle, true);
       bindTree(model, root);
     }
     doc.documentElement.classList.remove("lrbind-pending");

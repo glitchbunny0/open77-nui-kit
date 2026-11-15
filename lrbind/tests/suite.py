@@ -264,11 +264,31 @@ MUTANTS += [
     ('mouse button not renumbered (RmlUi: 1 = right)', 'lrbind.js',
      'p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;', 'p.button = e.button;', 'parity',
      'event modifier keys and mouse button'),
-    ('data-checked writes no checked attribute', 'lrbind.js',
-     'if (el.hasAttribute("checked") !== on) { if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked"); }',
-     '', 'parity', 'click a checkbox'),
+    ('a view sets the checked attribute, not the control state', 'lrbind.js',
+     '    if ("checked" in el && el.checked !== on) el.checked = on;\n', '', 'protocol', 'a later set unchecks a checkbox the user clicked'),
 ]
 
+
+# ==== data-checked follows DataViewChecked; a change of the checked attribute fires change, as RmlUi's controls do
+MUTANTS += [
+    ('data-checked: checkboxes through toBool', 'lrbind.js',
+     'setChecked(el, typeof value === "boolean" ? value : s !== "" && s === (el.getAttribute("value") || ""));',
+     'setChecked(el, el.type === "radio" ? s === (el.getAttribute("value") || "") : toBool(value));', 'parity',
+     'checked: checkbox bound to a string'),
+    ('data-checked: an empty value matches', 'lrbind.js', 'value : s !== "" && s === (el.getAttribute', 'value : s === (el.getAttribute',
+     'parity', 'checked: radio with empty value'),
+    ('a checked change fires no change event', 'lrbind.js', 'el.dispatchEvent(new win.Event("change", { bubbles: true }));', '',
+     'parity', 'checked: a view change fires change'),
+    ('a checked radio leaves the others with its name', 'lrbind.js',
+     '    if (on && el.type === "radio") popRadioSet(el);\n', '', 'parity', 'radios with one name uncheck each other'),
+    ('a clicked radio leaves the others with its name', 'lrbind.js',
+     '    if (el.checked && el.type === "radio") popRadioSet(el);\n', '', 'parity', 'radios with one name uncheck each other'),
+    ('radio names reach into forms', 'lrbind.js', ' || (!form && r.closest("form"))', '', 'parity', 'forms apart'),
+    ('a click does not set the checked attribute first', 'lrbind.js', '      root.addEventListener("change", syncToggle, true);\n',
+     '', 'parity', 'one change event per click'),
+    ('data-value on a checkbox writes its value', 'lrbind.js', '    if (el.type === "checkbox") return el.checked;\n', '',
+     'parity', 'data-value on a checkbox writes its checked state'),
+]
 
 # ==== the run
 
