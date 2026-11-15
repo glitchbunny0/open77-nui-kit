@@ -37,6 +37,16 @@ MUTANTS = [
      '    if len(words) <= 4:\n        return list(words)', 'fixture 13-values'),
     ('webkit-gradient', 'css_props.py', '    if legacy:   # the prefixed form', '    if False:   # the prefixed form',
      'fixture 13-values'),
+    ('tile-modes', 'css_props.py', "('no-repeat', 'repeat'): 'repeat-y'}.get(xy, 'scale-none')",
+     "('no-repeat', 'repeat'): 'repeat-y'}.get((), 'scale-none')", 'fixture 13-values'),
+    ('align-px', 'css_props.py', "x, y = [v[:-2] + 'px' if v.endswith('dp') else v for v in (x, y)]", 'pass',
+     'fixture 13-values'),
+    ('align-unreadable', 'css_props.py', 'if not al and al is not None:', 'if not al:', 'fixture 13-values'),
+    ('path-quoted', 'css_props.py', 'parts = [_quote_path(src)]', 'parts = [src]', 'fixture 13-values'),
+    ('gradient-tiled', 'css_props.py', "if period.endswith('dp') and tiles:", 'if False:', 'fixture 13-values'),
+    ('gradient-tiled-origin', 'css_props.py', 'if out[0][1] > 0:', 'if False:', 'fixture 13-values'),
+    ('gradient-sized-report', 'css_props.py', "issues.append(Issue(f'{what} {name}() sized {size}'",
+     "(lambda *a: None)(Issue(f'{what} {name}() sized {size}'", 'fixture 13-values'),
 ]
 
 

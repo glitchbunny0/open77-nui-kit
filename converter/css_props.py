@@ -291,12 +291,14 @@ def _size_fit(size):
     return None
 
 
-def _align(pos):
-    """background-position words -> RmlUi image alignment words (x then y), None when it can't be written"""
+def _align(pos, issues, what):
+    """background-position words -> RmlUi image alignment words (x then y), None when it can't be written. RmlUi's
+    image decorator takes keywords, % or px here, not dp (DecoratorTiled.cpp): a dp length is written in px"""
     if not pos:
         return []
     kw = {'left': 'x', 'right': 'x', 'top': 'y', 'bottom': 'y', 'center': None}
-    if len(pos) > 2:
+    pos = position2(pos, issues, what)
+    if pos is None:
         return None
     if len(pos) == 1:
         pos = pos + ['center']
@@ -306,7 +308,31 @@ def _align(pos):
     mapx = {'0': 'left', '0%': 'left', '50%': 'center', '100%': 'right'}
     mapy = {'0': 'top', '0%': 'top', '50%': 'center', '100%': 'bottom'}
     x, y = mapx.get(x, x), mapy.get(y, y)
+    px = [v for v in (x, y) if v.endswith('dp')]
+    if px:
+        issues.append(Issue(f'{what} position {" ".join(px)}', 'RmlUi\'s image alignment takes px or %, not dp: '
+                            'written in px (the same at a dp ratio of 1; give it in % to scale)'))
+        x, y = [v[:-2] + 'px' if v.endswith('dp') else v for v in (x, y)]
     return [x, y]
+
+
+def _tiling(rep, issues, what):
+    """background-repeat words -> RmlUi's fit for an image at natural size: repeat, repeat-x, repeat-y or scale-none"""
+    words = rep or ['repeat']
+    if len(words) == 1:
+        w = words[0]
+        xy = {'repeat-x': ('repeat', 'no-repeat'), 'repeat-y': ('no-repeat', 'repeat')}.get(w, (w, w))
+    else:
+        xy = tuple(words[:2])
+    if any(w in ('space', 'round') for w in xy):
+        issues.append(Issue(f'{what} repeat {" ".join(words)}', 'RmlUi tiles at the natural size: written as repeat'))
+        xy = tuple('repeat' if w in ('space', 'round') else w for w in xy)
+    return {('repeat', 'repeat'): 'repeat', ('repeat', 'no-repeat'): 'repeat-x',
+            ('no-repeat', 'repeat'): 'repeat-y'}.get(xy, 'scale-none')
+
+
+def _quote_path(src):
+    return '"%s"' % src.replace('"', '%22') if re.search(r'[\s()\'",]', src) else src
 
 
 def image_decorator(L, ctx, issues, what):
@@ -319,30 +345,83 @@ def image_decorator(L, ctx, issues, what):
         if src is None:
             return None
         fit = _size_fit(L['size'])
-        rep = ' '.join(L['repeat'] or ['repeat'])
-        al = _align(L['pos'])
-        parts = [src]
+        al = _align(L['pos'], issues, what)
+        parts = [_quote_path(src)]
         if fit is None:
             issues.append(Issue(f'{what} size {" ".join(L["size"])}',
                                 'RmlUi\'s image decorator fills, contains or covers its box: written as fill; size '
                                 'the element to the image instead'))
             fit = 'fill'
         if fit == 'auto':
-            if rep not in ('no-repeat', 'no-repeat no-repeat'):
-                issues.append(Issue(f'{what} tiles the image ({rep}, natural size)',
-                                    'RmlUi\'s image decorator does not tile: written at its natural size '
-                                    '(scale-none); give the element the image\'s size or use background-size'))
-            fit = 'scale-none'
-            if not al:
+            fit = _tiling(L['repeat'], issues, what)
+            if not al and al is not None:
                 al = ['left', 'top']
         if fit != 'fill':
             parts.append(fit)
-        if al is None:
-            issues.append(Issue(f'{what} position {" ".join(L["pos"])}', 'RmlUi aligns with two words or lengths: '
-                                'centered instead'))
-        elif al and fit != 'fill' and al != ['center', 'center']:
+        if al and fit != 'fill' and al != ['center', 'center']:   # (a position it can't read: reported, centred)
             parts += al
         return 'image(%s)' % ' '.join(parts)
+    return _tiled_gradient(img, L, issues, what)
+
+
+FILL_SIZES = ('auto', 'auto auto', '100% 100%')
+ORIGIN_POS = ('', '0 0', '0% 0%', 'left top', 'top left', '0')
+
+
+def _stops_at(stops, per):
+    """gradient stops (token lists) -> [(colour, offset in dp)] on a tile of `per` dp, None when one can't be placed"""
+    out = []
+    for k, st in enumerate(stops):
+        ws = V.words(V.strip_ws(st))
+        col = [w for w in ws if V.is_color(w[0])]
+        at = [w[0] for w in ws if not V.is_color(w[0])]
+        if len(col) != 1 or len(at) > 2:
+            return None
+        for t in at or [None]:
+            if t is None:
+                v = 0 if k == 0 else per if k == len(stops) - 1 else None
+            elif t[0] == 'num' and t[2] == '%':
+                v = per * t[1] / 100
+            elif t[0] == 'num' and (t[2] == 'dp' or (t[2] == '' and t[1] == 0)):
+                v = t[1]
+            else:
+                v = None
+            if v is None:
+                return None
+            out.append((V.ser(col[0]), v))
+    return out
+
+
+def _tiled_gradient(img, L, issues, what):
+    """a gradient layer: CSS sizes, places and tiles it like an image; RmlUi's gradient decorators fill the box. A
+    linear gradient across an axis, tiled along that axis from the origin, is a repeating gradient with the tile as its
+    period (the stripe/grid idiom); any other size or position is reported"""
+    size = ' '.join(L['size'] or ['auto'])
+    pos = ' '.join(L['pos'] or [])
+    if size in FILL_SIZES:   # a gradient at auto size fills its box: no position or tiling shows
+        return gradient(img, issues)
+    name, parts = img[1], V.split(img[2])
+    p0 = V.strip_ws(parts[0])
+    has_dir = not any(V.is_color(w[0]) for w in V.words(p0))
+    first = V.ser(p0) if has_dir else 'to bottom'
+    axis = {'90deg': 0, 'to right': 0, '180deg': 1, 'to bottom': 1}.get(first)
+    if name == 'linear-gradient' and axis is not None and pos in ORIGIN_POS:
+        sz = list(L['size'] or []) + ['auto', 'auto']
+        period = sz[axis]
+        tiles = _tiling(L['repeat'], [], what) in ('repeat', ('repeat-x', 'repeat-y')[axis])
+        if period.endswith('dp') and tiles:
+            per = float(period[:-2])
+            out = _stops_at(parts[1:] if has_dir else parts, per)
+            if out:
+                if out[0][1] > 0:
+                    out.insert(0, (out[0][0], 0))   # a repeating gradient's period runs from its first stop
+                if out[-1][1] < per:
+                    out.append((out[-1][0], per))
+                text = ', '.join(([first] if has_dir else []) + [f'{c} {V.fmt(v)}dp' for c, v in out])
+                return 'repeating-' + gradient(('func', 'linear-gradient', V.tokenize(text)), issues)
+    issues.append(Issue(f'{what} {name}() sized {size}' + (f' at {pos}' if pos else ''),
+                        'RmlUi\'s gradient decorators fill the box: written filling it (give the gradient an element '
+                        'of that size and place, or use a repeating gradient)'))
     return gradient(img, issues)
 
 
@@ -363,7 +442,8 @@ def position2(words, issues, what):
         off = words[i + 1] if i + 1 < len(words) and words[i + 1] not in POS_KW else None
         axis = POS_KW.get(w, 'bad')
         if axis == 'bad':
-            issues.append(Issue(f'{what} position {" ".join(words)}', 'write it as two values (x y)'))
+            issues.append(Issue(f'{what} position {" ".join(words)}', 'RmlUi aligns with two values (x y): centred '
+                            'instead; write it as two values'))
             return None
         if axis is None:
             val = 'center'

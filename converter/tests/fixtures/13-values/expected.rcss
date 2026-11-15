@@ -16,3 +16,13 @@ body { margin: 8dp; font-size: 16dp; color: #000000; }
 #g4 { decorator: radial-gradient(ellipse farthest-corner at 75% bottom, #fff, #000); }
 #g5 { decorator: linear-gradient(to right, #fff, #000); }
 #g6 { decorator: linear-gradient(60deg, #fff, #000); }
+#b1 { decorator: image(../../fixtures/13-values/assets/dot.png repeat-x left top); }
+#b2 { decorator: image(../../fixtures/13-values/assets/dot.png repeat left top); }
+#b3 { decorator: image(../../fixtures/13-values/assets/dot.png scale-none 10px 20px); }
+#b4 { decorator: image(../../fixtures/13-values/assets/dot.png scale-none right 5px); }
+#b5 { decorator: image("../../fixtures/13-values/assets/a dot.png" scale-none left top); }
+#b6 { decorator: repeating-linear-gradient(90deg, #fff 0dp, #fff 1dp, #ffffff00 1dp, #ffffff00 20dp); }
+#b7 { decorator: linear-gradient(#000, #fff); }
+#b8 { decorator: image(../../fixtures/13-values/assets/dot.png repeat left top); }
+#b9 { decorator: repeating-linear-gradient(#00000000 0dp, #00000000 2dp, #0004 2dp, #0004 4dp); }
+#b10 { decorator: image(../../fixtures/13-values/assets/dot.png scale-none); }

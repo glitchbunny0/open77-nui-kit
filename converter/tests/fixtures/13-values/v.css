@@ -15,3 +15,15 @@
 #g5 { background: -webkit-linear-gradient(left, #fff, #000); }
 #g6 { background: -webkit-linear-gradient(30deg, #fff, #000); }
 #g7 { background: -webkit-radial-gradient(center, circle cover, #fff, #000); }
+/* background images: tiling, alignment, paths; gradient layers sized or placed */
+#b1 { background: url(assets/dot.png) repeat-x; }
+#b2 { background: url(assets/dot.png); }
+#b3 { background: url(assets/dot.png) 10px 20px no-repeat; }
+#b4 { background: url(assets/dot.png) right 10px top 5px no-repeat; }
+#b5 { background: url("assets/a dot.png") no-repeat; }
+#b6 { background-image: linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 20px 20px; }
+#b7 { background: linear-gradient(#000, #fff) 0 0 / 50% 50% no-repeat; }
+#b8 { background: url(assets/dot.png) round; }
+#b9 { background: linear-gradient(transparent 50%, #0004 50%); background-size: 100% 4px; }
+/* a position it cannot read */
+#b10 { background: url(assets/dot.png) 1px 2px 3px no-repeat; }
