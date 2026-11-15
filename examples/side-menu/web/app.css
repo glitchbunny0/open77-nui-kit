@@ -1,0 +1,80 @@
+/* side menu example, WebUI twin of ui/menu.rcss: the same look, written as a browser page is. */
+@font-face { font-family: "KitRaj"; font-weight: 400; src: url(../fonts/Rajdhani-Regular.ttf) format("truetype"); }
+@font-face { font-family: "KitRaj"; font-weight: 600; src: url(../fonts/Rajdhani-SemiBold.ttf) format("truetype"); }
+
+:root {
+  --red: #FF6159;
+  --red-dim: #AE3B36;
+  --cyan: #5EF6FF;
+  --teal: #349197;
+  --ink: #0E0E17;
+  --grey: #A09A96;
+  --panel-w: 640px;
+  --pad: 40px;
+  --inner: calc(var(--panel-w) - 2 * var(--pad));
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+body { font-family: "KitRaj", sans-serif; font-weight: 400; font-size: 19px; color: var(--red); }
+#root { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+#panel { position: absolute; left: 0; top: 0; width: var(--panel-w); height: 100vh;
+  background: linear-gradient(90deg, rgba(8, 8, 13, .984) 0%, rgba(8, 8, 13, .976) 93.75%, rgba(8, 8, 13, .902) 100%); }
+#lines { position: absolute; left: 0; top: 0; width: var(--panel-w); height: 100vh;
+  background: repeating-linear-gradient(0deg, rgba(255, 97, 89, .02) 0 1px, rgba(255, 97, 89, 0) 1px 4px); }
+#edge { position: absolute; left: calc(var(--panel-w) - 2px); top: 40px; width: 2px; height: calc(100vh - 80px);
+  background: rgba(255, 97, 89, .35); }
+
+#top { position: absolute; left: var(--pad); top: 30px; width: var(--inner); height: 50px; }
+#top .title { width: 360px; height: 30px; overflow: hidden; }
+#top .title span { font-size: 28px; font-weight: 600; letter-spacing: 1px; white-space: nowrap; }
+#top .sub { margin-top: 2px; font-size: 13px; letter-spacing: 2px; color: var(--red-dim); white-space: nowrap; }
+#top .cash { position: absolute; right: 0; top: 4px; width: 200px; text-align: right; font-size: 21px; white-space: nowrap; }
+#top .cash .k { font-size: 13px; letter-spacing: 1px; color: var(--red-dim); margin-right: 8px; }
+
+#tabs { position: absolute; left: var(--pad); top: 92px; width: var(--inner); height: 42px; display: flex;
+  border-bottom: 2px solid rgba(255, 97, 89, .35); }
+#tabs .tab { position: relative; flex: 1; height: 40px; text-align: center; padding-top: 8px; font-size: 18px;
+  font-weight: 600; letter-spacing: 1px; color: rgba(255, 97, 89, .55); cursor: pointer; }
+#tabs .tab:hover { color: rgba(255, 97, 89, .85); }
+#tabs .tab.on { color: var(--cyan); }
+#tabs .tab .bar { position: absolute; left: 30%; bottom: 0; width: 40%; height: 3px; }
+#tabs .tab.on .bar { background: var(--cyan); }
+
+#list { position: absolute; left: var(--pad); top: 150px; width: 568px; height: 800px; overflow: hidden auto;
+  padding-right: 12px; }
+#list.dim { opacity: .35; }
+#list .row { position: relative; width: 556px; height: 82px; margin-bottom: 6px; cursor: pointer; }
+#list .strip { position: absolute; left: 0; top: 0; width: 7px; height: 82px; }
+#list .body { position: absolute; left: 10px; top: 0; width: 546px; height: 82px; background: rgba(14, 14, 23, .89);
+  border: 1px solid rgba(255, 97, 89, .13); }
+#list .row:hover .body { background: #2A171D; border-color: rgba(255, 97, 89, .65); }
+#list .row.sel .body { border-color: var(--cyan); }
+#list .row.own .body { border-color: var(--teal); }
+#list .name { position: absolute; left: 16px; top: 10px; width: 360px; height: 26px; overflow: hidden; }
+#list .name span { font-size: 20px; font-weight: 600; color: #E8E2E0; white-space: nowrap; }
+#list .desc { position: absolute; left: 16px; top: 38px; width: 360px; height: 38px; overflow: hidden;
+  font-size: 15px; line-height: 18px; color: var(--grey); }
+#list .price { position: absolute; right: 16px; top: 26px; width: 140px; text-align: right; font-size: 22px;
+  font-weight: 600; color: var(--cyan); }
+#list .tag { position: absolute; right: 8px; top: 6px; height: 17px; padding: 0 6px; background: var(--teal);
+  font-size: 12px; font-weight: 600; color: black; }
+#list .empty { padding-top: 40px; text-align: center; color: var(--grey); }
+
+#foot { position: absolute; left: var(--pad); top: calc(100vh - 66px); width: var(--inner); height: 40px; }
+.btn { display: inline-block; height: 38px; padding: 7px 22px 0; font-size: 17px; font-weight: 600;
+  letter-spacing: 1px; color: var(--red); background: rgba(14, 14, 23, .8); border: 1px solid rgba(255, 97, 89, .45);
+  cursor: pointer; }
+.btn:hover { border-color: var(--red); background: #26141B; }
+.btn.off { opacity: .35; }
+#foot .close { position: absolute; right: 0; top: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+#foot .close .key { background: var(--red); color: black; font-size: 13px; padding: 1px 5px; margin-right: 8px; }
+
+#ask { position: absolute; left: 0; top: 0; width: var(--panel-w); height: 100vh; background: rgba(6, 6, 11, .78); }
+#ask .box { position: absolute; left: 30px; top: 380px; width: 580px; height: 230px; padding: 24px 28px;
+  background: var(--ink); border-top: 3px solid var(--red); }
+#ask .head { font-size: 24px; font-weight: 600; }
+#ask .line { margin-top: 10px; height: 70px; font-size: 17px; color: #C0C8CF; }
+#ask .btns { margin-top: 20px; }
+#ask .btn { margin-right: 12px; }
+#ask .btn.go { background: var(--red); color: black; border-color: var(--red); }
