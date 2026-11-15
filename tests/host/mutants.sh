@@ -169,3 +169,14 @@ mutant host host/common.hpp "image: drawing raises no noise of its own" \
     'CompileShader(const String&, const Dictionary&) override { return 1; }' 'CompileShader(const String&, const Dictionary&) override { return 0; }'
 mutant host host/mode_layout.inc "image: layout lists a missing image in the case warnings" \
     'renderOnce(context);   // decorators' '// decorators'
+
+# check output
+mutant host host/mode_check.inc "check: a newline in a case name cannot start a line of its own" \
+    '<< oneLine(c.get("name")->s) <<' '<< c.get("name")->s <<'
+mutant host host/mode_check.inc "check: warnings keep the order RmlUi logged them in" \
+    'if (it == seen.end()) seen.emplace_back(w, 1);
+			else it->second++;
+		}' 'if (it == seen.end()) seen.emplace_back(w, 1);
+			else it->second++;
+		}
+		std::sort(seen.begin(), seen.end());'

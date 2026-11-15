@@ -8,6 +8,17 @@ namespace check {
 // (name + arguments) is compared: "CLICK ok" / "CLICK FAIL". Arguments are compared as text, each side printed as RmlUi prints the value
 // (a JSON 2 and the markup's pick(2) both print 2, true prints 1). A click that bubbles into an ancestor's
 // data-event-click calls that event too, as in the game: the click passes only when the wanted event is the one call.
+// a case name or a message on one output line: a newline in it can never start a line of its own
+static std::string oneLine(const std::string& s) {
+	std::string o;
+	for (unsigned char c : s) {
+		if (c == '\n') o += "\\n";
+		else if (c == '\r') o += "\\r";
+		else if (c < 0x20 && c != '\t') o += ' ';
+		else o += (char)c;
+	}
+	return o;
+}
 static std::string collapse(const std::string& s) {
 	std::string o; bool sp = false;
 	for (char c : s) { if (c == ' ' || c == '\n' || c == '\t' || c == '\r') { sp = true; continue; } if (sp && !o.empty()) o += ' '; sp = false; o += c; }
@@ -64,7 +75,7 @@ int run(const std::string& doc_path, const std::string& modelName) {
 			}
 		});
 		ElementDocument* doc = context->LoadDocument(docPath);
-		std::cout << "=== case " << c.get("name")->s << "\n";
+		std::cout << "=== case " << oneLine(c.get("name")->s) << "\n";
 		if (!doc) { std::cout << "LOAD FAILED\n"; }
 		else {
 			doc->Show(); context->Update(); context->Update();
@@ -116,9 +127,15 @@ int run(const std::string& doc_path, const std::string& modelName) {
 					std::cout << (ok ? "CLICK ok   " : "CLICK FAIL ") << k.get("sel")->s << " -> " << got << " (want " << want << ")\n";
 				}
 		}
-		std::map<std::string, int> seen;
-		for (auto& w : warnings) seen[w]++;
-		for (auto& kv : seen) std::cout << "WARN x" << kv.second << ": " << kv.first << "\n";
+		// each message once with its count, in the order RmlUi logged them (a data expression error comes as several
+		// messages: the error, the expression, a caret under the fault)
+		std::vector<std::pair<std::string, int>> seen;
+		for (auto& w : warnings) {
+			auto it = std::find_if(seen.begin(), seen.end(), [&](const std::pair<std::string, int>& s) { return s.first == w; });
+			if (it == seen.end()) seen.emplace_back(w, 1);
+			else it->second++;
+		}
+		for (auto& kv : seen) std::cout << "WARN x" << kv.second << ": " << oneLine(kv.first) << "\n";
 		RemoveContext(name);
 	}
 	Shutdown();

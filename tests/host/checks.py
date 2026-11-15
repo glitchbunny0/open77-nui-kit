@@ -621,6 +621,24 @@ def _():
     expect(' 40x30' in line, f'outline line {line!r}')
 
 
+# ---- check output: one line per item, whatever the input holds
+@check('check: a newline in a case name cannot start a line of its own')
+def _():
+    r = host('check', doc('plain', '<p>x</p>'), 'm', cases=[{'name': 'a\nWARN x1: injected', 'model': {}},
+                                                           {'name': 'b\n=== case ghost', 'model': {}}])
+    lines = r.out.splitlines()
+    expect(not any(l.startswith('WARN x1: injected') or l == '=== case ghost' for l in lines)
+           and sum(l.startswith('=== case ') for l in lines) == 2, r.out[:400])
+
+
+@check('check: warnings keep the order RmlUi logged them in')
+def _():
+    r = check_doc(doc('expr', '<p>{{ t + }}</p>'), {'t': 1})
+    w = [l.split(': ', 1)[1] for l in warns(r) if 'font face' not in l]
+    first = next((i for i, x in enumerate(w) if x.startswith('Error in data expression')), None)
+    expect(first is not None and w[first + 1].strip() == '" t + "' and w[first + 2].strip() == '^', f'{w}')
+
+
 def main():
     failed = 0
     for name, fn in CHECKS:
