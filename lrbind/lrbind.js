@@ -908,11 +908,13 @@
       const on = toBool(value);
       if ((el.style.visibility === "") !== on) { if (on) el.style.removeProperty("visibility"); else el.style.setProperty("visibility", "hidden"); }
     },
+    // DataViewRml: SetInnerRML when the string changed (it starts out as "", so an empty value keeps the markup's
+    // content). The views of what it replaces die with it; what it inserts gets bound, as natively.
     rml(el, value, mod, view) {
       const v = toStr(value);
       if (view.last === v) return;
-      for (const sub of view.children || []) dropView(sub);
-      el.innerHTML = v;
+      for (const sub of view.model.views) if (sub !== view && !sub.dead && el.contains(sub.element)) dropView(sub);
+      insertInert(el, v);
       view.children = bindChildren(view.model, el);
     },
     // DataViewChecked: a bool is the state; any other value checks only when it equals a non-empty value attribute
@@ -921,6 +923,39 @@
       setChecked(el, typeof value === "boolean" ? value : s !== "" && s === (el.getAttribute("value") || ""));
     },
   };
+
+  // data-rml in a browser: natively the string is parsed as RML, where nothing runs. A browser would run some of it, so
+  // the shim parses it in a <template> (inert) and drops what acts in a browser and means nothing to RmlUi: script and
+  // the other active elements, on* handlers, links and form targets, javascript:/vbscript:/data: values. Each drop is
+  // reported; the rest is inserted node by node (never parsed again).
+  const ACTIVE_TAGS = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "applet", "base",
+    "link", "meta", "noscript", "template", "svg", "math", "portal"]);
+  const ACTIVE_ATTRS = new Set(["href", "xlink:href", "action", "formaction", "srcdoc", "ping"]);
+
+  function insertInert(el, html) {
+    const t = el.ownerDocument.createElement("template");
+    t.innerHTML = html;
+    const dropped = new Set();
+    (function clean(node) {
+      for (const c of Array.from(node.childNodes)) {
+        if (c.nodeType !== 1) continue;
+        const tag = c.tagName.toLowerCase();
+        if (ACTIVE_TAGS.has(tag)) { dropped.add("<" + tag + ">"); c.remove(); continue; }
+        for (const a of Array.from(c.attributes)) {
+          const name = a.name.toLowerCase();
+          const value = a.value.replace(/[\u0000-\u0020\u007f-\u009f]+/g, "").toLowerCase();
+          if (name.startsWith("on") || ACTIVE_ATTRS.has(name) || /^(javascript|vbscript|data):/.test(value)) {
+            dropped.add(name);
+            c.removeAttribute(a.name);
+          }
+        }
+        clean(c);
+      }
+    })(t.content);
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(t.content);
+    if (dropped.size) warn("data-rml: dropped " + Array.from(dropped).join(", ") + " (it would act in a browser; RmlUi keeps it as inert markup)");
+  }
 
   function updateView(view) {
     if (view.dead) return;
@@ -1202,7 +1237,7 @@
       } else if (kind in VIEWS && kind !== "checked") {
         if ((kind === "attr" || kind === "attrif" || kind === "class" || kind === "style") && !mod) continue;
         const expr = compile(model, el, a.value, false);
-        if (expr) out.push(addView(model, { kind, element: el, mod, expr, deps: expr.deps }));
+        if (expr) out.push(addView(model, { kind, element: el, mod, expr, deps: expr.deps, last: kind === "rml" ? "" : NONE }));
       }
     }
     return true;

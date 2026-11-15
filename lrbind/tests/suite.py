@@ -10,6 +10,7 @@ Checks, one line each:
   header    lrbind.js / lrbind.lua carry the MIT notice (the kit's, and RmlUi's for the ported parts of lrbind.js)
   example   examples/side-menu/web/lrbind.js is the kit's file
   sync      bin/lrbind-sync on a scratch resource tree (what a copy is, own comment lines, refresh, check, --help)
+  browser   data-rml in a real Chromium: nothing planted in the string runs (skipped without Chromium)
 Then every mutant in MUTANTS: a copy of one file with ONE planted bug, run through the one check it names. That check
 must go red, and its output must contain the expected text (the failing case or check). A mutant whose pattern no
 longer matches exactly once fails too, so the table cannot rot silently.
@@ -408,6 +409,77 @@ MUTANTS += [
     ('a data-for that names nothing is silent', 'lrbind.js',
      "{ warn(\"Could not find variable name '\" + halves[halves.length - 1] + \"' in data model. Could not add data-for view.\"); return null; }",
      '{ return null; }', 'parity', 'for container through an alias'),
+]
+
+# ==== browser: data-rml in a real Chromium (skipped without one): planted handlers, an iframe, a javascript: link
+# that the page clicks; none may run, and the markup must be there
+def find_chrome():
+    rc, out = sh(['bin/html-shot', '--find'])
+    path = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ''
+    return path if path and os.path.exists(path) else None
+
+
+CHROME = find_chrome()
+XSS = ('<b>ok</b><img src="x" onerror="document.title=\'PWNED\'">'
+       '<iframe srcdoc="<script>parent.document.title=\'PWNED\'</script>"></iframe>'
+       '<svg><animate onbegin="document.title=\'PWNED\'" attributeName="x" dur="1s"/></svg>'
+       '<details open ontoggle="document.title=\'PWNED\'"><summary>x</summary></details>'
+       '<a id="j" href=" javascript:document.title=\'PWNED\'">j</a>')
+XSS_JSON = json.dumps(XSS).replace('</', '<\\/')   # it sits inside a <script>
+XSS_PAGE = """<!doctype html><html><head><title>clean</title><script src="lrbind.js"></script></head><body>
+<div data-model="m"><div id="a" data-rml="html"></div><b id="n">{{n}}</b></div>
+<script>LrBind.init({ models: { m: { n: 1, html: %s } } });</script>
+<script>setTimeout(() => document.getElementById('j') && document.getElementById('j').click(), 50);</script>
+</body></html>"""
+
+
+def check_browser(js=JS):
+    if not CHROME:
+        return True, 'skipped (no Chromium: bin/html-shot --find)'
+    d = os.path.join(TMP, 'browser-' + re.sub(r'\W', '_', os.path.basename(js)))
+    os.makedirs(d, exist_ok=True)
+    shutil.copy(js, os.path.join(d, 'lrbind.js'))
+    with open(os.path.join(d, 'index.html'), 'w') as f:
+        f.write(XSS_PAGE % XSS_JSON)
+    rc, out = sh([CHROME, '--headless', '--no-sandbox', '--disable-gpu', '--virtual-time-budget=3000',
+                  '--user-data-dir=' + os.path.join(d, 'profile'), '--dump-dom', 'file://' + os.path.join(d, 'index.html')],
+                 timeout=60)
+    m = re.search(r'<title>(.*?)</title>', out)
+    title = m.group(1) if m else None
+    bound = re.search(r'<div id="a"[^>]*><b>ok</b>', out) is not None
+    ran = 'PWNED' in out.replace(XSS_JSON, '')
+    ok = rc == 0 and title == 'clean' and bound and not ran
+    return ok, ('data-rml in Chromium: the markup is there, none of the planted scripts ran' if ok else
+                'FAIL browser: data-rml in Chromium: ' + ('a planted script ran' if ran else 'nothing ran') +
+                f', markup there {bound}, title {title!r}, rc {rc}')
+
+
+CHECKS['browser'] = check_browser
+
+# ==== data-rml: inert in a browser (what would act there and means nothing to RmlUi is dropped), an empty value keeps
+# the markup's content, the views of replaced content die with it
+MUTANTS += [
+    ('data-rml as innerHTML', 'lrbind.js', '      insertInert(el, v);', '      el.innerHTML = v;', 'browser',
+     'a planted script ran'),
+    ('data-rml as innerHTML (jsdom)', 'lrbind.js', '      insertInert(el, v);', '      el.innerHTML = v;', 'protocol',
+     'data-rml: no script'),
+    ('data-rml keeps active elements', 'lrbind.js', 'if (ACTIVE_TAGS.has(tag)) {', 'if (false) {', 'protocol',
+     'data-rml: no script, iframe'),
+    ('data-rml keeps on* handlers', 'lrbind.js', 'if (name.startsWith("on") || ', 'if (', 'protocol',
+     'data-rml: no on* handler'),
+    ('data-rml keeps links and form targets', 'lrbind.js', ' || ACTIVE_ATTRS.has(name) || ', ' || ', 'protocol',
+     'data-rml: no link or form target'),
+    ('data-rml keeps javascript: values', 'lrbind.js', ' || /^(javascript|vbscript|data):/.test(value)) {', ') {', 'protocol',
+     'data-rml: no javascript:/data: value'),
+    ('data-rml compares values as written', 'lrbind.js', '.replace(/[\\u0000-\\u0020\\u007f-\\u009f]+/g, "").toLowerCase();',
+     ';', 'protocol', 'in any case or spacing'),
+    ('data-rml drops silently', 'lrbind.js', '    if (dropped.size) warn(', '    if (false) warn(', 'protocol',
+     'what it dropped is reported'),
+    ('data-rml: an empty value wipes the content', 'lrbind.js', 'last: kind === "rml" ? "" : NONE', 'last: NONE', 'parity',
+     'rml view keeps markup content when the value is empty'),
+    ('data-rml: replaced content keeps its views', 'lrbind.js',
+     '      for (const sub of view.model.views) if (sub !== view && !sub.dead && el.contains(sub.element)) dropView(sub);\n',
+     '', 'parity', 'what it replaces stops updating'),
 ]
 
 # ==== the run

@@ -158,6 +158,9 @@ export const cases = [
   T("trailing semicolon and empty statements", `<div id="btn" data-event-click="n = n + 1;;">{{n}}</div>`, { n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
 
   // ---- more views
+  T("rml view keeps markup content when the value is empty", `<div data-rml="a"><b>orig</b></div>`, { a: "" }, { steps: [{ set: "a", value: "<i>x</i>" }, { set: "a", value: "" }] }),
+  T("rml view: what it replaces stops updating", `<div data-rml="a"><span>{{list[i]}}</span></div>`, { a: "", list: ["p"], i: 0 },
+    { steps: [{ set: "a", value: "<i>x</i>" }, { set: "i", value: 5 }] }),
   T("rml view binds what it inserts", `<div data-rml="a"></div>`, { a: "<b>{{n}}</b>", n: 3 }, { steps: [{ set: "n", value: 4 }] }),
   T("class from strings", `<div data-class-on="s" data-class-off="t" data-attrif-hidden="s">x</div>`, { s: "TRUE", t: "yes" }),
   T("attr with number and bool", `<div data-attr-n="n" data-attr-b="b" data-attr-e="nope2">x</div>`, { n: 1.5, b: true }),

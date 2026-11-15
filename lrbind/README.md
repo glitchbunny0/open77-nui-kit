@@ -87,6 +87,13 @@ takes top-level fields of the model.
   radio unchecks every other radio with the same `name` (an empty name counts) in its `<form>`, or outside any form.
 - **A failing call keeps the old text, or prints `#rmlui#`.** `{{nofn(a)}}` alone stays as written; next to a working
   binding in the same text it shows RmlUi's placeholder `#rmlui#`. Only the four transforms above exist.
+- **`data-rml` is for markup you wrote.** Whatever the string holds goes live on both surfaces: its `{{x}}`, `data-*`
+  bindings and `data-event-*` handlers are bound in the model (natively too), so a string a player typed can rewire
+  the screen. In WebUI the shim also drops what would act in a browser and means nothing to RmlUi: `<script>`,
+  `<style>`, `<iframe>`, `<object>`, `<embed>`, `<svg>`, `<math>`, `<meta>`, `<link>`, `<base>` and a few more, `on*`
+  handlers, `href`, `action`, `formaction`, `srcdoc`, `ping`, and any `javascript:`/`vbscript:`/`data:` value; each
+  drop is reported through `lrbind:error`. Only there do the trees differ: RmlUi keeps such markup as inert elements
+  (a `<script>` with its text as a text child). The element's own content stays until the value is first non-empty.
 
 ## Not verifiable offline (check in the game before relying on it)
 

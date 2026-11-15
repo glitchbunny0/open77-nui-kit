@@ -194,6 +194,25 @@ function page(body, withBridge = true) {
   check(args().args[0] === "typed", "a change that bubbles up carries the target's value " + JSON.stringify(args().args));
 }
 
+// ---- data-rml inserts markup, never anything that runs in a browser (RmlUi runs nothing); its bindings still go live
+{
+  const payload = '<b id="ok">{{n}}</b><img src="x" onerror="document.title=1"><script>document.title=2</script>' +
+    '<iframe srcdoc="x"></iframe><svg><animate onbegin="x"/></svg><style>body{display:none}</style><meta http-equiv="refresh" content="0">' +
+    '<a id="l" href="javascript:document.title=3" target="_top">l</a><form action="https://elsewhere"><button formaction="x">b</button></form>' +
+    '<i id="d" title=" JaVaScRiPt:x" data-x="data:text/html,x" ONCLICK="x">i</i>';
+  const p = page(`<div data-model="m"><div id="r" data-rml="html"></div></div>`);
+  await p.fire("lrbind:init", { models: { m: { html: payload, n: 7 } }, events: {} });
+  const r = p.$("#r");
+  const attrs = Array.from(r.querySelectorAll("*")).flatMap((e) => Array.from(e.attributes).map((a) => a.name));
+  check(p.$("#ok") && p.$("#ok").textContent === "7", "data-rml: the markup is inserted and its bindings are live");
+  check(!r.querySelector("script, iframe, svg, style, meta"), "data-rml: no script, iframe, svg, style or meta " + r.innerHTML);
+  check(!attrs.some((n) => /^on/i.test(n)), "data-rml: no on* handler attribute " + JSON.stringify(attrs));
+  check(!p.$("#l").hasAttribute("href") && !r.querySelector("[action], [formaction]"), "data-rml: no link or form target");
+  check(!p.$("#d").hasAttribute("title") && !p.$("#d").hasAttribute("data-x"), "data-rml: no javascript:/data: value, in any case or spacing");
+  check(r.querySelector("img") && r.querySelector("img").getAttribute("src") === "x" && r.querySelector("form button"), "data-rml: the elements themselves stay");
+  check(/data-rml: dropped/.test((p.last("lrbind:error") || [, {}])[1].message || ""), "data-rml: what it dropped is reported");
+}
+
 // ---- plain browser (a mockup): no Open77, init by hand, nothing pending
 {
   const p = page(`<div data-model="voice"><span id="d">{{mode | to_upper}}</span></div>`, false);
