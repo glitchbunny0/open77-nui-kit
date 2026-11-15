@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: MIT
+// lrbind.js, part of open77-nui-kit (https://github.com/glitchbunny0/open77-nui-kit).
+// Copyright (c) 2026 glitchbunny0 and contributors
+// The expression parser, interpreter and data views are ported from RmlUi (https://github.com/mikke89/RmlUi):
+// Copyright (c) 2008-2014 CodePoint Ltd, Shift Technology Ltd, and contributors
+// Copyright (c) 2019-2026 The RmlUi Team, and contributors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+// the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+// TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 // lrbind.js: RmlUi data bindings ({{x}}, data-for, data-if, data-class-*, data-event-*, ...) for a WebUI page.
 // The same markup runs as a NativeUI document, so a page and its native twin share one source. The expression
 // parser and interpreter follow RmlUi 6.3 (DataExpression.cpp) instruction for instruction, the views follow
@@ -12,6 +33,12 @@
   // a string reads as a bool only when it is 1/0/true/false, and as a number through atof.
 
   const NONE = undefined;
+  const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  // obj[key] = v that stays an own property: a key "__proto__" must not reach Object.prototype
+  function setOwn(obj, key, v) {
+    if (key === "__proto__") Object.defineProperty(obj, key, { value: v, writable: true, enumerable: true, configurable: true });
+    else obj[key] = v;
+  }
   const isScalar = (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 
   // printf("%.<p>f") for a double: correctly rounded, exact ties to even (JS toFixed breaks ties upwards).
@@ -125,7 +152,8 @@
   };
 
   // ---------------------------------------------------------------------------------------------------------
-  // Messages. Every RmlUi warning has a twin here: console + lrbind:error to Lua (it lands in the client log).
+  // Messages. Where RmlUi warns, the shim warns too (the parity suite compares whether each step warned): console +
+  // lrbind:error to Lua (it lands in the client log).
 
   let errorSink = null;
   function warn(message) {
@@ -639,15 +667,33 @@
   const models = new Map();       // name -> Model
   let bridge = null;              // { emit(event, payload) } once Open77 is there
 
+  // DataModel.cpp LegalVariableName: what a model may bind (case-insensitive, ASCII)
+  const RESERVED = new Set(["it", "it_index", "ev", "true", "false", "size", "literal"]);
+  function illegalName(name) {
+    const l = asciiLower(name);
+    if (l === "") return "Name cannot be empty.";
+    if (!/^[a-z]/.test(l)) return "First character must be 'a-z' or 'A-Z'.";
+    if (!/^[a-z0-9_]*$/.test(l)) return "Name must strictly contain characters a-z, A-Z, 0-9 and under_score.";
+    if (RESERVED.has(l)) return "Name is reserved.";
+    return null;
+  }
+
   class Model {
     constructor(name, data, events) {
       this.name = name;
       this.data = data && typeof data === "object" && !Array.isArray(data) ? data : {};
-      this.variables = new Set(Object.keys(this.data));   // bound names are fixed at create, like DataModel
+      // bound names are fixed at create, like DataModel; a name RmlUi refuses is not bound at all
+      this.variables = new Set();
+      for (const k of Object.keys(this.data)) {
+        const why = illegalName(k);
+        if (why) warn("Could not bind data variable '" + k + "'. " + why);
+        else this.variables.add(k);
+      }
       this.events = new Set(events || []);   // only declared callbacks run, as natively
       this.views = [];
       this.dirty = new Set();
       this.aliases = new WeakMap();   // element -> Map(name -> address)
+      this.attrAliases = new WeakMap();   // element -> Set of the names that came from data-alias-* attributes
       this.root = null;
     }
 
@@ -656,11 +702,18 @@
       const address = parseAddress(str);
       if (!address) return null;
       if (this.variables.has(address[0])) return address;
+      const lower = asciiLower(address[0]);
       for (let el = element; el && modelOf(el) === this; el = el.parentNode) {
         const names = this.aliases.get(el);
-        if (names && names.has(address[0])) {
-          const target = names.get(address[0]);
-          return target.concat(address.slice(1));
+        if (!names) continue;
+        if (names.has(address[0])) return names.get(address[0]).concat(address.slice(1));
+        // An HTML parser lowercases attribute names, so data-alias-firstRow reaches the shim as firstrow; RmlUi (XML)
+        // keeps it as written. Resolve the name as written, and say so: in game it must match exactly.
+        const fromAttr = this.attrAliases.get(el);
+        if (lower !== address[0] && fromAttr && fromAttr.has(lower) && lowercasesAttributes(el.ownerDocument)) {
+          warn("'" + address[0] + "' matches data-alias-" + lower + " only ignoring case: the HTML parser lowercased the attribute name, " +
+            "NativeUI keeps it as written. Write data-* modifier names in lowercase.");
+          return names.get(lower).concat(address.slice(1));
         }
       }
       return null;
@@ -685,17 +738,27 @@
       return cur;
     }
 
+    // DataModel::GetVariable walks every entry first (a missing member, an index out of bounds or `size` fails), then
+    // DataVariable::Set takes scalars only. A refused assignment warns and stops the data-event chain.
     setValue(address, value) {
-      if (!this.variables.has(address[0]) || value === NONE) return false;
+      if (!this.variables.has(address[0])) return false;
       let parent = this.data, key = address[0];
       for (let i = 1; i < address.length; i++) {
-        const next = parent[key];
-        if (next === null || typeof next !== "object") return false;
-        parent = next;
-        key = address[i];
+        const cur = parent[key], entry = address[i];
+        if (cur === null || typeof cur !== "object") { warn("Tried to get the child of a scalar type."); return false; }
+        if (isArrayLike(cur)) {
+          if (typeof entry !== "number" || !Array.isArray(cur) || entry < 0 || entry >= cur.length) { warn("Data array index out of bounds."); return false; }
+        } else if (typeof entry === "number" || !hasOwn(cur, entry)) {
+          warn("Member " + String(entry) + " not found in data struct.");
+          return false;
+        }
+        parent = cur;
+        key = entry;
       }
-      if (parent[key] !== NONE && !isScalar(parent[key])) { warn("Values can only be assigned to scalar data types."); return false; }
-      parent[key] = value;
+      const cur = parent[key];
+      if (cur !== null && typeof cur === "object") { warn("Values can only be assigned to scalar data types."); return false; }
+      if (value === NONE) return false;
+      setOwn(parent, key, value);
       this.dirty.add(address[0]);
       schedule();
       return true;
@@ -738,7 +801,11 @@
         return model.resolve(str, element);
       },
       getValue(address) {
-        if (address[0] === "ev" && address.length === 2) return event ? event[address[1]] : NONE;
+        if (address[0] === "ev" && address.length === 2) {
+          if (event) return hasOwn(event, address[1]) ? event[address[1]] : NONE;
+          warn("Could not get value from data variable 'ev." + address[1] + "'.");   // outside an event: a model miss
+          return NONE;
+        }
         return model.getValue(address);
       },
       setValue(address, value) {
@@ -787,22 +854,68 @@
     return view;
   }
 
+  // A checkbox or radio keeps its state in the checked attribute natively, and every change of that attribute fires
+  // "change" (InputTypeCheckbox/InputTypeRadio::OnAttributeChange), which data-checked/data-value controllers and
+  // data-event-change see, whoever changed it: a click, a view, the markup. A radio that gets checked first unchecks
+  // every other radio with the same name (PopRadioSet: in its form, else in the document outside any form; an empty
+  // name is a name too).
+  const isToggle = (el) => el.nodeType === 1 && el.tagName.toLowerCase() === "input" && (el.type === "checkbox" || el.type === "radio");
+
+  function setChecked(el, on) {
+    if ("checked" in el && el.checked !== on) el.checked = on;
+    if (el.hasAttribute("checked") === on) return;
+    if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked");
+    checkedChanged(el, on);
+  }
+
+  function checkedChanged(el, on) {
+    if (!isToggle(el)) return;
+    if (on && el.type === "radio") popRadioSet(el);
+    const win = el.ownerDocument.defaultView || global;
+    el.dispatchEvent(new win.Event("change", { bubbles: true }));
+  }
+
+  function popRadioSet(el) {
+    const form = el.closest("form");
+    const name = el.getAttribute("name") || "";
+    for (const r of Array.from((form || el.ownerDocument).querySelectorAll("input"))) {
+      if (r === el || r.type !== "radio" || (r.getAttribute("name") || "") !== name || (!form && r.closest("form"))) continue;
+      setChecked(r, false);
+    }
+  }
+
+  // A click changed .checked: the attribute follows (RmlUi's default action sets it), before any listener runs.
+  function syncToggle(e) {
+    const el = e.target;
+    if (!isToggle(el) || el.hasAttribute("checked") === el.checked) return;
+    if (el.checked) el.setAttribute("checked", ""); else el.removeAttribute("checked");
+    if (el.checked && el.type === "radio") popRadioSet(el);
+  }
+
   const VIEWS = {
     attr(el, value, mod) {
       const v = toStr(value);
-      if (el.getAttribute(mod) !== v) el.setAttribute(mod, v);
+      const changed = el.getAttribute(mod) !== v;
+      if (changed) el.setAttribute(mod, v);
       if (mod === "value" && "value" in el && el.value !== v) el.value = v;
+      if (mod === "checked" && changed) { if ("checked" in el) el.checked = true; checkedChanged(el, true); }
     },
     attrif(el, value, mod) {
       const on = toBool(value);
+      if (mod === "checked") return setChecked(el, on);
       if (el.hasAttribute(mod) !== on) { if (on) el.setAttribute(mod, ""); else el.removeAttribute(mod); }
-      if (mod === "checked" && "checked" in el) el.checked = on;
       if (mod === "disabled" && "disabled" in el) el.disabled = on;
     },
     class(el, value, mod) { el.classList.toggle(mod, toBool(value)); },
     style(el, value, mod) {
       const v = toStr(value);
-      if (el.style.getPropertyValue(mod) !== v) el.style.setProperty(mod, v);
+      const old = el.style.getPropertyValue(mod);
+      if (old === v) return;
+      el.style.removeProperty(mod);
+      el.style.setProperty(mod, v);
+      if (v === "" || el.style.getPropertyValue(mod) !== "") return;
+      warn("Syntax error parsing inline property declaration '" + mod + ": " + v + ";'.");   // the old value stays
+      if (old !== "") el.style.setProperty(mod, old);
     },
     // DataViewIf/DataViewVisible: "shown" means no inline display/visibility at all, so a true value also
     // removes an inline display the markup set, exactly as RmlUi does
@@ -814,19 +927,54 @@
       const on = toBool(value);
       if ((el.style.visibility === "") !== on) { if (on) el.style.removeProperty("visibility"); else el.style.setProperty("visibility", "hidden"); }
     },
+    // DataViewRml: SetInnerRML when the string changed (it starts out as "", so an empty value keeps the markup's
+    // content). The views of what it replaces die with it; what it inserts gets bound, as natively.
     rml(el, value, mod, view) {
       const v = toStr(value);
       if (view.last === v) return;
-      for (const sub of view.children || []) dropView(sub);
-      el.innerHTML = v;
+      for (const sub of view.model.views) if (sub !== view && !sub.dead && el.contains(sub.element)) dropView(sub);
+      insertInert(el, v);
       view.children = bindChildren(view.model, el);
     },
+    // DataViewChecked: a bool is the state; any other value checks only when it equals a non-empty value attribute
     checked(el, value) {
-      const on = el.type === "radio" ? toStr(value) === (el.getAttribute("value") || "") : toBool(value);
-      if (el.hasAttribute("checked") !== on) { if (on) el.setAttribute("checked", ""); else el.removeAttribute("checked"); }
-      if (el.checked !== on) el.checked = on;
+      const s = toStr(value);
+      setChecked(el, typeof value === "boolean" ? value : s !== "" && s === (el.getAttribute("value") || ""));
     },
   };
+
+  // data-rml in a browser: natively the string is parsed as RML, where nothing runs. A browser would run some of it, so
+  // the shim parses it in a <template> (inert) and drops what acts in a browser and means nothing to RmlUi: script and
+  // the other active elements, on* handlers, links and form targets, javascript:/vbscript:/data: values. Each drop is
+  // reported; the rest is inserted node by node (never parsed again).
+  const ACTIVE_TAGS = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "applet", "base",
+    "link", "meta", "noscript", "template", "svg", "math", "portal"]);
+  const ACTIVE_ATTRS = new Set(["href", "xlink:href", "action", "formaction", "srcdoc", "ping"]);
+
+  function insertInert(el, html) {
+    const t = el.ownerDocument.createElement("template");
+    t.innerHTML = html;
+    const dropped = new Set();
+    (function clean(node) {
+      for (const c of Array.from(node.childNodes)) {
+        if (c.nodeType !== 1) continue;
+        const tag = c.tagName.toLowerCase();
+        if (ACTIVE_TAGS.has(tag)) { dropped.add("<" + tag + ">"); c.remove(); continue; }
+        for (const a of Array.from(c.attributes)) {
+          const name = a.name.toLowerCase();
+          const value = a.value.replace(/[\u0000-\u0020\u007f-\u009f]+/g, "").toLowerCase();
+          if (name.startsWith("on") || ACTIVE_ATTRS.has(name) || /^(javascript|vbscript|data):/.test(value)) {
+            dropped.add(name);
+            c.removeAttribute(a.name);
+          }
+        }
+        clean(c);
+      }
+    })(t.content);
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(t.content);
+    if (dropped.size) warn("data-rml: dropped " + Array.from(dropped).join(", ") + " (it would act in a browser; RmlUi keeps it as inert markup)");
+  }
 
   function updateView(view) {
     if (view.dead) return;
@@ -939,28 +1087,63 @@
     }
   }
 
-  function insertAlias(model, el, name, address) {
+  function insertAlias(model, el, name, address, fromAttr) {
     if (model.variables.has(name)) warn("Alias variable '" + name + "' is shadowed by a global variable.");
     const names = model.aliases.get(el) || new Map();
     names.set(name, address);
     model.aliases.set(el, names);
+    if (fromAttr) model.attrAliases.set(el, (model.attrAliases.get(el) || new Set()).add(name));
+  }
+
+  // An HTML document lowercases attribute names; an XML one (a page served as XHTML) keeps them, as RmlUi does
+  const htmlDocs = new WeakMap();
+  function lowercasesAttributes(doc) {
+    if (!htmlDocs.has(doc)) htmlDocs.set(doc, doc.createElement("a").tagName === "A");
+    return htmlDocs.get(doc);
   }
 
   // data-for: the element becomes a hidden anchor; copies of it (without data-for) go in before it, one per entry.
+  // StringUtilities::ExpandString: split at the delimiter outside quotes, trim blanks; an empty item counts, except
+  // after the last delimiter
+  function expandString(str, delimiter) {
+    const out = [];
+    let quote = "", start = -1, end = 0, lastDelimiter = true;
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (lastDelimiter && !quote && (c === '"' || c === "'")) quote = c;
+      else if (c === quote && str[i - 1] !== "\\") quote = "";
+      else if (c === delimiter && !quote) {
+        out.push(start >= 0 ? str.slice(start, end + 1) : "");
+        lastDelimiter = true;
+        start = -1;
+        continue;
+      } else if (!/[\r\n \t]/.test(c) || quote) {
+        if (start < 0) start = i;
+        end = i;
+        lastDelimiter = false;
+        continue;
+      }
+    }
+    if (start >= 0) out.push(str.slice(start, end + 1));
+    return out;
+  }
+
+  // DataViewFor::Initialize: "it : list", "it, i : list" or "list"; any other count of names leaves the defaults
   function makeFor(model, el, source) {
-    const halves = source.split(":").map((s) => s.trim());
+    const halves = expandString(source, ":");
     if (!halves.length || halves.length > 2 || !halves[0] || !halves[halves.length - 1]) {
       warn("Invalid syntax in data-for '" + source + "'");
       return null;
     }
     let iterator = "", indexName = "";
     if (halves.length === 2) {
-      const pair = halves[0].split(",").map((s) => s.trim());
-      iterator = pair[0];
+      const pair = expandString(halves[0], ",");
+      if (!pair.length) { warn("Invalid syntax in data-for '" + source + "'"); return null; }
+      if (pair.length === 1 || pair.length === 2) iterator = pair[0];
       if (pair.length === 2) indexName = pair[1];
     }
     const address = model.resolve(halves[halves.length - 1], el);
-    if (!address) return null;
+    if (!address) { warn("Could not find variable name '" + halves[halves.length - 1] + "' in data model. Could not add data-for view."); return null; }
     const content = el.ownerDocument.createDocumentFragment();
     while (el.firstChild) content.appendChild(el.firstChild);
     el.removeAttribute("data-for");
@@ -1020,16 +1203,31 @@
     return "change";
   }
 
-  function eventParams(e, el) {
+  const BUTTON_EVENTS = new Set(["mousedown", "mouseup", "click", "dblclick"]);
+  const LOCK_KEYS = [["caps_lock_key", "CapsLock"], ["num_lock_key", "NumLock"], ["scroll_lock_key", "ScrollLock"]];
+  const WHEEL_NOTCH = [100, 3, 1];   // DOM deltaMode pixels / lines / pages per wheel notch (Chromium: 100 px)
+
+  // ev.* as RmlUi fills it (Context.cpp, the input widgets): mouse_x/mouse_y on mouse events; button (0 left, 1 right,
+  // 2 middle) on mousedown/mouseup/click/dblclick only; the seven modifier keys as ints 0/1; wheel_delta_x/_y in
+  // notches; a change's value (a number from a range input) and, from a checkbox or radio, checked.
+  function eventParams(e) {
     const p = {};
     if ("clientX" in e) {
       p.mouse_x = e.clientX; p.mouse_y = e.clientY;
-      p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;   // RmlUi: 0 left, 1 right, 2 middle
+      if (BUTTON_EVENTS.has(e.type)) p.button = e.button === 1 ? 2 : e.button === 2 ? 1 : e.button;
     }
-    if ("ctrlKey" in e) { p.ctrl_key = e.ctrlKey; p.shift_key = e.shiftKey; p.alt_key = e.altKey; p.meta_key = e.metaKey; }
-    if ("deltaY" in e) { p.wheel_delta_x = Math.sign(e.deltaX); p.wheel_delta_y = Math.sign(e.deltaY); }
-    if ("value" in el && (e.type === "change" || e.type === "input")) {
-      p.value = el.type === "checkbox" || el.type === "radio" ? (el.checked ? el.value : "") : el.value;
+    if ("ctrlKey" in e) {
+      p.ctrl_key = e.ctrlKey ? 1 : 0; p.shift_key = e.shiftKey ? 1 : 0; p.alt_key = e.altKey ? 1 : 0; p.meta_key = e.metaKey ? 1 : 0;
+      for (const [name, key] of LOCK_KEYS) p[name] = typeof e.getModifierState === "function" && e.getModifierState(key) ? 1 : 0;
+    }
+    if ("deltaY" in e) {
+      const notch = WHEEL_NOTCH[e.deltaMode] || 1;
+      p.wheel_delta_x = e.deltaX / notch; p.wheel_delta_y = e.deltaY / notch;
+    }
+    const t = e.target;
+    if ((e.type === "change" || e.type === "input") && t && "value" in t) {
+      if (isToggle(t)) { p.value = t.checked ? t.value : ""; p.checked = t.checked; }
+      else p.value = t.type === "range" ? parseFloat(t.value) : t.value;
     }
     return p;
   }
@@ -1037,17 +1235,21 @@
   function bindElement(model, el, out) {
     const attrs = Array.from(el.attributes);
     const forAttr = el.getAttribute("data-for");
+    // data-for is structural: it cancels every other view and controller on its element, aliases included (its
+    // copies carry those attributes and bind them, per entry), and its content is bound per copy. RmlUi keeps that
+    // content as text, never as elements: when the view fails, the element stays, empty.
+    if (forAttr !== null) {
+      const view = makeFor(model, el, forAttr);
+      if (view) out.push(addView(model, view));
+      else while (el.firstChild) el.removeChild(el.firstChild);
+      return false;
+    }
     // aliases first: they serve the element's own other bindings
     for (const a of attrs) {
       if (!a.name.startsWith("data-alias-")) continue;
       const target = model.resolve(a.value, el);
       if (!target) { warn("Could not add data-alias-" + a.name.slice(11) + ": no data variable '" + a.value + "'"); continue; }
-      insertAlias(model, el, a.name.slice(11), target);
-    }
-    if (forAttr !== null) {
-      const view = makeFor(model, el, forAttr);
-      if (view) out.push(addView(model, view));
-      return false;   // its content is bound per copy
+      insertAlias(model, el, a.name.slice(11), target, true);
     }
     for (const a of attrs) {
       const name = a.name;
@@ -1062,7 +1264,7 @@
       } else if (kind in VIEWS && kind !== "checked") {
         if ((kind === "attr" || kind === "attrif" || kind === "class" || kind === "style") && !mod) continue;
         const expr = compile(model, el, a.value, false);
-        if (expr) out.push(addView(model, { kind, element: el, mod, expr, deps: expr.deps }));
+        if (expr) out.push(addView(model, { kind, element: el, mod, expr, deps: expr.deps, last: kind === "rml" ? "" : NONE }));
       }
     }
     return true;
@@ -1075,7 +1277,7 @@
     if (!expr) return;
     const real = type === "change" ? changeEventFor(el) : domType;
     el.addEventListener(real, (e) => {
-      run(expr.program, expr.addresses, makeIface(model, el, eventParams(e, el)));
+      run(expr.program, expr.addresses, makeIface(model, el, eventParams(e)));
     });
   }
 
@@ -1084,13 +1286,20 @@
     if (!address) { warn("Could not find data variable with name '" + source + "'."); return; }
     const expr = { program: [[I.Variable, 0]], addresses: [address], deps: new Set([address[0]]) };
     out.push(addView(model, { kind: kind === "value" ? "attr" : "checked", element: el, mod: "value", expr, deps: expr.deps }));
+    // DataControllerValue (data-value and data-checked alike): the element's own change event writes the variable
     el.addEventListener(changeEventFor(el), () => {
-      let value;
-      if (kind === "checked") value = el.type === "radio" ? el.value : el.checked;
-      else value = el.value;
-      if (el.type === "radio" && !el.checked) return;
+      const value = controllerValue(el);
+      if (value === NONE) return;
       if (model.setValue(address, value)) send("lrbind:change", { model: model.name, path: addressString(address), value });
     });
+  }
+
+  // What the change event hands the controller (data-binding-override-value, else value): a checkbox its checked state,
+  // a radio its value when it got checked (nothing when it got unchecked), a range input a number, any other its text.
+  function controllerValue(el) {
+    if (el.type === "checkbox") return el.checked;
+    if (el.type === "radio") return el.checked ? el.value : NONE;
+    return el.type === "range" ? parseFloat(el.value) : el.value;   // a slider hands over a float
   }
 
   function bindTree(model, root) {
@@ -1144,24 +1353,37 @@
   }
 
   // Lua paths come in already 0-based (lrbind.lua shifts them).
+  // A path walks own members only (it cannot reach Object.prototype), and an index may append at the end of a list,
+  // not leave a hole.
   function setPath(model, path, value) {
-    const address = parseAddress(path);
+    const address = typeof path === "string" ? parseAddress(path) : null;
     if (!address || !model.variables.has(address[0])) { warn("set: no data variable '" + path + "' in model " + model.name); return; }
     let parent = model.data, key = address[0];
     for (let i = 1; i < address.length; i++) {
       let next = parent[key];
+      const entry = address[i], last = i === address.length - 1;
       if (next === null || typeof next !== "object") { warn("set: '" + path + "' runs through a scalar"); return; }
-      if (typeof address[i] === "number" && !Array.isArray(next)) { next = []; parent[key] = next; }
+      if (typeof entry === "number") {
+        if (!Array.isArray(next)) {
+          if (Object.keys(next).length) { warn("set: '" + path + "' indexes a struct"); return; }
+          next = [];   // Lua's {} is an empty list
+          setOwn(parent, key, next);
+        }
+        if (entry > next.length || (entry === next.length && !last)) { warn("set: '" + path + "' is past the end of its list"); return; }
+      } else if (last ? Array.isArray(next) : !hasOwn(next, entry)) {
+        warn("set: no member '" + entry + "' on the way to '" + path + "'");
+        return;
+      }
       parent = next;
-      key = address[i];
+      key = entry;
     }
-    parent[key] = value;
+    setOwn(parent, key, value);
     model.dirty.add(address[0]);
     schedule();
   }
 
   function arrayAt(model, path) {
-    const address = parseAddress(path);
+    const address = typeof path === "string" ? parseAddress(path) : null;
     if (!address || !model.variables.has(address[0])) return null;
     let cur = model.data[address[0]];
     for (let i = 1; i < address.length && cur !== NONE; i++) cur = child(cur, address[i]);
@@ -1188,6 +1410,7 @@
       if (!root) { warn("no element with data-model=\"" + model.name + "\""); continue; }
       model.root = root;
       root.__lrbindModel = model;
+      root.addEventListener("change", syncToggle, true);
       bindTree(model, root);
     }
     doc.documentElement.classList.remove("lrbind-pending");
@@ -1202,7 +1425,7 @@
       for (const [name, data] of Object.entries((spec && spec.models) || {})) {
         const old = models.get(name);
         if (old && old.root) {
-          for (const [k, v] of Object.entries(data || {})) if (old.variables.has(k)) { old.data[k] = v; old.dirty.add(k); }
+          for (const [k, v] of Object.entries(data || {})) if (old.variables.has(k)) { setOwn(old.data, k, v); old.dirty.add(k); }
           schedule();
           continue;
         }
@@ -1211,13 +1434,25 @@
       bindDocument(doc);
     },
     set(name, path, value) { const m = models.get(name); if (m) setPath(m, path, value); else warn("set: no model " + name); },
+    // merge takes top-level fields of the model (set takes a path)
     merge(name, fields) {
       const m = models.get(name);
       if (!m) return warn("merge: no model " + name);
-      for (const [k, v] of Object.entries(fields || {})) setPath(m, k, v);
+      if (!fields || typeof fields !== "object") return warn("merge: no fields for model " + name);
+      for (const k of Object.keys(fields)) {
+        if (!m.variables.has(k)) { warn("merge: no data variable '" + k + "' in model " + name + " (merge takes top-level fields)"); continue; }
+        setOwn(m.data, k, fields[k]);
+        m.dirty.add(k);
+      }
+      schedule();
     },
     push(name, path, value) { const m = models.get(name); const a = m && arrayAt(m, path); if (a) a.push(value); else warn("push: '" + path + "' is not an array"); },
-    removeAt(name, path, index) { const m = models.get(name); const a = m && arrayAt(m, path); if (a && index >= 0 && index < a.length) a.splice(index, 1); else warn("removeAt: no entry " + index + " in '" + path + "'"); },
+    removeAt(name, path, index) {
+      const m = models.get(name);
+      const a = m && arrayAt(m, path);
+      if (a && Number.isInteger(index) && index >= 0 && index < a.length) a.splice(index, 1);
+      else warn("removeAt: no entry " + index + " in '" + path + "'");
+    },
     get(name) { const m = models.get(name); return m ? m.data : NONE; },
     flush,
     onError(fn) { errorSink = fn; },

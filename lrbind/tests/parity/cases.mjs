@@ -1,7 +1,13 @@
 // Parity cases: each runs in real RmlUi 6.3 (the kit's rmlhost parity mode, output kept in golden.json) and through lrbind.js
 // in jsdom; parity.test.mjs compares the element trees after every step. Markup must parse the same as XML (RmlUi)
 // and as HTML (WebUI): write && as &amp;&amp; and < as &lt; (or keep a space after it), use div/span/b only.
-// Steps: { set: "path (0-based)", value } or { event: "<id>", type: "click", params: { mouse_x } }.
+// Steps: { set: "path (0-based)", value } or { event: "<id>", type: "click", params: { mouse_x } }. An event's type and
+// params are RmlUi's (button 1 = right, ctrl_key 0/1, wheel_delta_y in notches); the harness fires the DOM event that
+// carries them, and RmlUi gets exactly the params given, so read only those in the case. xhtml: true parses the case as
+// XML in jsdom too (attribute names keep their case, as in RmlUi).
+// RmlUi updates the views of one depth in address order: a case where the order of two such views changes the outcome
+// (two radios checked by one variable, a data-for shrinking under a data-if on its element) gets a golden that flips
+// when cases are added before it. Write cases that do not depend on it.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -111,4 +117,77 @@ export const cases = [
     ] }),
   T("bad assignment drops the controller", `<div id="btn" data-event-click="a + 1">{{a}}</div><div id="btn2" data-event-click="nope = 1">{{a}}</div>`, { a: 0 },
     { steps: [{ event: "btn", type: "click" }, { event: "btn2", type: "click" }] }),
+
+  // ---- more operators (!= <= >=), number literals, transform arguments, dynamic indices
+  T("relational eq-forms", `<div>{{a != b}}|{{a != a}}|{{a &lt;= b}}|{{b &lt;= b}}|{{a >= b}}|{{a >= a}}|{{s != 'x'}}|{{s != 'y'}}</div>`, { a: 2, b: 3, s: "x" }),
+  T("number literal edges", `<div>{{-.5 + 1}}|{{1.}}|{{0.25 * 4}}|{{10 / 4}}|{{2 - 1 - 1}}</div>`, {}),
+  T("transform arg edges", `<div>[{{to_upper()}}]|[{{a | round(1)}}]|[{{a | format(2.7)}}]|[{{a | format(-1)}}]|[{{to_lower('A', 'B')}}]|[{{a | format(1) | to_upper}}]</div>`, { a: 2.345 }),
+  T("dynamic index edges", `<div>[{{list[ 1 ]}}]|[{{list[t]}}]|[{{list[idx[0]]}}]|[{{rows[sel].cells.size}}]|[{{list[sel].x}}]|[{{list[f]}}]|[{{list[f - 2]}}]</div>`,
+    { list: ["p", "q", "r"], t: true, idx: [2], sel: 1, rows: [{ cells: [1] }, { cells: [1, 2, 3] }], f: 1.9 }),
+
+  // ---- more data-for
+  T("for index used in math and dynamic index", `<div data-for="row, i : rows">{{i + 1}}.{{labels[i]}}={{row}}</div>`, { rows: ["a", "b"], labels: ["L0", "L1"] }),
+  T("for three names", `<div data-for="a, b, c : list">{{it}}|{{a}}</div>`, { list: ["p"] }),
+  T("for syntax edges", `<div data-for="list :">{{it}}</div>|<div data-for=" : list">{{it}}</div>|<div data-for="a b : list">{{it}}</div>|<div data-for=", i : list">{{it}}{{i}}</div>`, { list: ["p"] }),
+  T("for iterator with spaces and empty index", `<div data-for=" x , : list">{{x}}/{{it_index}}</div>`, { list: ["p", "q"] }),
+  T("for with if on the same element", `<div data-for="v : list" data-if="v > 1">{{v}}</div>`, { list: [1, 2, 3] }, { steps: [{ set: "list", value: [3, 0, 2] }] }),
+  T("for container through an alias on the same element", `<div data-alias-first="rows[0]" data-for="c : first.cells">{{c}}</div>`, { rows: [{ cells: [1, 2] }] }),
+  T("alias on a for element names the iterator", `<div data-for="row : rows" data-alias-nm="row.name"><span>{{nm}}</span></div>`, { rows: [{ name: "a" }, { name: "b" }] }),
+  T("for over a nested container shrinking", `<div data-for="row, r : rows"><span data-for="c : row.cells">{{r}}{{c}}</span></div>`,
+    { rows: [{ cells: [1, 2] }, { cells: [3] }] }, { steps: [{ set: "rows", value: [{ cells: [] }] }, { set: "rows[0].cells", value: [7] }] }),
+  T("event inside a for clone", `<div data-for="item, i : items"><span id="e" data-event-click="pick(item.name, i); sel = i">{{item.name}}</span></div><b>{{sel}}</b>`,
+    { items: [{ name: "a" }, { name: "b" }], sel: -1 }, { events: ["pick"], steps: [{ event: "e", type: "click" }] }),
+  T("event bubbles from a child", `<div data-event-click="n = n + 1"><span id="c">x</span></div><b>{{n}}</b>`, { n: 0 }, { steps: [{ event: "c", type: "click" }] }),
+
+  // ---- assignments RmlUi refuses, event parameters
+  T("assign to a missing member", `<div id="btn" data-event-click="obj.nope = 5; n = 1">{{obj.a}}|{{n}}</div>`, { obj: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign to size", `<div id="btn" data-event-click="list.size = 9; n = 1">{{list.size}}|{{n}}</div>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign to an inherited name", `<div id="btn" data-event-click="o.toString = 5; n = 1">{{n}}|{{o.a}}</div>`, { o: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign out of bounds through an alias", `<div id="btn" data-alias-far="list[5]" data-event-click="far = 'x'; n = 1">{{list.size}}|{{n}}</div>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign out of array bounds", `<div id="btn" data-event-click="list[5] = 'x'; n = 1">{{list.size}}|{{n}}</div><i data-for="list">{{it}}</i>`, { list: ["a"], n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign a container", `<div id="btn" data-event-click="obj = 5; n = 1">{{obj.a}}|{{n}}</div>`, { obj: { a: 1 }, n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("assign a missing ev param", `<div id="btn" data-event-click="s = ev.nope; n = 1">{{s}}|{{n}}</div>`, { s: "keep", n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("event modifier keys and mouse button", `<div id="btn" data-event-mousedown="pick(ev.button, ev.ctrl_key, ev.shift_key, ev.alt_key, ev.meta_key)">x</div>`, {},
+    { events: ["pick"], steps: [{ event: "btn", type: "mousedown", params: { button: 1, ctrl_key: 1, shift_key: 0, alt_key: 1, meta_key: 0 } },
+      { event: "btn", type: "mousedown", params: { button: 2, ctrl_key: 0, shift_key: 1, alt_key: 0, meta_key: 1 } }] }),
+  T("ev prototype name", `<div id="btn" data-event-click="s = ev.constructor; n = 1">[{{s}}]|{{n}}</div>`, { s: "keep", n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+  T("wheel delta in notches", `<div id="w" data-event-mousescroll="pick(ev.wheel_delta_y, ev.wheel_delta_x)">x</div>`, {},
+    { events: ["pick"], steps: [{ event: "w", type: "mousescroll", params: { wheel_delta_y: 2, wheel_delta_x: -0.5 } }] }),
+  T("key event modifier keys", `<div id="k" data-event-keydown="pick(ev.ctrl_key, ev.shift_key); n = n + ev.ctrl_key">{{n}}</div>`, { n: 0 },
+    { events: ["pick"], steps: [{ event: "k", type: "keydown", params: { ctrl_key: 1, shift_key: 0 } }] }),
+  T("ev in a view", `<div>[{{ev.x}}]</div>`, {}),
+  T("trailing semicolon and empty statements", `<div id="btn" data-event-click="n = n + 1;;">{{n}}</div>`, { n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
+
+  // ---- more views
+  T("rml view keeps markup content when the value is empty", `<div data-rml="a"><b>orig</b></div>`, { a: "" }, { steps: [{ set: "a", value: "<i>x</i>" }, { set: "a", value: "" }] }),
+  T("rml view: what it replaces stops updating", `<div data-rml="a"><span>{{list[i]}}</span></div>`, { a: "", list: ["p"], i: 0 },
+    { steps: [{ set: "a", value: "<i>x</i>" }, { set: "i", value: 5 }] }),
+  T("rml view binds what it inserts", `<div data-rml="a"></div>`, { a: "<b>{{n}}</b>", n: 3 }, { steps: [{ set: "n", value: 4 }] }),
+  T("class from strings", `<div data-class-on="s" data-class-off="t" data-attrif-hidden="s">x</div>`, { s: "TRUE", t: "yes" }),
+  T("attr with number and bool", `<div data-attr-n="n" data-attr-b="b" data-attr-e="nope2">x</div>`, { n: 1.5, b: true }),
+
+  T("style with a number", `<div data-style-opacity="o" data-style-width="w">x</div>`, { o: 0.5, w: "10px" }, { steps: [{ set: "w", value: 20 }] }),
+  // ---- form controls (the harness drops the classes and local styles RmlUi's controls give themselves)
+  T("checked: checkbox bound to a number", `<input type="checkbox" data-checked="n"/><input type="checkbox" value="1" data-checked="n"/>`, { n: 1 }),
+  T("checked: radio bound to a bool", `<input type="radio" name="g" value="1" data-checked="b"/><input type="radio" name="g" value="x" data-checked="c"/><b>{{b}}|{{c}}</b>`, { b: true, c: false }),
+  T("checked: checkbox bound to a string", `<input type="checkbox" value="a" data-checked="s"/><input type="checkbox" data-checked="t"/>`, { s: "a", t: "true" }),
+  T("checked: radio with empty value", `<input type="radio" name="g" value="" data-checked="s"/>`, { s: "" }),
+  T("checked: a view change fires change (controller and data-event-change see it)", `<div data-event-change="n = n + 1"><input id="c" type="checkbox" value="a" data-checked="s"/></div><b>{{s}}|{{n}}</b>`,
+    { s: "x", n: 0 }, { steps: [{ set: "s", value: "a" }, { set: "s", value: false }] }),
+  T("checked: radios with one name uncheck each other, forms apart", `<input id="r1" type="radio" name="g" value="a" data-attrif-checked="a"/><input id="r2" type="radio" name="g" value="b" data-attrif-checked="b"/><form><input id="r3" type="radio" name="g" value="c" checked=""/></form><b>{{a}}{{b}}</b>`,
+    { a: true, b: false }, { steps: [{ set: "b", value: true }, { event: "r1", type: "click" }] }),
+  T("checked: data-value on a checkbox writes its checked state", `<input id="c" type="checkbox" data-value="v"/><b>[{{v}}]</b>`, { v: "x" },
+    { steps: [{ event: "c", type: "click" }, { event: "c", type: "click" }] }),
+  T("click: one change event per click", `<div data-event-change="n = n + 1"><input id="c" type="checkbox" data-checked="on"/><input id="r" type="radio" name="q" value="v" data-checked="p"/></div><b>{{on}}|{{p}}|{{n}}</b>`,
+    { on: false, p: "", n: 0 }, { steps: [{ event: "c", type: "click" }, { event: "r", type: "click" }] }),
+  T("click a checkbox", `<input id="cb" type="checkbox" data-checked="on"/><b>{{on}}</b>`, { on: false }, { steps: [{ event: "cb", type: "click" }, { event: "cb", type: "click" }] }),
+  T("click a radio", `<input id="r1" type="radio" name="g" value="a" data-checked="p"/><input id="r2" type="radio" name="g" value="b" data-checked="p"/><b>{{p}}</b>`, { p: "a" }, { steps: [{ event: "r2", type: "click" }] }),
+  T("value view on a text input", `<input id="t" type="text" data-value="v"/>`, { v: 2.5 }, { steps: [{ set: "v", value: "x" }] }),
+  T("reserved and illegal model names", `<div>[{{size}}]|[{{it}}]|[{{literal}}]|[{{Size2}}]|[{{x_1}}]</div>`, { size: 3, it: "x", literal: 5, Size2: 1, x_1: 2 }),
+  T("model names RmlUi refuses: case, first character, characters", `<div>[{{Size}}]|[{{TRUE}}]|[{{a1}}]|[{{ok_1}}]</div>`, { Size: 1, TRUE: 2, _x: 3, "1a": 4, "a-b": 5, a1: 6, ok_1: 7, "é": 8 }),
+  T("camelCase alias and class names", `<div data-alias-firstRow="rows[0]" data-class-isOn="t">{{firstRow.name}}</div><div data-alias-first="rows[0]">{{First.name}}</div>`,
+    { rows: [{ name: "a" }], t: true }, { xhtml: true }),
+  T("xhtml: a page parsed as XML binds as an HTML one", `<div data-for="row, i : rows" data-class-on="i == sel"><span id="b" data-event-click="sel = i">{{row.name}}</span></div><input id="c" type="checkbox" data-checked="flag"/><b>{{sel}}|{{flag}}</b>`,
+    { rows: [{ name: "a" }, { name: "b" }], sel: 1, flag: false }, { xhtml: true, steps: [{ event: "b", type: "click" }, { event: "c", type: "click" }] }),
+  T("for iterator named like a reserved word", `<div data-for="size : list">{{size}}</div>`, { list: ["p"] }),
 ];

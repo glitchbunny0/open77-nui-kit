@@ -1,5 +1,5 @@
 -- lrbind.lua offline: the WebUI facade speaks the page protocol of lrbind.js and keeps the NativeUI API.
--- Run from lrbind/: lua5.4 tests/lrbind_lua.lua
+-- Run from lrbind/: lua5.4 tests/lrbind_lua.lua   (LRBIND_LUA=<copy> tests a copy instead: mutation runs)
 local pass, fail = 0, 0
 local function check(cond, what)   -- io.write: print is captured below
     if cond then pass = pass + 1 else fail = fail + 1; io.write("FAIL " .. what .. "\n") end
@@ -21,7 +21,7 @@ local function fakePage()
     return p
 end
 
-dofile("lrbind.lua")
+dofile(os.getenv("LRBIND_LUA") or "lrbind.lua")
 check(type(LrBind) == "table" and type(LrBind.page) == "function", "LrBind.page exists")
 
 -- init on ready, with the current state (and again after a page reload)
@@ -59,6 +59,57 @@ check(ui:removeAt("voice", "items", 9) == false, "removeAt out of range refused"
 check(ui:push("voice", "mode", 1) == false, "push on a scalar refused")
 ui:push("voice", "empty", "first")
 check(ui:model("voice").empty[1] == "first", "push into {} (an empty array)")
+
+-- paths: only name, [n] (n >= 1) and .member; anything else is refused before the copy or the page sees it, so the two
+-- never act on different places (natively the same call would fail)
+do
+    local function same(a, b)
+        if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+        for k, v in pairs(a) do if not same(v, b[k]) then return false end end
+        for k in pairs(b) do if a[k] == nil then return false end end
+        return true
+    end
+    local function snapshot(t) local c = {} for k, v in pairs(t) do c[k] = type(v) == "table" and snapshot(v) or v end return c end
+    local p = fakePage()
+    local u = LrBind.page(p, { models = { m = { rows = { { name = "a" }, { name = "b" } }, grid = { { 1, 2 }, { 3, 4 } }, n = 1, e = {} } } })
+    local copyBefore = snapshot(u:model("m"))
+    for _, bad in ipairs({ "rows[0]", "rows[0].name", "rows[x]", "rows[ 1 ].name", "rows[-1]", "rows[1.5]", "rows[]",
+                          "rows..name", "rows.", "rows[1]name", " rows", "1rows", "rows[4]", "rows[3].name", "nope", "n.deeper", "rows[1][1]", "rows.name" }) do
+        local sent = #p.sent
+        local ok = u:set("m", bad, "Z")
+        check(ok == false and #p.sent == sent and same(u:model("m"), copyBefore), "set refuses the path " .. bad)
+    end
+    for _, bad in ipairs({ "rows[x]", "rows[-1]", "rows[ 1 ]", "nope", "n" }) do
+        local sent = #p.sent
+        check(u:push("m", bad, { name = "p" }) == false and #p.sent == sent and same(u:model("m"), copyBefore), "push refuses the path " .. bad)
+        check(u:removeAt("m", bad, 1) == false and #p.sent == sent and same(u:model("m"), copyBefore), "removeAt refuses the path " .. bad)
+    end
+    local sent = #p.sent
+    local okFrac, retFrac = pcall(u.removeAt, u, "m", "rows", 1.5)
+    check(okFrac and retFrac == false and #p.sent == sent and #u:model("m").rows == 2, "removeAt refuses a fractional index " .. tostring(retFrac))
+    u:removeAt("m", "rows", 2.0)
+    check(p:last()[2].index == 1 and #u:model("m").rows == 1, "removeAt takes an integral float")
+    u:push("m", "rows", { name = "b" })
+    u:set("m", "grid[2][1]", 9)
+    check(p:last()[2].path == "grid[1][0]" and u:model("m").grid[2][1] == 9, "nested indices shift each")
+    u:set("m", "rows[3]", { name = "c" })
+    check(p:last()[2].path == "rows[2]" and #u:model("m").rows == 3, "set at #list + 1 appends")
+    -- merge: top-level fields the model had at create; a path key or a new name is refused, nothing written for it
+    local fields = { rows = { { name = "x" } }, ["rows[1].name"] = "M", nope = 1 }
+    u:merge("m", fields)
+    local sentFields = p:last()[2].fields
+    check(p:last()[1] == "lrbind:merge" and sentFields.rows and sentFields["rows[1].name"] == nil and sentFields.nope == nil
+        and u:model("m")["rows[1].name"] == nil and u:model("m").nope == nil, "merge keeps top-level fields the model has")
+    fields.rows[1].name = "changed later"
+    check(u:model("m").rows[1].name == "x", "merge copies what it keeps (a later change of the caller's table stays out)")
+    local ok, err = pcall(function() return u:merge("m", nil) end)
+    check(ok and err == false, "merge without fields is refused, not an error " .. tostring(err))
+    -- event arity follows n, holes and all
+    local count
+    u:onModel("two", function(...) count = select("#", ...) end)
+    p:fire("lrbind:event", { model = "m", name = "two", args = {}, n = 2 })
+    check(count == 2, "an event with two empty arguments reaches the handler with two")
+end
 
 -- a reload re-sends the state as it is now
 page:fire("lrbind:ready", {})
