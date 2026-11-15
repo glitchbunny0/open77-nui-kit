@@ -1,0 +1,29 @@
+<rml>
+<head>
+<link type="text/rcss" href="sub/images.rcss"/>
+<style>
+body { width: 100%; height: 100%; }
+div { display: block; box-sizing: border-box; position: absolute; width: 140dp; height: 90dp; background-color: #303040; }
+#i1 { left: 10dp;  top: 10dp;  decorator: image(/img/q.png); }
+#i2 { left: 170dp; top: 10dp;  decorator: image(/img/q.png contain); }
+#i3 { left: 330dp; top: 10dp;  decorator: image(/img/q.png cover); }
+#i4 { left: 490dp; top: 10dp;  decorator: image(/img/q.png scale-none); }
+#j1 { left: 10dp;  top: 110dp; decorator: image(/img/q.png scale-none left top); }
+#j2 { left: 170dp; top: 110dp; decorator: image(/img/q.png scale-none right bottom); }
+#j3 { left: 330dp; top: 110dp; decorator: image(/img/q.png scale-none 10px 75%); }
+#j4 { left: 490dp; top: 110dp; decorator: image(/img/q.png flip-horizontal contain left); }
+#k1 { left: 10dp;  top: 210dp; width: 30dp; height: 20dp; decorator: image(/img/q.png scale-down); }
+#k2 { left: 170dp; top: 210dp; decorator: image(/img/q.png scale-none 120px 0px); }
+#k3 { left: 330dp; top: 210dp; border: 10dp #808080; decorator: image(/img/q.png); }
+#k4 { left: 490dp; top: 210dp; opacity: 0.5; decorator: image(/img/q.png contain); }
+img { position: absolute; left: 330dp; top: 310dp; width: 140dp; height: 90dp; }
+#m1 { left: 10dp;  top: 310dp; decorator: image(/img/nosuch.png); }
+</style>
+</head>
+<body>
+<div id="i1"/><div id="i2"/><div id="i3"/><div id="i4"/>
+<div id="j1"/><div id="j2"/><div id="j3"/><div id="j4"/>
+<div id="k1"/><div id="k2"/><div id="k3"/><div id="k4"/>
+<div id="m1"/><div id="r1"/><img id="im" src="/img/q.png"/>
+</body>
+</rml>

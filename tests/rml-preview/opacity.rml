@@ -1,0 +1,26 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; font-family: kitraj; font-size: 28dp; color: #ffffff; }
+div { display: block; box-sizing: border-box; position: absolute; width: 140dp; height: 90dp; }
+.back { left: 0dp; top: 0dp; width: 640dp; height: 400dp;
+    decorator: repeating-linear-gradient(0deg, #ffffff 0dp, #ffffff 20dp, #000000 20dp, #000000 40dp); }
+#o1 { left: 10dp;  top: 10dp;  background-color: #ff0000; border: 8dp #00ff00; opacity: 0.5; }
+#o2 { left: 170dp; top: 10dp;  background-color: #ff000080; }
+#o3 { left: 330dp; top: 10dp;  opacity: 0.4; decorator: linear-gradient(90deg, #ff0000, #0000ff); }
+#o4 { left: 490dp; top: 10dp;  opacity: 0.25; background-color: #0000ff; }
+#o5 { left: 10dp;  top: 140dp; width: 300dp; opacity: 0.5; background-color: #00ff00; }
+#o5 div { left: 150dp; top: 20dp; width: 120dp; height: 50dp; background-color: #ff00ff; }
+#o6 { left: 330dp; top: 140dp; width: 300dp; height: 60dp; opacity: 0.6; color: #ffff00; }
+#o7 { left: 10dp;  top: 260dp; opacity: 0; background-color: #ff0000; }
+#o8 { left: 170dp; top: 260dp; background-color: #00ffff; border: 6dp #ff000080; }
+</style>
+</head>
+<body>
+<div class="back"/>
+<div id="o1"/><div id="o2"/><div id="o3"/><div id="o4"/>
+<div id="o5"><div/></div>
+<div id="o6">see-through</div>
+<div id="o7">gone</div><div id="o8"/>
+</body>
+</rml>

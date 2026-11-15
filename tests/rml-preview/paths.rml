@@ -1,0 +1,22 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; }
+path { display: block; position: absolute; width: 120dp; height: 120dp; fill: #ffcc00; stroke: #ffffff; stroke-width: 2dp; }
+#p1 { left: 10dp;  top: 10dp; }
+#p2 { left: 160dp; top: 10dp; }
+#p3 { left: 310dp; top: 10dp; }
+#p4 { left: 460dp; top: 10dp; }
+#p5 { left: 10dp;  top: 160dp; fill: none; stroke: lime; }
+#p6 { left: 160dp; top: 160dp; fill: rgba(255, 0, 255, 255); stroke: none; }
+</style>
+</head>
+<body>
+<path id="p1" view-box="0 0 24 24" d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/>
+<path id="p2" view-box="0 0 24 24" d="M4 4 C 4 20 20 20 20 4 Z"/>
+<path id="p3" view-box="0 0 24 24" d="M2 12 Q 7 2 12 12 T 22 12 L 22 22 L 2 22 Z"/>
+<path id="p4" view-box="0 0 10 10" d="M3.6 0.8H6.4V3.6H9.2V6.4H6.4V9.2H3.6V6.4H0.8V3.6H3.6Z"/>
+<path id="p5" view-box="0 0 24 24" d="M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0m5 0l5 5l5-5"/>
+<path id="p6" view-box="0 0 24 24" d="M2 2h20v20h-20zM6 6v12h12v-12z"/>
+</body>
+</rml>

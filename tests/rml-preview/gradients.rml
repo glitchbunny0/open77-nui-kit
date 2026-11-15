@@ -1,0 +1,30 @@
+<rml>
+<head>
+<style>
+body { width: 100%; height: 100%; font-family: kitraj; }
+div { display: block; box-sizing: border-box; position: absolute; width: 140dp; height: 90dp; }
+#a1 { left: 10dp;  top: 10dp;  decorator: linear-gradient(45deg, #ff0000, #0000ff); }
+#a2 { left: 170dp; top: 10dp;  decorator: linear-gradient(to right, #f00, #00f8); }
+#a3 { left: 330dp; top: 10dp;  decorator: linear-gradient(to top right, red, blue 70%, lime); }
+#a4 { left: 490dp; top: 10dp;  decorator: linear-gradient(120deg, rgba(255,0,0,255) 20dp, hsl(240, 100%, 50%) 60%, #ffff00); }
+#b1 { left: 10dp;  top: 110dp; decorator: radial-gradient(circle at 30% 40%, #ff0000, #0000ff); }
+#b2 { left: 170dp; top: 110dp; decorator: radial-gradient(ellipse farthest-side at left top, #ffffff, #00000000); }
+#b3 { left: 330dp; top: 110dp; decorator: radial-gradient(40dp 20dp at 30% 60%, #00ff00 50%, #ff00ff 50%); }
+#b4 { left: 490dp; top: 110dp; decorator: conic-gradient(from 90deg, #ff0000, #00ff00, #0000ff); }
+#c1 { left: 10dp;  top: 210dp; decorator: conic-gradient(at 25% 75%, #ffff00 0deg, #ffff00 90deg, #0000ff 90deg, #0000ff 180deg, #ff0000 180deg); }
+#c2 { left: 170dp; top: 210dp; decorator: repeating-linear-gradient(30deg, #ff0000 0%, #ff0000 10%, #ffffff 10%, #ffffff 20%); }
+#c3 { left: 330dp; top: 210dp; decorator: repeating-radial-gradient(circle, #000000 0dp, #000000 5dp, #00ffff 5dp, #00ffff 10dp); }
+#c4 { left: 490dp; top: 210dp; decorator: horizontal-gradient(#ff0000 #0000ff); }
+#d1 { left: 10dp;  top: 310dp; border: 10dp #808080; decorator: linear-gradient(90deg, #ff0000, #0000ff); }
+#d2 { left: 170dp; top: 310dp; border: 10dp #808080; decorator: linear-gradient(90deg, #ff0000, #0000ff) border-box; }
+#d3 { left: 330dp; top: 310dp; decorator: linear-gradient(180deg, #ffffff 30%, #00000000 30%), vertical-gradient(#00ff00 #ff00ff); }
+#d4 { left: 490dp; top: 310dp; background-color: #333333; decorator: linear-gradient(#ff0000 0%, #00ff00 0%, #00ff00 50%, #0000ff 50%); }
+</style>
+</head>
+<body>
+<div id="a1"/><div id="a2"/><div id="a3"/><div id="a4"/>
+<div id="b1"/><div id="b2"/><div id="b3"/><div id="b4"/>
+<div id="c1"/><div id="c2"/><div id="c3"/><div id="c4"/>
+<div id="d1"/><div id="d2"/><div id="d3"/><div id="d4"/>
+</body>
+</rml>
