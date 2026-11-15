@@ -6,6 +6,8 @@ Checks, one line each:
   parity    lrbind.js in jsdom against that fresh golden, snapshot by snapshot
   protocol  the page protocol, form controls, mockup mode (protocol.test.mjs)
   lua       lrbind.lua against a fake page (lrbind_lua.lua)
+  header    lrbind.js / lrbind.lua carry the MIT notice (the kit's, and RmlUi's for the ported parts of lrbind.js)
+  example   examples/side-menu/web/lrbind.js is the kit's file
 Then every mutant in MUTANTS: a copy of one file with ONE planted bug, run through the one check it names. That check
 must go red, and its output must contain the expected text (the failing case or check). A mutant whose pattern no
 longer matches exactly once fails too, so the table cannot rot silently.
@@ -70,6 +72,49 @@ def check_lua(lua=LUA):
 
 
 CHECKS.update(parity=check_parity, protocol=check_protocol, lua=check_lua)
+
+# ==== header: the MIT notice travels with every copy (lrbind-sync writes these files into resources that ship)
+HEADER = {
+    'js': ['// SPDX-License-Identifier: MIT', 'Copyright (c) 2026 glitchbunny0 and contributors',
+           'ported from RmlUi', 'Copyright (c) 2008-2014 CodePoint Ltd, Shift Technology Ltd, and contributors',
+           'Copyright (c) 2019-2026 The RmlUi Team, and contributors',
+           'The above copyright notice and this permission notice shall be included in all copies',
+           'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'],
+    'lua': ['-- SPDX-License-Identifier: MIT', 'Copyright (c) 2026 glitchbunny0 and contributors',
+            'The above copyright notice and this permission notice shall be included in all copies',
+            'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'],
+}
+
+
+def check_header(js=JS, lua=LUA):
+    missing = []
+    for kind, path in (('js', js), ('lua', lua)):
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+        notice = text[:text.find('\n\n')]   # the first comment block
+        if not text.startswith(HEADER[kind][0] + '\n'):
+            missing.append(f'{os.path.basename(path)}: first line is not {HEADER[kind][0]!r}')
+        missing += [f'{os.path.basename(path)}: no {s!r}' for s in HEADER[kind][1:] if s not in notice]
+    return not missing, ('MIT notice on lrbind.js (the kit, and RmlUi for the ported parts) and lrbind.lua (the kit)'
+                         if not missing else 'FAIL header: ' + '; '.join(missing))
+
+
+def check_example(js=JS):
+    copy = os.path.join(KIT, 'examples', 'side-menu', 'web', 'lrbind.js')
+    with open(copy, 'rb') as a, open(js, 'rb') as b:
+        same = a.read() == b.read()
+    return same, ('examples/side-menu/web/lrbind.js is lrbind/lrbind.js' if same else
+                  'FAIL example: examples/side-menu/web/lrbind.js differs from lrbind/lrbind.js (bin/lrbind-sync refresh examples)')
+
+
+CHECKS.update(header=check_header, example=check_example)
+MUTANTS += [
+    ('lrbind.js without the RmlUi copyright', 'lrbind.js', '// Copyright (c) 2019-2026 The RmlUi Team, and contributors\n',
+     '', 'header', 'The RmlUi Team'),
+    ('lrbind.lua without its SPDX line', 'lrbind.lua', '-- SPDX-License-Identifier: MIT\n', '', 'header', 'first line'),
+    ('the kit file changes, the example copy does not', 'lrbind.js', '"use strict";', '"use strict"; ', 'example',
+     'FAIL example'),
+]
 
 # ==== mutants of lrbind.js and lrbind.lua that the suites have always caught
 MUTANTS += [

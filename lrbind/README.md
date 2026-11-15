@@ -4,7 +4,8 @@
 WebUI page; `lrbind.lua` drives that page with the NativeUI document API. A screen is written once, as HTML/CSS with
 RmlUi binding syntax: the page shows it through the shim, the native document reads the same markup natively, and the
 client Lua calls `set` / `merge` / `push` / `removeAt` / `onModel` the same way on both. A resource that uses it ships
-its own copies; `bin/lrbind-sync` writes them and tells you when one is stale.
+its own copies; `bin/lrbind-sync` writes them and tells you when one is stale. Both files start with their MIT notice
+(`lrbind.js` also carries RmlUi's, whose data-binding code it ports); it is part of the file and every copy keeps it.
 
 ## Using it in a resource
 

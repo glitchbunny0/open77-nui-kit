@@ -1,3 +1,21 @@
+-- SPDX-License-Identifier: MIT
+-- lrbind.lua, part of open77-nui-kit (https://github.com/glitchbunny0/open77-nui-kit).
+-- Copyright (c) 2026 glitchbunny0 and contributors
+--
+-- Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+-- documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+-- the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+-- permit persons to whom the Software is furnished to do so, subject to the following conditions:
+--
+-- The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+-- the Software.
+--
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+-- THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+-- TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-- SOFTWARE.
+
 -- lrbind.lua: a WebUI page that loads web/lrbind.js, driven with the NativeUI document API. Client code calls
 -- set / merge / push / removeAt / onModel the same way on either surface (array paths 1-based, as Open77.ui).
 --   LrBind.page(page, { models = { name = {...} }, events = { name = { "pick", ... } } }) -> handle
