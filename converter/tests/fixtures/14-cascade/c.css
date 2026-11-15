@@ -46,5 +46,11 @@ div .x { color: #0000ff; }
 .nx { --nw: 10px; width: var(--nw); }
 .nx:not(.x) { --nw: 20px; }
 u { color: var(--c); }
+[data-State="a"] { width: 3px; }
+div[width] { width: 9px; }
+[role="note"] { color: #00ff00; }
+input[type="number"] { width: 9px; }
+.fl { display: flex; }
+.fl b:first-child { color: #ff0000; }
 /* a page's own .hidden class is not the hidden attribute */
 .hidden { opacity: 0.5; }

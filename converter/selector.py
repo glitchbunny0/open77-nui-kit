@@ -124,7 +124,7 @@ def parse_one(text):
             m = re.match(r'^([\w-]+(?:\|[\w-]+)?)\s*(?:([~|^$*]?=)\s*(.+?))?\s*$', body)
             if not m:
                 raise SelectorIssue(f'attribute selector [{body}]', 'write it as a class the markup or client sets')
-            name, op, val = m.group(1), m.group(2), m.group(3)
+            name, op, val = m.group(1).lower(), m.group(2), m.group(3)   # the markup's attribute names are lower-case
             if '|' in name:
                 raise SelectorIssue(f'namespaced attribute [{body}]', 'drop the namespace')
             if val is not None:

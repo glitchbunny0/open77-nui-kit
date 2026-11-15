@@ -2,6 +2,7 @@
    first block is the part of a browser's defaults this page relies on. */
 div { display: block; }
 body { margin: 8dp; font-size: 16dp; color: #000000; }
+b { font-weight: bold; }
 i { font-style: italic; }
 .html2rml-hidden { display: none; }
 
@@ -32,4 +33,7 @@ div .x { color: #0000ff; }
 #list2 .row2 { letter-spacing: 2dp; color: #ff0000; }
 .nx { width: 10dp; }
 u { color: #ff0000; }
+[data-state="a"] { width: 3dp; }
+.fl { display: flex; }
+.fl b:first-child { color: #ff0000; }
 .hidden { opacity: 0.5; }

@@ -39,6 +39,7 @@ DOC_ONLY_ATTRS = {'lang', 'xmlns'}
 INPUT_TYPES = {'text', 'password', 'radio', 'checkbox', 'range', 'submit', 'button'}
 BINDING = re.compile(r'^data-(model|for|if|visible|value|checked|rml|alias-[\w-]+|class-[\w-]+|style-[\w-]+|'
                      r'attr-[\w-]+|event-[\w-]+|attrif-[\w-]+)$')
+SIZE_ATTR_TAGS = {'canvas', 'video', 'iframe', 'object', 'embed', 'table', 'td', 'th', 'col', 'colgroup'}
 SVG_SHAPES = {'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'g', 'use', 'text', 'image',
               'foreignobject', 'symbol'}
 SVG_PAINT = ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
@@ -489,6 +490,32 @@ class Converter:
                                         'a browser gives each box its own. Keep one')
                     seen[(who, d.name)] = (d.value.strip(), d.line)
 
+    def check_markup_names(self, sel):
+        """a selector naming an attribute the conversion drops or rewrites never matches in RmlUi"""
+        for _, c in sel:
+            for n, op, v in c.attrs:
+                if n.startswith('data-') or n in ('id', 'class', 'style', 'hidden'):
+                    continue
+                if n in ('width', 'height') and c.tag not in ('img', 'input'):
+                    raise S.SelectorIssue(f'[{n}]', 'the conversion writes width/height attributes as inline sizes '
+                                          '(or drops them): the rule never matches; select a class instead')
+                if n == 'type' and op == '=' and (v or 'text') not in INPUT_TYPES:
+                    raise S.SelectorIssue(f'[type="{v}"]', 'RmlUi has no such input type: the input is written as '
+                                          'text and the rule never matches; select a class instead')
+                if n not in KEEP_ATTRS:
+                    raise S.SelectorIssue(f'[{n}]', 'the conversion drops this attribute (RmlUi has no use for it): '
+                                          'the rule never matches; select a class instead')
+
+    def check_repeated(self, sel, text, file, line, all_els):
+        """RmlUi keeps a data-for's template element after its copies: :last-child and its kind never match them"""
+        c = sel[-1][1]
+        last = [n for n, _ in c.pseudos if n in ('last-child', 'nth-last-child', 'last-of-type', 'nth-last-of-type',
+                                                  'only-child', 'only-of-type')]
+        if last and any('data-for' in el.attrs and S.matches(sel, el, 'relaxed') for el in all_els):
+            self.report.add(self.where(file), line, 'selector', f'{text}: :{last[0]} on data-for rows',
+                            'RmlUi keeps the data-for template after the rows: it never matches one (measured); give '
+                            'the last row a class from the model (data-class-last="i == n - 1")')
+
     def rule_rank(self, sel, file, it):
         for e in self.casc.entries:
             if e[4] == file and e[5] == it.line and S.ser_sel(e[0]) == S.ser_sel(sel):
@@ -564,6 +591,7 @@ class Converter:
         out = []
         once = set()
         self.rule_display = []   # (sel list, display) for the markup pass
+        self.child_rules = []    # selectors a <span> wrapped around bare text can change (span, structural, + ~)
         for file, it in flat:
             if isinstance(it, css_parse.AtRule):
                 out.append(self.keyframes(it, file, once))
@@ -587,9 +615,15 @@ class Converter:
                 try:
                     sel = S.parse_one(t)
                     S.check(sel)
+                    self.check_markup_names(sel)
                 except S.SelectorIssue as e:
                     self.report.add(self.where(file), it.line, 'selector', f'{t}: {e.what}', e.todo)
                     continue
+                self.check_repeated(sel, t, file, it.line, all_els)
+                c_last = sel[-1][1]
+                if c_last.tag == 'span' or any(n in S.STRUCTURAL and n != 'not' for n, _ in c_last.pseudos) \
+                        or any(cb in ('+', '~') for cb, _ in sel):
+                    self.child_rules.append((t, sel))
                 parsed.append(sel)
             if not parsed or not (decls or clines):
                 continue
@@ -1128,6 +1162,16 @@ class Converter:
         return None
 
     def emit_children(self, el, out, depth, flexy):
+        if flexy and any(isinstance(c, H.Text) and c.text.strip() for c in el.children):
+            probe = H.Element('span', [], el.line, el)
+            probe.virtual = True
+            hits = [t for t, sel in self.child_rules if S.matches(sel, probe, 'relaxed')
+                    or any(S.matches(sel, k, 'relaxed') for k in el.elements())]
+            if hits:
+                self.report.add(self.where(None), el.line, 'markup', f'bare text in the flex box <{el.tag}> is wrapped '
+                                f'in <span>s, and {", ".join(hits[:4])} select its children',
+                                'the new spans count as children: :first-child, :nth-*, + and ~ and span rules can '
+                                'match differently; wrap the text in the page yourself')
         for c in el.children:
             if isinstance(c, H.Text):
                 txt = c.text
@@ -1174,10 +1218,18 @@ class Converter:
                 continue
             if k.startswith('data-'):
                 attrs[k] = v if v is not None else ''
+                if re.match(r'^data-(attr-src|attr-href|style-[\w-]+)$', k) and re.search(r'''['"][^'"]*(/|\.(png|jpe?g|svg|webp|gif|tga))[^'"]*['"]''', v or ''):
+                    self.report.add(where, el.line, 'markup', f'<{tag} {k}="{v}">', 'a path inside a binding is '
+                                    'written as is: RmlUi resolves it from the document (--out), not from the page')
                 continue
             if k.startswith('on'):
                 self.report.add(where, el.line, 'markup', f'<{tag} {k}="{(v or "")[:60]}">',
                                 'inline handler dropped: use data-event-%s="..." and answer it in the client' % k[2:])
+                continue
+            if k == 'src' and tag == 'img' and '{{' in (v or ''):
+                attrs['src'] = v
+                self.report.add(where, el.line, 'markup', f'<img src="{v}">', 'a binding: kept as is; the path it gives '
+                                'is resolved from the document (--out), not from the page')
                 continue
             if k == 'src' and tag == 'img':
                 iss = []
@@ -1192,11 +1244,15 @@ class Converter:
                                 'RmlUi inputs are text, password, checkbox, radio, range, submit, button: written as text')
                 attrs[k] = 'text'
                 continue
-            if k in ('width', 'height') and tag not in ('img', 'input'):
+            if k in ('width', 'height') and tag in SIZE_ATTR_TAGS:
                 m = re.match(r'^\s*([\d.]+)\s*(px)?\s*$', v or '')
                 if m:
                     size_style.append(f'{k}: {V.fmt(float(m.group(1)) / self.units.ppd)}dp')
                     continue
+            if k in ('width', 'height') and tag not in ('img', 'input') + tuple(SIZE_ATTR_TAGS):
+                self.report.add(where, el.line, 'markup', f'attribute {k} on <{tag}>', 'a browser ignores it on this '
+                                'element: dropped (set the size in the sheet)')
+                continue
             if k in KEEP_ATTRS:
                 attrs[k] = v if v is not None else ''
                 continue
@@ -1273,6 +1329,14 @@ class Converter:
             for k, v in list(el.attrs.items()) + list(p.attrs.items()):
                 if k.startswith('data-'):
                     attrs[k] = v or ''
+            extra = sorted({c.tag for c in el.walk() if c is not el and c is not p})
+            if extra:   # gradients, clips, masks, filters, titles: Open77's <path> has none of them
+                self.report.add(where, el.line, 'markup', f'<svg> with {", ".join("<%s>" % t for t in extra)}',
+                                'Open77\'s <path> draws one path in one colour: they are dropped (export a PNG for '
+                                'what needs them)')
+            for k in p.attrs:
+                if k not in ('d', 'class', 'id', 'style') + SVG_PAINT and not k.startswith('data-'):
+                    self.report.add(where, p.line, 'markup', f'<path {k}>', 'dropped')
             paint = {}
             for src in (el, p):
                 for k in SVG_PAINT:
@@ -1291,6 +1355,10 @@ class Converter:
             for k, v in paint.items():
                 v = v.strip()
                 if k in ('fill', 'stroke'):
+                    if v.lower().startswith('url('):
+                        self.report.add(where, p.line, 'markup', f'<svg> {k}="{v}"', 'Open77\'s <path> paints one '
+                                        f'colour: a gradient or pattern {k} is dropped; write the colour')
+                        continue
                     if v == 'none':
                         v = 'transparent'
                     elif v.lower() == 'currentcolor':
@@ -1376,7 +1444,7 @@ class Converter:
         if hit_ids:
             out.append('ids ' + ', '.join('#' + i for i in hit_ids))
         sels = sorted(s for s in strs if re.match(r'^[.#][A-Za-z_][\w-]*([ >.#:\[][\w\s.#>=\[\]"\':-]*)?$', s)
-                      and len(s) < 60)[:12]
+                      and len(s) < 60 and not re.fullmatch(r'#[0-9A-Fa-f]{3,8}', s))[:12]   # not colours
         q = re.findall(r'querySelector(?:All)?\(\s*["\']([^"\']+)', code)
         allq = sorted(set(q) | set(x for x in sels if x.lstrip('#') not in self.ids))
         if allq:
@@ -1574,7 +1642,8 @@ def report_md(c):
             merged.setdefault(key, []).append(i['line'])
         for (f, what, todo), ls in merged.items():
             where = f'{f}:{",".join(str(x) for x in sorted(set(ls)))}'
-            out.append(f'| {where} | {what.replace("|", "/")} | {todo.replace("|", "/")} |')
+            cell = lambda x: ' '.join(x.split()).replace('|', '/')   # one line per row, whatever the source held
+            out.append(f'| {where} | {cell(what)} | {cell(todo)} |')
         out.append('')
     if c.fonts:
         out += ['## Font loading for the client', '', '```lua']

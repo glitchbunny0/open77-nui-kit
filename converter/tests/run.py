@@ -15,7 +15,7 @@ fixtures. Output goes to $NUIKIT_TMP when set (the kit's suite contract), else c
 HTML2RML_KIT names the kit whose bin/rml-check and host are used (default: this one; the mutation runs point it at the
 real kit while they import a mutated converter).
 """
-import contextlib, difflib, io, json, os, re, shutil, signal, subprocess, sys
+import contextlib, difflib, io, json, os, re, shutil, signal, subprocess, sys, types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(os.path.dirname(HERE))
@@ -25,6 +25,7 @@ sys.dont_write_bytecode = True
 from converter import css_values as V  # noqa: E402
 from converter import css_props as P  # noqa: E402
 from converter.cli import main as cli_main  # noqa: E402
+from converter.convert import report_md  # noqa: E402
 
 UNITS = V.Units(1.0, (1920, 1080), 16)
 
@@ -71,6 +72,10 @@ UNIT = [
     ('calc mixing % and px fails', lambda: raises(lambda: conv('calc(100% - 20px)')), True),
     ('a var() cycle fails', lambda: raises(lambda: conv('var(--x)', lambda n: 'var(--x)')), True),
     # CSS escapes: decoded, and never a hang (a lone backslash, an escape at the end)
+    ('report: a row stays one line', lambda: [l for l in report_md(types.SimpleNamespace(
+        page='p.html', name='p', canvas=(1, 1), units=V.Units(), fonts=[], report=types.SimpleNamespace(items=[
+            {'file': 'a.css', 'line': 1, 'kind': 'css', 'what': 'a\n  b', 'todo': 'c\nd'}]))).splitlines()
+        if l.startswith('| a.css')], ['| a.css:1 | a b | c d |']),
     ('escape: hex code points', lambda: V.tokenize(r'\5FAE\8F6F, x'),
      [('ident', '\u5fae\u8f6f'), ('comma',), ('ws',), ('ident', 'x')]),
     ('escape: digit after a dash', lambda: V.tokenize(r'-\31 x'), [('ident', '-1x')]),

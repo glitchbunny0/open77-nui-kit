@@ -7,6 +7,7 @@ path.svg-1 { width: 24dp; height: 24dp; fill: transparent; stroke: #5EF6FF; stro
 path.svg-2 { width: 20dp; height: 20dp; fill: #FF6159; }
 path.svg-3 { width: 10dp; height: 10dp; }
 div.svg-4 { display: inline-block; width: 30dp; height: 10dp; }
+path.svg-5 { width: 10dp; height: 10dp; }
 
 .ic { margin: 4dp; }
 path.cur { stroke-width: 3dp; }

@@ -9,5 +9,6 @@
 <path id="tri" class="svg-2" view-box="0 0 10 10" d="M5 0L10 10L0 10Z"/>
 <path class="cur svg-3" view-box="0 0 10 10" d="M0 0L10 10"/>
 <div class="multi svg-4"></div>
+<path class="grad svg-5" view-box="0 0 10 10" d="M0 0L10 10Z"/>
 </body>
 </rml>

@@ -3,5 +3,12 @@ css      c.css:12  var(--c) differs between the elements this rule matches (#000
 css      c.css:13  --ic: #00ff00 !important  =>  RmlUi has no !important: the converter lets it win in its own cascade (as CSS does) but RmlUi will not; raise the selector's specificity instead
 css      c.css:18  var(--dc) is also set under .scope, .scope .d, which this converter cannot re-state for this rule  =>  RmlUi has no custom properties: the value for the page as written is used; re-state the affected declarations under those selectors
 css      c.css:21  var(--ec) differs between the elements this rule matches (#00ff00, #ff0000)  =>  used #00ff00; split the rule per element
+selector c.css:32  .row:last-child: :last-child on data-for rows  =>  RmlUi keeps the data-for template after the rows: it never matches one (measured); give the last row a class from the model (data-class-last="i == n - 1")
 css      c.css:46  var(--nw) is also set under .nx:not(.x), which this converter cannot re-state for this rule  =>  RmlUi has no custom properties: the value for the page as written is used; re-state the affected declarations under those selectors
+selector c.css:50  div[width]: [width]  =>  the conversion writes width/height attributes as inline sizes (or drops them): the rule never matches; select a class instead
+selector c.css:51  [role="note"]: [role]  =>  the conversion drops this attribute (RmlUi has no use for it): the rule never matches; select a class instead
+selector c.css:52  input[type="number"]: [type="number"]  =>  RmlUi has no such input type: the input is written as text and the rule never matches; select a class instead
 css      index.html:10  --c: #00ff00 !important (inline)  =>  RmlUi has no !important: kept without it
+markup   index.html:24  attribute width on <div>  =>  a browser ignores it on this element: dropped (set the size in the sheet)
+markup   index.html:24  attribute role on <div>  =>  RmlUi has no accessibility tree: dropped
+markup   index.html:25  bare text in the flex box <div> is wrapped in <span>s, and .fl b:first-child select its children  =>  the new spans count as children: :first-child, :nth-*, + and ~ and span rules can match differently; wrap the text in the page yourself

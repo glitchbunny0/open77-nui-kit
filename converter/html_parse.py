@@ -56,6 +56,15 @@ class Doc:
         self.issues = []   # (line, what, todo) from parsing
 
 
+# a start tag of the key closes open elements of these tags first (the HTML parser's other implied end tags)
+IMPLIED_END = {'option': {'option'}, 'optgroup': {'option', 'optgroup'}, 'tr': {'td', 'th', 'tr'},
+               'td': {'td', 'th'}, 'th': {'td', 'th'}, 'dt': {'dt', 'dd'}, 'dd': {'dt', 'dd'},
+               'rt': {'rt', 'rp'}, 'rp': {'rt', 'rp'}}
+for _t in ('thead', 'tbody', 'tfoot'):
+    IMPLIED_END[_t] = {'thead', 'tbody', 'tfoot', 'tr', 'td', 'th'}
+FOREIGN = {'svg', 'math'}   # inside these, `<x/>` closes the element (XML rules)
+
+
 class _Builder(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -79,12 +88,20 @@ class _Builder(HTMLParser):
                                             'first (and so does this tree)', 'close the <p> yourself; use <div>'))
         if tag == 'li' and self.stack[-1].tag == 'li':
             self.stack.pop()
+        while len(self.stack) > 1 and self.stack[-1].tag in IMPLIED_END.get(tag, ()):
+            self.stack.pop()
         el = Element(tag, attrs, self._line(), self.stack[-1])
         self.stack[-1].children.append(el)
         if tag not in VOID:
             self.stack.append(el)
 
     def handle_startendtag(self, tag, attrs):
+        if tag not in VOID and not any(e.tag in FOREIGN for e in self.stack) and tag not in FOREIGN:
+            # HTML ignores the slash on a non-void element: <div/> opens a <div> that the following content goes into
+            self.doc.issues.append((self._line(), f'<{tag}/>', f'HTML ignores the slash: the <{tag}> stays open (as in '
+                                    f'a browser) and what follows goes inside; write <{tag}></{tag}>'))
+            self.handle_starttag(tag, attrs)
+            return
         el = Element(tag, attrs, self._line(), self.stack[-1])
         el.self_closed = True
         self.stack[-1].children.append(el)
