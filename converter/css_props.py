@@ -940,17 +940,43 @@ def h_animation(n, toks, ws, s, ctx, issues):
     return [(n, ', '.join(out))] if out else []
 
 
+TRANSFORM_FUNCS = {'translate', 'translatex', 'translatey', 'translatez', 'translate3d', 'rotate', 'rotatex', 'rotatey',
+                   'rotatez', 'rotate3d', 'scale', 'scalex', 'scaley', 'scalez', 'scale3d', 'skew', 'skewx', 'skewy',
+                   'matrix', 'matrix3d', 'perspective'}
+
+
+def _transform_fn(t, issues, s):
+    """one transform function in the forms RmlUi's parser takes (PropertyParserTransform.cpp): translate() and skew()
+    with both arguments, scale*() with numbers (CSS allows %), an angle 0 with a unit"""
+    name, args = t[1], [V.strip_ws(a) for a in V.split(t[2])]
+    if name in ('scale', 'scalex', 'scaley', 'scalez', 'scale3d'):
+        args = [[('num', a[0][1] / 100, '')] if len(a) == 1 and a[0][0] == 'num' and a[0][2] == '%' else a
+                for a in args]
+    if name == 'translate' and len(args) == 1:
+        args.append([('num', 0, 'dp')])
+    if name == 'skew' and len(args) == 1:
+        args.append([('num', 0, 'deg')])
+    if name.startswith(('rotate', 'skew')):
+        args = [[('num', 0, 'deg')] if len(a) == 1 and a[0] == ('num', 0, '') and (name != 'rotate3d' or k == 3) else a
+                for k, a in enumerate(args)]
+    out = []
+    for k, a in enumerate(args):
+        if k:
+            out.append(('comma',))
+        out += a
+    return (t[0], name, out)
+
+
 def h_transform(n, toks, ws, s, ctx, issues):
-    ok = {'translate', 'translatex', 'translatey', 'translatez', 'translate3d', 'rotate', 'rotatex', 'rotatey',
-          'rotatez', 'rotate3d', 'scale', 'scalex', 'scaley', 'scalez', 'scale3d', 'skew', 'skewx', 'skewy',
-          'matrix', 'matrix3d', 'perspective'}
     if s == 'none':
         return [(n, 'none')]
-    for w in ws:
-        if w[0][0] != 'func' or w[0][1] not in ok:
-            issues.append(Issue(f'{n}: {s}', 'RmlUi has no %s: dropped' % V.ser(w)))
+    out = []
+    for t in [t for w in ws for t in w]:
+        if t[0] != 'func' or t[1] not in TRANSFORM_FUNCS:
+            issues.append(Issue(f'{n}: {s}', 'RmlUi has no %s: dropped' % V.ser([t])))
             return []
-    return [(n, s)]
+        out.append(V.ser([_transform_fn(t, issues, s)]))
+    return [(n, ' '.join(out))]
 
 
 def h_pointer_events(n, toks, ws, s, ctx, issues):

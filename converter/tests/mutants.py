@@ -20,6 +20,13 @@ MUTANTS = [
     ('no-body-flow', 'html_parse.py', '_adopt(body, before, 0)', '_adopt(body, [], 0)', 'fixture 12-no-body'),
     ('head-flow', 'html_parse.py', 'before = moved + before', 'before = before', 'fixture 01-markup'),
     ('after-body', 'html_parse.py', '_adopt(body, after)', '_adopt(body, [])', 'fixture 01-markup'),
+    # values RmlUi parses differently (L5)
+    ('translate-1arg', 'css_props.py', "if name == 'translate' and len(args) == 1:", "if name == 'translate' and len(args) == 0:",
+     'fixture 13-values'),
+    ('skew-1arg', 'css_props.py', "if name == 'skew' and len(args) == 1:", "if name == 'skew' and len(args) == 0:",
+     'fixture 13-values'),
+    ('scale-pct', 'css_props.py', "a[0][0] == 'num' and a[0][2] == '%' else a", "a[0][0] == 'num' and a[0][2] == '%%' else a",
+     'fixture 13-values'),
 ]
 
 
