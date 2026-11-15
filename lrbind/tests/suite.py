@@ -392,6 +392,24 @@ MUTANTS += [
      'illegal and reserved model names are refused'),
 ]
 
+# ==== data-for: structural (aliases on its element are cancelled), names split as ExpandString does, a failed view
+# leaves its element empty and says why
+MUTANTS += [
+    ('aliases on a data-for element apply', 'lrbind.js', '      if (view) out.push(addView(model, view));\n      else while',
+     '      for (const a of attrs) if (a.name.startsWith("data-alias-")) { const t = model.resolve(a.value, el); '
+     'if (t) insertAlias(model, el, a.name.slice(11), t); }\n      const view2 = makeFor(model, el, forAttr);\n'
+     '      if (view2) out.push(addView(model, view2));\n      else while', 'parity', 'for container through an alias'),
+    ('three names: the first one used', 'lrbind.js', '      if (pair.length === 1 || pair.length === 2) iterator = pair[0];',
+     '      iterator = pair[0];', 'parity', 'for three names'),
+    ('a trailing empty item counts', 'lrbind.js', '    if (start >= 0) out.push(str.slice(start, end + 1));',
+     '    out.push(start >= 0 ? str.slice(start, end + 1) : "");', 'parity', 'for syntax edges'),
+    ('a failed data-for keeps its content', 'lrbind.js', '      else while (el.firstChild) el.removeChild(el.firstChild);\n',
+     '', 'parity', 'for syntax edges'),
+    ('a data-for that names nothing is silent', 'lrbind.js',
+     "{ warn(\"Could not find variable name '\" + halves[halves.length - 1] + \"' in data model. Could not add data-for view.\"); return null; }",
+     '{ return null; }', 'parity', 'for container through an alias'),
+]
+
 # ==== the run
 
 def plant(i, src, old, new):

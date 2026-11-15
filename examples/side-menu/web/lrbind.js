@@ -1041,20 +1041,47 @@
   }
 
   // data-for: the element becomes a hidden anchor; copies of it (without data-for) go in before it, one per entry.
+  // StringUtilities::ExpandString: split at the delimiter outside quotes, trim blanks; an empty item counts, except
+  // after the last delimiter
+  function expandString(str, delimiter) {
+    const out = [];
+    let quote = "", start = -1, end = 0, lastDelimiter = true;
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (lastDelimiter && !quote && (c === '"' || c === "'")) quote = c;
+      else if (c === quote && str[i - 1] !== "\\") quote = "";
+      else if (c === delimiter && !quote) {
+        out.push(start >= 0 ? str.slice(start, end + 1) : "");
+        lastDelimiter = true;
+        start = -1;
+        continue;
+      } else if (!/[\r\n \t]/.test(c) || quote) {
+        if (start < 0) start = i;
+        end = i;
+        lastDelimiter = false;
+        continue;
+      }
+    }
+    if (start >= 0) out.push(str.slice(start, end + 1));
+    return out;
+  }
+
+  // DataViewFor::Initialize: "it : list", "it, i : list" or "list"; any other count of names leaves the defaults
   function makeFor(model, el, source) {
-    const halves = source.split(":").map((s) => s.trim());
+    const halves = expandString(source, ":");
     if (!halves.length || halves.length > 2 || !halves[0] || !halves[halves.length - 1]) {
       warn("Invalid syntax in data-for '" + source + "'");
       return null;
     }
     let iterator = "", indexName = "";
     if (halves.length === 2) {
-      const pair = halves[0].split(",").map((s) => s.trim());
-      iterator = pair[0];
+      const pair = expandString(halves[0], ",");
+      if (!pair.length) { warn("Invalid syntax in data-for '" + source + "'"); return null; }
+      if (pair.length === 1 || pair.length === 2) iterator = pair[0];
       if (pair.length === 2) indexName = pair[1];
     }
     const address = model.resolve(halves[halves.length - 1], el);
-    if (!address) return null;
+    if (!address) { warn("Could not find variable name '" + halves[halves.length - 1] + "' in data model. Could not add data-for view."); return null; }
     const content = el.ownerDocument.createDocumentFragment();
     while (el.firstChild) content.appendChild(el.firstChild);
     el.removeAttribute("data-for");
@@ -1146,17 +1173,21 @@
   function bindElement(model, el, out) {
     const attrs = Array.from(el.attributes);
     const forAttr = el.getAttribute("data-for");
+    // data-for is structural: it cancels every other view and controller on its element, aliases included (its
+    // copies carry those attributes and bind them, per entry), and its content is bound per copy. RmlUi keeps that
+    // content as text, never as elements: when the view fails, the element stays, empty.
+    if (forAttr !== null) {
+      const view = makeFor(model, el, forAttr);
+      if (view) out.push(addView(model, view));
+      else while (el.firstChild) el.removeChild(el.firstChild);
+      return false;
+    }
     // aliases first: they serve the element's own other bindings
     for (const a of attrs) {
       if (!a.name.startsWith("data-alias-")) continue;
       const target = model.resolve(a.value, el);
       if (!target) { warn("Could not add data-alias-" + a.name.slice(11) + ": no data variable '" + a.value + "'"); continue; }
       insertAlias(model, el, a.name.slice(11), target);
-    }
-    if (forAttr !== null) {
-      const view = makeFor(model, el, forAttr);
-      if (view) out.push(addView(model, view));
-      return false;   // its content is bound per copy
     }
     for (const a of attrs) {
       const name = a.name;

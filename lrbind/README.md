@@ -76,6 +76,10 @@ takes top-level fields of the model.
   the markup set (`style="display: flex"` is gone after the first true). Put display rules in the stylesheet.
 - **Global names shadow `data-for` iterators**; a misspelled event or one missing from `events` stops the rest of a
   `data-event` chain. Array paths are 0-based in markup and 1-based from Lua (`lrbind.lua` shifts them).
+- **`data-for` takes over its element.** Every other binding on that element (`data-alias-*`, `data-if`, ...) applies
+  to each copy instead, never to the element itself, so an alias there cannot name the list. `x : list` and
+  `x, i : list` name the iterator and index; any other count of names (`a, b, c : list`) leaves `it`/`it_index`. When
+  the view fails (bad syntax, an unknown list) the element stays, empty: its content never becomes elements.
 - **`data-checked`:** a bool is the state; any other value checks the box only when it equals the box's non-empty
   `value` attribute (`data-checked="s"` with `s = 'a'` checks `value="a"`; `'true'` checks nothing). Every change of
   the checked state (a click, a view, `data-attrif-checked`) fires `change`, so `data-event-change` sees it and the

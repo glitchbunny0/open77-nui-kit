@@ -127,8 +127,12 @@ export const cases = [
 
   // ---- more data-for
   T("for index used in math and dynamic index", `<div data-for="row, i : rows">{{i + 1}}.{{labels[i]}}={{row}}</div>`, { rows: ["a", "b"], labels: ["L0", "L1"] }),
+  T("for three names", `<div data-for="a, b, c : list">{{it}}|{{a}}</div>`, { list: ["p"] }),
+  T("for syntax edges", `<div data-for="list :">{{it}}</div>|<div data-for=" : list">{{it}}</div>|<div data-for="a b : list">{{it}}</div>|<div data-for=", i : list">{{it}}{{i}}</div>`, { list: ["p"] }),
   T("for iterator with spaces and empty index", `<div data-for=" x , : list">{{x}}/{{it_index}}</div>`, { list: ["p", "q"] }),
   T("for with if on the same element", `<div data-for="v : list" data-if="v > 1">{{v}}</div>`, { list: [1, 2, 3] }, { steps: [{ set: "list", value: [3, 0, 2] }] }),
+  T("for container through an alias on the same element", `<div data-alias-first="rows[0]" data-for="c : first.cells">{{c}}</div>`, { rows: [{ cells: [1, 2] }] }),
+  T("alias on a for element names the iterator", `<div data-for="row : rows" data-alias-nm="row.name"><span>{{nm}}</span></div>`, { rows: [{ name: "a" }, { name: "b" }] }),
   T("for over a nested container shrinking", `<div data-for="row, r : rows"><span data-for="c : row.cells">{{r}}{{c}}</span></div>`,
     { rows: [{ cells: [1, 2] }, { cells: [3] }] }, { steps: [{ set: "rows", value: [{ cells: [] }] }, { set: "rows[0].cells", value: [7] }] }),
   T("event inside a for clone", `<div data-for="item, i : items"><span id="e" data-event-click="pick(item.name, i); sel = i">{{item.name}}</span></div><b>{{sel}}</b>`,
