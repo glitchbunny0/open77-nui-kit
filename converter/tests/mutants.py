@@ -187,6 +187,13 @@ MUTANTS = [
      'fixture 10-at-rules'),
     ('css-nesting-decl-block', 'css_parse.py', "if r.i < r.n and inner[r.i] == '{' and re.match(", "if False and re.match(",
      'fixture 13-values'),
+    # container query units (L7-5)
+    ('cq-units', 'css_values.py', "        if unit.startswith('cq'):", "        if False:", 'fixture 13-values'),
+    ('cq-container', 'convert.py', '                return tuple(size)', '                return self.canvas', 'fixture 13-values'),
+    ('cq-not-fixed', 'convert.py', "if len(t) != 1 or t[0][0] != 'num' or t[0][2] != 'dp':\n                        return None",
+     "if False:\n                        return None", 'fixture 13-values'),
+    ('decl-block-runs-on', 'css_parse.py', "it runs on to its ';'\n                r.until(';{}')", "it runs on to its ';'\n                break",
+     'fixture 13-values'),
 ]
 
 

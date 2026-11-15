@@ -964,7 +964,42 @@ class Converter:
         self.last_folded = {n for d in decls for n in V.var_names(V.tokenize(d.value))}
         return self._map_decls(decls, file, matched, sheet, once, prelude, inline, rule)
 
+    def container_px(self, el):
+        """the size in px of el's query container (the nearest ancestor with container-type), the canvas when there
+        is none (as CSS takes the viewport), None when its size is not a fixed length"""
+        a = el.parent
+        while isinstance(a, H.Element) and a.tag != '#document':
+            ct = (self.casc.declared(a, 'container-type') or '').strip()
+            if ct in ('size', 'inline-size'):
+                size = []
+                for k, full in (('width', self.canvas[0]), ('height', self.canvas[1])):
+                    if k == 'height' and ct == 'inline-size':
+                        size.append(full)
+                        continue
+                    raw = self.casc.declared(a, k)
+                    try:
+                        t = V.strip_ws(V.fold_math(V.convert_units(V.resolve_vars(
+                            V.tokenize(raw or ''), lambda n, a=a: self.casc.inherited(a, n)), self.units, [])))
+                    except ValueIssue:
+                        t = []
+                    if len(t) != 1 or t[0][0] != 'num' or t[0][2] != 'dp':
+                        return None
+                    size.append(t[0][1] * self.units.ppd)
+                return tuple(size)
+            a = a.parent
+        return self.canvas
+
     def _map_decls(self, decls, file, matched, sheet, once, prelude, inline=False, rule=None, look=None):
+        if any(re.search(r'\d(cq[whib]|cqmin|cqmax)\b', d.value) for d in decls):
+            sizes = {self.container_px(el) for el in matched} or {self.canvas}
+            saved, self.units.cq = self.units.cq, (sizes.pop() if len(sizes) == 1 else None)
+            try:
+                return self._map_decls2(decls, file, matched, sheet, once, prelude, inline, rule, look)
+            finally:
+                self.units.cq = saved
+        return self._map_decls2(decls, file, matched, sheet, once, prelude, inline, rule, look)
+
+    def _map_decls2(self, decls, file, matched, sheet, once, prelude, inline=False, rule=None, look=None):
         look = look or self.lookup_for(matched, file, decls[0].line, once)
         issues_at = []
         prepared = {}

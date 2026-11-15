@@ -207,6 +207,9 @@ UNSUPPORTED = {
     'transition-delay': 'write the transition shorthand (RmlUi has no transition longhands)',
     'text-shadow-color': 'nothing to do',
     'grid': 'RmlUi has no grid: use flex rows/columns',
+    'container-type': 'RmlUi has no container queries: the converter folds cq* units with this container\'s size',
+    'container-name': 'RmlUi has no container queries',
+    'container': 'RmlUi has no container queries: the converter folds cq* units with the container\'s size',
 }
 GRID_PROPS = ('grid-template', 'grid-template-columns', 'grid-template-rows', 'grid-template-areas', 'grid-area',
               'grid-column', 'grid-row', 'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
@@ -241,7 +244,9 @@ def prepare(name, value, ctx, issues):
         if u == 'fr':
             continue
         raise ValueIssue(f'unit {u}', {'ch': 'about 0.5em per character in most fonts: write dp',
-                                       'ex': 'about 0.5em: write dp or em'}.get(u, 'write the value in dp'))
+                                       'ex': 'about 0.5em: write dp or em'}.get(
+            u, 'the query container has no fixed size (or the elements have containers of different sizes): write '
+               'dp' if u.startswith('cq') else 'write the value in dp'))
     toks = V.fold_math(toks)
     if name not in NO_COLOR_PROPS:
         toks = V.convert_colors(toks, ctx.color)

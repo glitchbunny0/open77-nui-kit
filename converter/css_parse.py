@@ -210,7 +210,9 @@ def _nested_rule(prelude, inner, iline, line, bad):
         start = r.i
         r.until(';{}')
         if r.i < r.n and inner[r.i] == '{' and re.match(r'^\s*(--|[-\w]+\s*:[^:]*["\'])', inner[start:r.i]):
-            r.block()   # a declaration holding a {} block (a custom property, or a string a newline ended)
+            while r.i < r.n and inner[r.i] == '{':   # a declaration holding {} blocks (a custom property, or a
+                r.block()                             # string a newline ended): it runs on to its ';'
+                r.until(';{}')
         elif r.i < r.n and inner[r.i] == '{':
             sub_pre = inner[start:r.i].strip()
             sub_line = r.line_at(start)

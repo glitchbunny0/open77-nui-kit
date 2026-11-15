@@ -271,10 +271,17 @@ def var_names(toks, out=None):
 class Units:
     def __init__(self, px_per_dp=1.0, canvas=(1920, 1080), root_px=16.0):
         self.ppd, self.canvas, self.root_px = px_per_dp, canvas, root_px
+        self.cq = canvas   # the query container's size in px for cq* units (CSS: the viewport when there is none)
 
     def px(self, v, unit):
-        """length in CSS px for absolute and canvas-relative units, else None"""
+        """length in CSS px for absolute, canvas- and container-relative units, else None"""
         w, h = self.canvas
+        if unit.startswith('cq'):
+            if self.cq is None:
+                return None
+            cw, ch = self.cq
+            base = {'cqw': cw, 'cqi': cw, 'cqh': ch, 'cqb': ch, 'cqmin': min(cw, ch), 'cqmax': max(cw, ch)}.get(unit)
+            return None if base is None else v * base / 100
         return {'px': v, 'vw': v * w / 100, 'vh': v * h / 100, 'vmin': v * min(w, h) / 100,
                 'vmax': v * max(w, h) / 100, 'rem': v * self.root_px, 'pt': v * 4 / 3, 'pc': v * 16, 'in': v * 96,
                 'cm': v * 96 / 2.54, 'mm': v * 96 / 25.4, 'q': v * 96 / 101.6}.get(unit)

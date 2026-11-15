@@ -45,6 +45,12 @@ html, body { font-size: 0.5vw; }
 #k7 { background: url(assets/x;}.png) no-repeat; color: #0f0; }
 #k8 { font-family: \5FAE\8F6F\96C5\9ED1, sans-serif; }
 @keyframes pulse { from { opacity: 0; } to { opacity: 1; } }
+/* container query units: the container's fixed size, the canvas without one, reported when the size is not fixed */
+#stage { width: 1000px; container-type: inline-size; }
+#stage .cq { font-size: 2cqw; height: 1cqh; }
+#cq0 { width: 10cqw; }
+#loose { width: 50%; container-type: inline-size; }
+#loose .cq { width: 10cqw; }
 /* an unterminated string ends at its line (a browser's bad string) */
 #k11 { content: "abc
 ; color: #00f; }
