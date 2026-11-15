@@ -275,8 +275,8 @@ MUTANTS += [
      'parity', 'for default names'),
     ('undeclared event callback allowed', 'lrbind.js', 'if (!model.events.has(name)) {', 'if (false) {', 'parity',
      'undeclared event stops the chain'),
-    ('ev.* ignores the parameter name', 'lrbind.js', 'return event && hasOwn(event, address[1]) ? event[address[1]] : NONE;',
-     'return event ? event.mouse_x : NONE;', 'parity', 'event params'),
+    ('ev.* ignores the parameter name', 'lrbind.js', 'if (event) return hasOwn(event, address[1]) ? event[address[1]] : NONE;',
+     'if (event) return event.mouse_x;', 'parity', 'event params'),
     ('data-value writes on change, not per edit', 'lrbind.js',
      'if (tag === "textarea" || (tag === "input" && type !== "checkbox" && type !== "radio")) return "input";', '',
      'protocol', 'typing writes the model on every edit'),
@@ -350,8 +350,8 @@ MUTANTS += [
     ('no ev.checked', 'lrbind.js', ' p.checked = t.checked;', '', 'protocol', 'checkbox change'),
     ("ev.value from the listener's element", 'lrbind.js', 'const t = e.target;', 'const t = e.currentTarget;', 'protocol',
      "carries the target's value"),
-    ('ev.* reads inherited properties', 'lrbind.js', 'event && hasOwn(event, address[1]) ? event[address[1]] : NONE',
-     'event ? event[address[1]] : NONE', 'parity', 'ev prototype name'),
+    ('ev.* reads inherited properties', 'lrbind.js', 'if (event) return hasOwn(event, address[1]) ? event[address[1]] : NONE;',
+     'if (event) return event[address[1]];', 'parity', 'ev prototype name'),
 ]
 
 # ==== assignments RmlUi refuses are refused; paths walk own members only; set appends but leaves no holes; merge takes
@@ -480,6 +480,18 @@ MUTANTS += [
     ('data-rml: replaced content keeps its views', 'lrbind.js',
      '      for (const sub of view.model.views) if (sub !== view && !sub.dead && el.contains(sub.element)) dropView(sub);\n',
      '', 'parity', 'what it replaces stops updating'),
+]
+
+# ==== RmlUi's warnings that had no twin: ev.* read outside an event, an inline style value that does not parse (the
+# old value stays)
+MUTANTS += [
+    ('ev.* outside an event is silent', 'lrbind.js',
+     '          warn("Could not get value from data variable \'ev." + address[1] + "\'.");', '', 'parity', 'ev in a view'),
+    ('a style value that does not parse is silent', 'lrbind.js',
+     '      warn("Syntax error parsing inline property declaration \'" + mod + ": " + v + ";\'.");', '', 'parity',
+     'style with a number'),
+    ('a style value that does not parse clears the old one', 'lrbind.js', '      if (old !== "") el.style.setProperty(mod, old);\n',
+     '', 'parity', 'style with a number'),
 ]
 
 # ==== the run

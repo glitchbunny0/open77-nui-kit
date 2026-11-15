@@ -87,6 +87,9 @@ takes top-level fields of the model.
   radio unchecks every other radio with the same `name` (an empty name counts) in its `<form>`, or outside any form.
 - **A failing call keeps the old text, or prints `#rmlui#`.** `{{nofn(a)}}` alone stays as written; next to a working
   binding in the same text it shows RmlUi's placeholder `#rmlui#`. Only the four transforms above exist.
+- **More that warns:** `ev.x` outside an event (`{{ev.x}}` in text), and a `data-style-*` value that does not parse
+  (`width` bound to `20`, no unit), which keeps the old value. The shim asks the browser's CSS parser there, which
+  agrees with RmlUi's on common values, not on all.
 - **`data-rml` is for markup you wrote.** Whatever the string holds goes live on both surfaces: its `{{x}}`, `data-*`
   bindings and `data-event-*` handlers are bound in the model (natively too), so a string a player typed can rewire
   the screen. In WebUI the shim also drops what would act in a browser and means nothing to RmlUi: `<script>`,

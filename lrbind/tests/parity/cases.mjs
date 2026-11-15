@@ -155,6 +155,7 @@ export const cases = [
     { events: ["pick"], steps: [{ event: "w", type: "mousescroll", params: { wheel_delta_y: 2, wheel_delta_x: -0.5 } }] }),
   T("key event modifier keys", `<div id="k" data-event-keydown="pick(ev.ctrl_key, ev.shift_key); n = n + ev.ctrl_key">{{n}}</div>`, { n: 0 },
     { events: ["pick"], steps: [{ event: "k", type: "keydown", params: { ctrl_key: 1, shift_key: 0 } }] }),
+  T("ev in a view", `<div>[{{ev.x}}]</div>`, {}),
   T("trailing semicolon and empty statements", `<div id="btn" data-event-click="n = n + 1;;">{{n}}</div>`, { n: 0 }, { steps: [{ event: "btn", type: "click" }] }),
 
   // ---- more views
@@ -165,6 +166,7 @@ export const cases = [
   T("class from strings", `<div data-class-on="s" data-class-off="t" data-attrif-hidden="s">x</div>`, { s: "TRUE", t: "yes" }),
   T("attr with number and bool", `<div data-attr-n="n" data-attr-b="b" data-attr-e="nope2">x</div>`, { n: 1.5, b: true }),
 
+  T("style with a number", `<div data-style-opacity="o" data-style-width="w">x</div>`, { o: 0.5, w: "10px" }, { steps: [{ set: "w", value: 20 }] }),
   // ---- form controls (the harness drops the classes and local styles RmlUi's controls give themselves)
   T("checked: checkbox bound to a number", `<input type="checkbox" data-checked="n"/><input type="checkbox" value="1" data-checked="n"/>`, { n: 1 }),
   T("checked: radio bound to a bool", `<input type="radio" name="g" value="1" data-checked="b"/><input type="radio" name="g" value="x" data-checked="c"/><b>{{b}}|{{c}}</b>`, { b: true, c: false }),

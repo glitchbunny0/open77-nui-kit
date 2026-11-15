@@ -152,7 +152,8 @@
   };
 
   // ---------------------------------------------------------------------------------------------------------
-  // Messages. Every RmlUi warning has a twin here: console + lrbind:error to Lua (it lands in the client log).
+  // Messages. Where RmlUi warns, the shim warns too (the parity suite compares whether each step warned): console +
+  // lrbind:error to Lua (it lands in the client log).
 
   let errorSink = null;
   function warn(message) {
@@ -792,7 +793,11 @@
         return model.resolve(str, element);
       },
       getValue(address) {
-        if (address[0] === "ev" && address.length === 2) return event && hasOwn(event, address[1]) ? event[address[1]] : NONE;
+        if (address[0] === "ev" && address.length === 2) {
+          if (event) return hasOwn(event, address[1]) ? event[address[1]] : NONE;
+          warn("Could not get value from data variable 'ev." + address[1] + "'.");   // outside an event: a model miss
+          return NONE;
+        }
         return model.getValue(address);
       },
       setValue(address, value) {
@@ -896,7 +901,13 @@
     class(el, value, mod) { el.classList.toggle(mod, toBool(value)); },
     style(el, value, mod) {
       const v = toStr(value);
-      if (el.style.getPropertyValue(mod) !== v) el.style.setProperty(mod, v);
+      const old = el.style.getPropertyValue(mod);
+      if (old === v) return;
+      el.style.removeProperty(mod);
+      el.style.setProperty(mod, v);
+      if (v === "" || el.style.getPropertyValue(mod) !== "") return;
+      warn("Syntax error parsing inline property declaration '" + mod + ": " + v + ";'.");   // the old value stays
+      if (old !== "") el.style.setProperty(mod, old);
     },
     // DataViewIf/DataViewVisible: "shown" means no inline display/visibility at all, so a true value also
     // removes an inline display the markup set, exactly as RmlUi does
