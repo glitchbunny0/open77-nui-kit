@@ -1,0 +1,30 @@
+<!-- A shared block as a real screen keeps it: the markup between the markers is used by both the WebUI page and the
+     NativeUI document, and parity runs it through real RmlUi and through lrbind.js. -->
+<!-- voice: begin. A voice-chat indicator from a real screen; the same markup sits in its WebUI page and its NativeUI
+         document, and the client fills the v* fields. -->
+    <div id="voice" class="u" data-visible="vOn"
+         data-class-idle="vState == 'idle'" data-class-detected="vState == 'detected'" data-class-talking="vState == 'talking'"
+         data-class-muted="vState == 'muted'" data-class-offline="vState == 'offline'"
+         data-class-whisper="vMode == 'whisper'" data-class-shout="vMode == 'shout'">
+        <div class="line">
+            <div class="mic"><div class="glyph"></div><div class="slash"></div></div>
+            <div class="meter">
+                <div class="seg" data-class-lit="vLit > 0"></div>
+                <div class="seg" data-class-lit="vLit > 1"></div>
+                <div class="seg" data-class-lit="vLit > 2"></div>
+                <div class="seg" data-class-lit="vLit > 3"></div>
+                <div class="seg" data-class-lit="vLit > 4"></div>
+                <div class="seg" data-class-lit="vLit > 5"></div>
+                <div class="seg" data-class-lit="vLit > 6"></div>
+                <div class="seg" data-class-lit="vLit > 7"></div>
+                <div class="seg" data-class-lit="vLit > 8"></div>
+                <div class="seg" data-class-lit="vLit > 9"></div>
+                <div class="seg hot" data-class-lit="vLit > 10"></div>
+                <div class="seg hot" data-class-lit="vLit > 11"></div>
+            </div>
+            <div class="range"><span class="label">{{vLabel}}</span><span class="dist">{{vDist}}</span><span class="unit">M</span></div>
+            <div class="key"><span>{{vKey}}</span></div>
+            <div class="talkers" data-if="vTalk > 0"><div class="dot"></div><span>{{vTalk}}</span></div>
+        </div>
+    </div>
+    <!-- voice: end -->

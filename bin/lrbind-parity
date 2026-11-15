@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# lrbind parity: run binding cases through real RmlUi (rmlhost parity) and through lrbind.js in jsdom, compare the
+# element trees after every step.
+#   lrbind-parity                         the kit's own suite (lrbind/tests/parity/cases.mjs + golden.json)
+#   lrbind-parity CASES.mjs GOLDEN.json   your suite; CASES.mjs exports `cases` (see the kit's cases.mjs for the shape,
+#                                         import { T, sharedBlock } from it to test a block of your own documents)
+#   lrbind-parity [CASES GOLDEN] --regen  rewrite the golden file from real RmlUi first (after adding or changing a case)
+# Needs node, g++ and git; jsdom comes from `npm ci` in lrbind/tests (run once).
+set -euo pipefail
+kit="$(cd "$(dirname "$0")/.." && pwd)"
+t="$kit/lrbind/tests/parity"
+cases="$t/cases.mjs"; golden="$t/golden.json"; regen=0
+args=()
+for a in "$@"; do [ "$a" = "--regen" ] && regen=1 || args+=("$a"); done
+if [ ${#args[@]} -eq 2 ]; then cases="$(realpath "${args[0]}")"; golden="$(realpath -m "${args[1]}")"
+elif [ ${#args[@]} -ne 0 ]; then sed -n '2,9p' "$0"; exit 2; fi
+if [ ! -d "$kit/lrbind/tests/node_modules/jsdom" ]; then (cd "$kit/lrbind/tests" && npm ci --silent --no-audit --no-fund); fi
+if [ $regen = 1 ]; then
+    host="$(bash "$kit/scripts/build.sh" | tail -1)"
+    node "$t/parity.test.mjs" --cases "$cases" --emit-cases | "$host" parity > "$golden.new"
+    node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$golden.new"
+    mv "$golden.new" "$golden"
+    echo "golden: $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).length)' "$golden") cases from real RmlUi -> $golden"
+fi
+node "$t/parity.test.mjs" --cases "$cases" --golden "$golden"

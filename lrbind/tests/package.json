@@ -1,0 +1,7 @@
+{
+  "name": "lrbind-tests",
+  "private": true,
+  "description": "Offline tests of lrbind.js (never shipped): parity against RmlUi 6.3 and the bridge protocol",
+  "type": "module",
+  "dependencies": { "jsdom": "29.1.1" }
+}
