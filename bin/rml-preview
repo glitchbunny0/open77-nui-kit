@@ -10,7 +10,7 @@ It shows layout, sizes, wrapping, clipping and colours as the document gets them
 game draws them. A --hook module can paint those for your screen.
 
   rml-preview DOC.rml CASES.json|- --font FAMILY=a.ttf,b.ttf [--font ...] [--model NAME] [--out DIR]
-              [--bg IMAGE] [--root DIR] [--compare DIR] [--hook hook.py] [--sheet-crop X0,Y0,X1,Y1]
+              [--bg IMAGE] [--root DIR] [--compare DIR] [--hook hook.py] [--sheet-crop X0,Y0,X1,Y1] [--strict]
 
   FAMILY      the font-family name your sheet uses; each TTF's weight and style are read from the font (OS/2
               usWeightClass and the italic flags, as RmlUi does). Two files with the same family, weight and style
@@ -18,9 +18,11 @@ game draws them. A --hook module can paint those for your screen.
               painted, as in the game. The first file given labels the sheet.
   --root      where `image(/path)` resolves (default: the current directory); `image(rel/path)` resolves against
               the sheet that declares it, as in RmlUi
-  --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview right
+  --compare   a folder of reference shots named <case>.png (a mockup): compare.png puts them left, the preview
+              right; a shot of another size is scaled to the case size first (and said so)
   --hook      a Python file with optional `place(case) -> {selector: [left, top]}` (positions your client code writes
               at run time) and `paint(draw, el, case, rgba)` (called for every box after the built-in paint)
+  --strict    exit 1 when a case has a missing image or font face, a host warning or an unpainted decorator
 Writes <out>/<case>.png, <out>/sheet.png (every case) and, with --compare, <out>/compare.png. Needs Pillow.
 NUIKIT_HOST names an already built rmlhost to use instead of building one.
 """
@@ -1115,6 +1117,12 @@ def load_cases(arg):
     return cases
 
 
+def file_name(name):
+    """a case name as a file name in --out: path separators and the like become '_'"""
+    n = re.sub(r'[/\\\x00]', '_', str(name))
+    return '_' if n in ('', '.', '..') else n
+
+
 def host():
     if os.environ.get('NUIKIT_HOST'):
         if not os.access(os.environ['NUIKIT_HOST'], os.X_OK):
@@ -1124,6 +1132,16 @@ def host():
     if r.returncode != 0:
         die('building the host failed:\n' + r.stderr)
     return r.stdout.strip().splitlines()[-1]
+
+
+def parse_crop(s):
+    try:
+        c = [int(v) for v in s.split(',')]
+    except ValueError:
+        c = []
+    if len(c) != 4 or c[2] <= c[0] or c[3] <= c[1]:
+        die(f'--sheet-crop wants X0,Y0,X1,Y1 with X1 > X0 and Y1 > Y0, got {s!r}')
+    return c
 
 
 def main():
@@ -1138,9 +1156,16 @@ def main():
     ap.add_argument('--compare')
     ap.add_argument('--hook')
     ap.add_argument('--sheet-crop', help='X0,Y0,X1,Y1 of each case shown in sheet.png / compare.png (default: all)')
+    ap.add_argument('--strict', action='store_true', help='exit 1 when a case has a MISSING / NO FONT FACE / '
+                    'NOT PAINTED decorator line or a host warning')
     a = ap.parse_args()
     if not os.path.exists(a.doc):
         die(f'document not found: {a.doc}')
+    if a.bg and not os.path.isfile(a.bg):
+        die(f'--bg image not found: {a.bg}')
+    if a.compare and not os.path.isdir(a.compare):
+        die(f'--compare folder not found: {a.compare}')
+    crop = parse_crop(a.sheet_crop) if a.sheet_crop else None
     hook = None
     if a.hook:
         sys.dont_write_bytecode = True   # no __pycache__ next to the caller's hook
@@ -1149,6 +1174,10 @@ def main():
         spec.loader.exec_module(hook)
     faces = parse_fonts(a.font)
     cases = load_cases(a.cases)
+    files = [file_name(c['name']) for c in cases]
+    dup = sorted({f for f in files if files.count(f) > 1})
+    if dup:
+        die('two cases would write the same file: ' + ', '.join(dup))
     if hook and hasattr(hook, 'place'):
         for c in cases:
             c['place'] = dict(c.get('place') or {}, **(hook.place(c) or {}))
@@ -1162,56 +1191,67 @@ def main():
     shots = json.loads(res.stdout.decode('utf-8', 'replace'))
     texts = sheet_texts(a.doc, a.root)
     painter = Painter(faces, a.root, texts, sheet_rules(texts), hook)
-    names = []
-    for c, s in zip(cases, shots):
+    names, sizes, bad = [], [], False
+    for c, s, fn in zip(cases, shots, files):
         size = tuple(c.get('size') or (1920, 1080))
-        if a.bg and os.path.exists(a.bg):
+        if a.bg:
             bg = Image.open(a.bg).convert('RGB').resize(size)
         else:
             bg = Image.new('RGB', size, (20, 26, 32))
-        missing = set()
-        img = painter.paint(s['els'], bg, c, missing, os.path.dirname(a.doc))
-        p = os.path.join(a.out, s['name'] + '.png')
+        notes = set()
+        img = painter.paint(s['els'], bg, c, notes, os.path.dirname(a.doc))
+        p = os.path.join(a.out, fn + '.png')
         img.save(p)
-        names.append(s['name'])
+        names.append(fn)
+        sizes.append(size)
+        warns = [str(w) for w in (s.get('warnings') or [])]
         print('ok  ', p, len(s['els']), 'boxes')
-        for w in s.get('warnings') or []:
+        for w in warns:
             print('  WARN', w)
-        for m in sorted(missing):
-            print(' ', m)
-    crop = [int(v) for v in a.sheet_crop.split(',')] if a.sheet_crop else None
-    lab = ImageFont.truetype(faces[0][3], 26)
+        for n in sorted(notes):
+            print(' ', n)
+        if warns or any(n.startswith(('MISSING', 'NO FONT FACE', 'NOT PAINTED decorator', 'NOT PAINTED mask'))
+                        for n in notes):
+            bad = True
+    lab_font = ImageFont.truetype(faces[0][3], 26)
 
     def cut(im):
         return im.crop(crop) if crop else im
     # every case on one sheet, two columns at half size
     tiles = [cut(Image.open(os.path.join(a.out, n + '.png'))) for n in names]
-    if tiles:
+    if not tiles:
+        print('no cases: no sheet' + (' and no compare' if a.compare else ''))
+    else:
         tw, th = max(t.width for t in tiles) // 2, max(t.height for t in tiles) // 2
         sheet = Image.new('RGB', (tw * 2 + 30, (th + 40) * ((len(tiles) + 1) // 2) + 10), (10, 10, 16))
         d = ImageDraw.Draw(sheet)
         for i, (n, t) in enumerate(zip(names, tiles)):
             x, y = 10 + (i % 2) * (tw + 10), (i // 2) * (th + 40)
-            sheet.paste(t.resize((t.width // 2, t.height // 2), Image.LANCZOS), (x, y + 36))
-            d.text((x + 2, y + 6), n, font=lab, fill=(94, 246, 255))
+            sheet.paste(t.resize((max(1, t.width // 2), max(1, t.height // 2)), Image.LANCZOS), (x, y + 36))
+            d.text((x + 2, y + 6), n, font=lab_font, fill=(94, 246, 255))
         sheet.save(os.path.join(a.out, 'sheet.png'))
         print('sheet', os.path.join(a.out, 'sheet.png'))
-    if a.compare:
-        rows = [(n, t) for n, t in zip(names, tiles)]
-        cw, ch = max(t.width for _, t in rows), max(t.height for _, t in rows)
-        cmp_ = Image.new('RGB', (cw * 2 + 30, (ch + 44) * len(rows)), (10, 10, 16))
+    if a.compare and tiles:
+        cw, ch = max(t.width for t in tiles), max(t.height for t in tiles)
+        cmp_ = Image.new('RGB', (cw * 2 + 30, (ch + 44) * len(tiles)), (10, 10, 16))
         d = ImageDraw.Draw(cmp_)
-        for i, (n, t) in enumerate(rows):
+        for i, (n, t, size) in enumerate(zip(names, tiles, sizes)):
             y = i * (ch + 44)
             ref = os.path.join(a.compare, n + '.png')
             if os.path.exists(ref):
-                cmp_.paste(cut(Image.open(ref).convert('RGB')), (10, y + 44))
+                r = Image.open(ref).convert('RGB')
+                if r.size != size:
+                    print(f'compare: {ref} is {r.width}x{r.height}, the case is {size[0]}x{size[1]}: scaled to the case size')
+                    r = r.resize(size, Image.LANCZOS)
+                cmp_.paste(cut(r), (10, y + 44))
             cmp_.paste(t, (cw + 20, y + 44))
-            d.text((14, y + 6), n.upper() + ('  -  REFERENCE' if os.path.exists(ref) else '  -  (no reference shot)'), font=lab, fill=(255, 97, 89))
-            d.text((cw + 24, y + 6), n.upper() + '  -  RmlUi layout preview', font=lab, fill=(94, 246, 255))
+            d.text((14, y + 6), n.upper() + ('  -  REFERENCE' if os.path.exists(ref) else '  -  (no reference shot)'), font=lab_font, fill=(255, 97, 89))
+            d.text((cw + 24, y + 6), n.upper() + '  -  RmlUi layout preview', font=lab_font, fill=(94, 246, 255))
         cmp_ = cmp_.resize((cmp_.width // 2, cmp_.height // 2), Image.LANCZOS)
         cmp_.save(os.path.join(a.out, 'compare.png'))
         print('compare', os.path.join(a.out, 'compare.png'))
+    if a.strict and bad:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
