@@ -37,23 +37,61 @@ what your client Lua would have put into the document's data model at that momen
 
 ## Making cases from your client Lua
 
-Hand-written cases drift from what the client really builds. `fake-nui/fake_nui.lua` lets plain `lua5.4` run the
-client file: `Open77.ui.create` returns a fake document that keeps the model, `onModel` handlers can be fired like a
-click, `CreateThread`/`Wait` run as coroutines on 16 ms frames.
+Hand-written cases drift from what the client really builds. `fake-nui/fake_nui.lua` lets plain Lua 5.4 run the client
+file: `Open77.ui.create` returns a fake document that keeps its models, `onModel` handlers are fired like the markup's
+`data-event-click` would, and `CreateThread` / `Wait` / `SetTimeout` run as coroutines on 16 ms passes.
 
 ```lua
 local F = dofile("path/to/open77-nui-kit/fake-nui/fake_nui.lua")
 F.install()
 dofile("client/menu.lua")                       -- your file, unchanged
-local doc = Menu.open(SHOP, 2400) and F.last    -- F.last: the document the client created
+local doc = F.counted("Menu.open", nil, Menu.open, SHOP, 2400) and F.last   -- F.last: the document the client created
 F.event(doc, "pick", "overture")                -- what the markup's data-event-click would call
-F.settle()                                      -- run waiting threads for 60 frames
-print(F.json({ F.case("picked", doc, { { "#foot .buy", "buy", {} } }) }))
+F.settle()                                      -- run the scheduler for 60 passes (F.frames(n): n passes)
+io.write(F.json({ F.case("picked", doc, { { "#foot .buy", "buy", {} } }) }), "\n")
 ```
 
-`F.maxInstr` / `F.maxWhere` report the most Lua instructions any single resume or event took: a client resume gets
-roughly 10 000 before the game warns, so a test can assert on it. `examples/side-menu/models.lua` is the whole
-pattern.
+Write the cases with `io.write`, not `print`: `F.install()` replaces `print` by a capture into `F.logs` (all arguments,
+tab-joined; `FAKE_NUI_LOG=1` echoes it to stderr), so a `print(F.json(...))` writes nothing and the cases file stays
+empty. `F.counted(where, nil, fn, ...)` runs `fn` and counts its instructions, like every `F.event` and scheduler pass
+(`Menu.open` runs outside both, so it is wrapped). `examples/side-menu/models.lua` is the whole pattern.
+
+### What the fake does
+
+It follows the NativeUI reference (`Open77.ui` documents, data and events). The scheduler:
+
+- `CreateThread(fn)` starts the task on the **next** pass, as Open77 does (there is no `CreateThreadNow`); a thread
+  that calls `CreateThread` does not see the new task run before it yields. `Wait(ms)` wakes at the first pass at or
+  after its time; due tasks run by wake time, then by creation order (the game documents neither tie-break).
+  `SetTimeout` / `ClearTimeout` are tasks of the same scheduler. `F.frames(n)` runs n passes of 16 ms.
+- **Instruction budget:** Open77 allows 1,500,000 instructions per coroutine resume (500,000 on older clients) and
+  raises `Open77 script execution budget exceeded` past it; the fake does the same (`F.budget`, nil switches it off).
+  `F.maxInstr` / `F.maxWhere` report the largest piece of work seen, counted in steps of 1,000 (about 1% over the VM's
+  count). The instruction budget is not what limits UI work: Open77 also gives the client host 6 ms of Lua per frame,
+  and instructions do not measure time, so keep the work per frame small as well.
+
+The document (`F.last`, `Open77.ui.create(...)`):
+
+- **Models:** every model of `models` is kept by name, by reference. `merge` asserts a field the model lacks and an
+  unknown model. `set` / `push` / `removeAt` take the documented paths (`"items[2].stock"`, indices 1-based) and assert
+  a path that leads nowhere (the game reports it as an error event). A document with several models gives its first
+  model (by name) as the case's `model` and the others under `models`.
+- **Listeners:** `onModel(name, fn)` (also `"*"`), `on(type, [selector], fn)`, `onEvent(kind, fn)`; each returns an id
+  for `off(id)`. You drive the platform's side: `F.loaded(doc)`, `F.event(doc, name, ...)`, `F.emit(doc, type, detail)`
+  / `F.key(doc, key)` (DOM listeners all fire; the selector is not matched), `F.docError(doc, command, message)`.
+- **Focus:** `focus()` takes the input lease; `blur()`, `hide()` and `destroy()` release it (`onEvent("focus")` gets
+  `blur` with reason `released`); `F.focusLost(doc, "taken", "other_resource")` takes it away; `F.focusResult = false`
+  makes `focus()` fail with `focus_unavailable` and an `error` event, as in the game. `destroy()` fires `closed`.
+- **Create:** `document` or `source` (exactly one), at most 32 live documents (`nativeui_instance_limit`),
+  `undeclared_file:<path>` for a missing file, `loadFont` with `font_not_declared`, `registerEffect`, `stats`.
+- **Recorded only** (`F.stubs`, `doc.calls`): `text`, `rml`, `attr`, `class`, `setClasses`, `value`, `click`,
+  `focusElement`, `blurElement`, `scrollTo`, `insert`, `remove`, `stylesheet`, `watch`, `unwatch`, `setZIndex`,
+  `animate`, `keyframes`, `stop`, `settle`, `layout`, `scene`, `anchor`, `unanchor`, `projection`, `style`. They return
+  `true`, run no layout and never call a callback. `create(parent, spec)` returns a fresh `"@serial"`; `rect` is nil
+  ("until published"); `state()` is a table with `loaded`, `visible`, `focused` and a size.
+
+`F.json` writes cases: floats keep every digit, an empty table is `[]`, and NaN, infinity, a table that mixes an array
+with other keys and a function are errors naming the path (`$.rows[2].price`).
 
 ## Hooks for rml-preview
 
