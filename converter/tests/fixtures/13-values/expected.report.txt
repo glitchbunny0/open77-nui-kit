@@ -23,4 +23,5 @@ css      v.css:49  container-type: inline-size  =>  RmlUi has no container queri
 css      v.css:52  container-type: inline-size  =>  RmlUi has no container queries: the converter folds cq* units with this container's size
 css      v.css:53  width: 10cqw: unit cqw  =>  the query container has no fixed size (or the elements have containers of different sizes): write dp
 css      v.css:55  content: "abc"  =>  only meaningful on ::before/::after, which RmlUi lacks
-css      v.css:57  content: "abc; color: red }"#k10 { color: blue }  =>  only meaningful on ::before/::after, which RmlUi lacks
+css      v.css:59  declaration '}' has no property name  =>  fix the sheet
+css      v.css:57  content: "abc; color: red }"#k10 { color: blue } #k12 { width: 1dp  =>  only meaningful on ::before/::after, which RmlUi lacks
