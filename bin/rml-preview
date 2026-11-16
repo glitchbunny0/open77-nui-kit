@@ -118,11 +118,17 @@ def pick_face(faces, family, weight, italic):
     return best
 
 
+# Pillow's BASIC layout everywhere: FreeType's own (hinted) advances and kern table, as RmlUi's FreeType engine draws
+# text (no shaping). Raqm would be Pillow's default wherever FriBiDi happens to be installed, and draws otherwise.
+def truetype(path, size):
+    return ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.BASIC)
+
+
 def fonts_json(faces, path):
     """the host's fonts.json: '<family>|<weight>' (upright faces first), '<family>|<weight>|i' for italic ones"""
     out = {}
     for fam, w, it, p in sorted(faces, key=lambda f: f[2]):
-        f = ImageFont.truetype(p, 1000)
+        f = truetype(p, 1000)
         a, d = f.getmetrics()
         adv = {}
         for c in list(range(32, 127)) + EXTRA:
@@ -951,7 +957,7 @@ class Painter:
     def font(self, path, size):
         k = (path, round(size * 2))
         if k not in self.fonts:
-            self.fonts[k] = ImageFont.truetype(path, max(1, int(round(size))))
+            self.fonts[k] = truetype(path, max(1, int(round(size))))
         return self.fonts[k]
 
     def image_path(self, ref, doc_dir):
@@ -1272,7 +1278,7 @@ def main():
         if warns or any(n.startswith(('MISSING', 'NO FONT FACE', 'NOT PAINTED decorator', 'NOT PAINTED mask'))
                         for n in notes):
             bad = True
-    lab_font = ImageFont.truetype(faces[0][3], 26)
+    lab_font = truetype(faces[0][3], 26)
 
     def cut(im):
         return im.crop(crop) if crop else im
