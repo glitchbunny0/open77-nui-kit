@@ -35,8 +35,8 @@ What you can do with it:
 
 | Tool | Answers | Needs |
 |---|---|---|
-| `rml-check` | Does the document load cleanly in every state, and does every button fire the right event? | g++ |
-| `rml-preview` | What does each state look like with my real fonts, sizes and wrapping? | g++, Pillow |
+| `rml-check` | Does the document load cleanly in every state, and does every button fire the right event? | a C++ compiler |
+| `rml-preview` | What does each state look like with my real fonts, sizes and wrapping? | a C++ compiler, Pillow |
 | `fake-nui` | What models does my client Lua actually build? Run it in plain Lua and write the states out as cases. | Lua 5.4 |
 | `html2rml` | I have a WebUI page. What is its NativeUI twin, and what can't be converted? | Python |
 | `lrbind` | Can one markup serve a WebUI page and its NativeUI twin? Yes: RmlUi's data bindings, run in the browser. | (none) |
@@ -55,14 +55,19 @@ rml-check: FAIL
 
 ## Quick start
 
-Needs `git`, `g++` (C++17), `python3`, Lua 5.4 and, for lrbind's tests, Node 20.19+ (22 in CI). Optional: Pillow for
-previews, a Chromium for `html-shot`.
+Runs on Linux, macOS and Windows. Needs `git`, a C++17 compiler, Python 3.8+, Lua 5.4 and, for lrbind's tests,
+Node 20.19+ (22 in CI). Optional: Pillow for previews, a Chromium for `html-shot`.
 
-| | Debian / Ubuntu | Fedora | Arch / Homebrew |
+| | C++17 compiler | Lua 5.4 (as in the game: `lua -v` says) | Pillow |
 |---|---|---|---|
-| Lua 5.4 (command `lua5.4`) | `apt install lua5.4` | `dnf install lua` (command `lua`) | `lua` |
-| Pillow | `apt install python3-pil` | `dnf install python3-pillow` | `pip install Pillow` |
-| Chromium | `npx playwright install chromium-headless-shell` (any OS), or `NUIKIT_CHROME=/path/to/chrome` | | |
+| Debian / Ubuntu | `apt install g++` | `apt install lua5.4` | `apt install python3-pil` |
+| Fedora | `dnf install gcc-c++` | `dnf install lua` (command `lua`) | `dnf install python3-pillow` |
+| Arch | `pacman -S gcc` | `pacman -S lua54` (Arch's `lua` is 5.5) | `pacman -S python-pillow` |
+| macOS | `xcode-select --install` | `brew install lua@5.4`, then put `$(brew --prefix lua@5.4)/bin` on PATH (Homebrew's `lua` is 5.5) | `pip3 install Pillow` |
+| Windows | Visual Studio or its Build Tools with the C++ workload (found by itself), or MinGW-w64: `winget install BrechtSanders.WinLibs.POSIX.UCRT` | `winget install DEVCOM.Lua` | `py -m pip install Pillow` |
+
+A Chromium for `html-shot`, on any OS: `npx playwright install chromium-headless-shell`, or `NUIKIT_CHROME=/path/to/chrome`.
+The build takes the compiler in `CXX` when set, else the first it finds ([Settings](#settings)).
 
 The commands below say `lua5.4`; where the binary is called `lua`, use that (`scripts/test.sh` finds either, or `LUA=...`).
 
@@ -73,6 +78,18 @@ cd examples/side-menu
 lua5.4 models.lua > cases.json              # the client Lua, run on fake-nui, writes one case per state
 ../../bin/rml-check ui/menu.rml cases.json
 ../../bin/rml-preview ui/menu.rml cases.json --font kitraj=fonts/Rajdhani-Regular.ttf,fonts/Rajdhani-SemiBold.ttf --out out
+```
+
+On Windows, Git Bash runs these commands as they are (given a `python3`). From PowerShell or cmd, clone as above and
+start each tool through Python:
+
+```powershell
+cd open77-nui-kit
+py scripts\build.py
+cd examples\side-menu
+lua models.lua > cases.json
+py ..\..\bin\rml-check ui\menu.rml cases.json
+py ..\..\bin\rml-preview ui\menu.rml cases.json --font kitraj=fonts\Rajdhani-Regular.ttf,fonts\Rajdhani-SemiBold.ttf --out out
 ```
 
 `out/` now holds one PNG per state and `sheet.png`. [The example's README](examples/side-menu/README.md) walks
@@ -128,10 +145,11 @@ what it didn't paint per state (`NOT PAINTED ...`, missing images and faces), an
 
 | Variable | Default | Effect |
 |---|---|---|
-| `NUIKIT_RMLUI_DIR` | `${XDG_CACHE_HOME:-~/.cache}/open77-nui-kit/rmlui-6.3` | where RmlUi is cloned and the host built |
+| `NUIKIT_RMLUI_DIR` | `${XDG_CACHE_HOME:-~/.cache}/open77-nui-kit/rmlui-6.3`; Windows: `%LOCALAPPDATA%\open77-nui-kit\rmlui-6.3` | where RmlUi is cloned and the host built |
+| `CXX` | the first found: `g++`, `clang++`, `c++`; Windows: `cl` on PATH, `g++`, `clang++`, then Visual Studio by vswhere | the C++17 compiler (`g++`, `clang++`, `cl` or `clang-cl`, by name or path); RmlUi's objects and the host are built once per compiler |
 | `NUIKIT_HOST` | (built on demand) | use this already built `rmlhost` |
 | `NUIKIT_CHROME` | Playwright's headless shell | the Chromium `html-shot` starts |
-| `LUA` | `lua5.4`, then `lua` | the Lua 5.4 `scripts/test.sh` runs |
+| `LUA` | `lua5.4`, then `lua`, then `lua54` | the Lua 5.4 `scripts/test.sh` runs |
 | `NUIKIT_REQUIRE_CHROME`, `NUIKIT_REQUIRE_PILLOW` | unset | `1`: a missing Chromium / Pillow fails the test run instead of skipping (CI sets both) |
 
 ## Agents
@@ -145,13 +163,16 @@ ln -s <kit>/skills/open77-nativeui .claude/skills/open77-nativeui      # Claude 
 ln -s <kit>/skills/open77-nativeui .agents/skills/open77-nativeui      # Codex and other Agent Skills readers
 ```
 
+On Windows a junction needs no admin rights: `mklink /J .claude\skills\open77-nativeui <kit>\skills\open77-nativeui`.
+
 Agents changing the kit itself: [AGENTS.md](AGENTS.md).
 
 ## Developing the kit
 
 `scripts/test.sh` runs every suite, one `tests/<area>.sh` per area. Every check is proven by a mutant: a copy of the
-tool with one planted bug that must turn exactly that check red ([tests/README.md](tests/README.md)). The repo map and
-the rules for changes are in [AGENTS.md](AGENTS.md).
+tool with one planted bug that must turn exactly that check red ([tests/README.md](tests/README.md)). CI runs it on
+Linux, macOS and Windows (MSVC and MinGW-w64); on Windows it runs in Git Bash, with a `python3` on PATH. The repo map
+and the rules for changes are in [AGENTS.md](AGENTS.md).
 
 ## License
 
