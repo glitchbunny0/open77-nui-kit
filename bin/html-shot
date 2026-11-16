@@ -173,30 +173,62 @@ def verdict(rep):
     return None
 
 
-def kill_tree(proc):
+def job_for(proc):
+    """Windows: a job object holding proc, so that everything proc starts is in it too (Windows has no process groups,
+    and a parent-pid walk misses a child whose parent has exited); None where that fails"""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    job = k32.CreateJobObjectW(None, None)
+    h = k32.OpenProcess(0x0101, False, proc.pid)   # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    ok = bool(job and h and k32.AssignProcessToJobObject(job, h))
+    if h:
+        k32.CloseHandle(h)
+    if job and not ok:
+        k32.CloseHandle(job)
+    return job if ok else None
+
+
+def kill_tree(proc, job=None):
     """kill a process with everything it started"""
-    if os.name == 'nt':   # no process groups: taskkill walks the tree from the pid down
-        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True)
+    if os.name != 'nt':
+        os.killpg(proc.pid, signal.SIGKILL)   # its own session: the group is everything it started
+    elif job:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL('kernel32')
+        k32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        k32.TerminateJobObject(job, 1)
     else:
-        os.killpg(proc.pid, signal.SIGKILL)
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True)
 
 
 def run_chrome(cmd, timeout):
     """(returncode, stderr); a run that outlives the timeout is killed with everything it started"""
-    try:   # its own session on POSIX, so that killpg reaches its children (Windows ignores start_new_session)
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+    try:   # POSIX: a session of its own; Windows: a job object
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                start_new_session=os.name != 'nt')
     except OSError as e:
         die(f'cannot run {cmd[0]}: {e}')
+    job = job_for(proc) if os.name == 'nt' else None
     try:
         _, err = proc.communicate(timeout=timeout)
         return proc.returncode, err.decode('utf-8', 'replace')
     except subprocess.TimeoutExpired:
-        kill_tree(proc)
+        kill_tree(proc, job)
         proc.communicate()
         return None, f'Chromium did not finish in {timeout} s and was killed'
     except BaseException:
-        kill_tree(proc)
+        kill_tree(proc, job)
         raise
+    finally:
+        if job:
+            import ctypes
+            ctypes.WinDLL('kernel32').CloseHandle(ctypes.c_void_p(job))
 
 
 def main():
