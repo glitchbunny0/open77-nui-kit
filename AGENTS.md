@@ -38,10 +38,17 @@ says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.
   in `build.py`). Output UTF-8 with `\n` (each `main` reconfigures stdout and stderr); write text files with
   `encoding='utf-8', newline='\n'`; decode a child's output as UTF-8, never with `text=True`. Run a tool on PATH by
   `shutil.which` (Windows starts `.cmd` files only by their full path). The host prints the same bytes everywhere.
+  A child that starts children of its own is killed as a tree: a session on POSIX, a job object on Windows
+  (`bin/html-shot`). Text is measured and drawn with Pillow's BASIC layout: Raqm depends on whether FriBiDi happens to
+  be installed, and draws differently.
 - **Suites** (`tests/*.sh`): bash 3.2 (macOS): no `wait -n`, `${a,,}`, `mapfile`; an array that can be empty is
   `${a[@]+"${a[@]}"}` under `set -u`. No GNU-only flags: `sed -i`, sed's `0,/re/`, `sort -V`, `timeout`, `realpath -m`.
   A scripted fake run by a Python tool goes through `shim` from `tests/lib/os.sh` (a `.cmd` on Windows), and a path a
   tool prints is compared through `upath`. Lua on Windows writes `\r\n`: compare its output with the `\r` removed.
+  Git Bash rewrites an argument or environment value that looks like a path: mutants are planted with `plant`
+  (the text goes through files), folders go to Python as arguments, never inside a file. No heredoc inside `$(...)`
+  (bash 3.2 misreads one with an unbalanced quote or parenthesis): put it in a function. Python in a suite writes
+  files with `encoding='utf-8'`. A check that cannot fire on one OS says so on a `skip` line, never silently.
 
 ## Rules
 
