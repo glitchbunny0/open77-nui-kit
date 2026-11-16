@@ -7,12 +7,14 @@ skill in [skills/open77-nativeui/](skills/open77-nativeui/SKILL.md) instead.
 
 Offline tools for Open77 NativeUI screens (RmlUi 6.3 documents): a check, a preview painter, a WebUI-to-RML
 converter, a fake `Open77.ui` for client Lua, and lrbind (RmlUi data bindings for WebUI pages). Everything that
-says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.py`. Linux, macOS and Windows alike.
+says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.py`, or prebuilt from the same sources
+by the release workflow. Linux, macOS and Windows alike.
 
 | Path | What |
 |---|---|
 | `bin/` | the CLIs (Python 3, stdlib; `rml-preview` needs Pillow) |
-| `host/`, `scripts/build.py` | `rmlhost`: real RmlUi with a JSON-fed data model, modes `check`, `layout`, `parity`; RmlUi at a pinned tag, no CMake, no FreeType; g++, clang++ or MSVC (vswhere); the binary is named after a hash of its sources and the compiler (`build.sh` runs `build.py`) |
+| `host/`, `scripts/build.py` | `rmlhost`: real RmlUi with a JSON-fed data model, modes `check`, `layout`, `parity`; RmlUi at a pinned tag, no CMake, no FreeType; g++, clang++ or MSVC (vswhere); the binary is named after a hash of its sources and the compiler (`build.sh` runs `build.py`). A release's prebuilt host is named after a hash of the sources alone: `build.py` fetches the one for this checkout from the release `VERSION` names and checks its SHA-256, else builds |
+| `.github/workflows/` | `ci.yml`: the gate on every OS; `release.yml`: the prebuilt hosts, built and tested on every push that touches them, published on a tag, then fetched back on every platform |
 | `lrbind/` | `lrbind.js`, `lrbind.lua`, the parity suite against real RmlUi (`lrbind/tests/parity/golden.json`) |
 | `fake-nui/` | the fake `Open77.ui`, its scheduler and Open77's instruction budget |
 | `converter/` | html2rml; `converter/tests/facts.py` measures every RmlUi fact a mapping rests on |
@@ -30,6 +32,8 @@ says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.
   `NUIKIT_REQUIRE_PILLOW=1 NUIKIT_REQUIRE_CHROME=1` as CI does.
 - `NUIKIT_RMLUI_DIR` names the RmlUi build dir. Give parallel work separate dirs; a first build takes about a minute.
 - CI runs the gate on Linux, macOS and Windows (MSVC and MinGW-w64). A change that is green on one OS only is not done.
+- The gate builds the host from source (`scripts/test.sh` sets `NUIKIT_PREBUILT=0`). The prebuilt path has checks of
+  its own in `tests/host/build_checks.py` (a fake release over `file://`); `release.yml` proves the real binaries.
 
 ## Every OS
 
@@ -70,6 +74,10 @@ says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.
   regex of your own project's names to grep for those too (never write them into the kit).
   `lrbind.js` / `lrbind.lua` are copied into resources that ship to players, so their header names no account
   either (the lrbind suite checks it).
-- **Releases:** tag only after CI is green on the commit. Never move or delete a tag: consumers pin tags and refuse
-  a moved one. A fix after a tag is a new tag.
+- **Releases:** the release's last commit sets `VERSION` to `X.Y.Z`. Once `ci.yml` and `release.yml` are green on
+  it, push an annotated tag `vX.Y.Z`: its message becomes the release notes. `release.yml` builds the four hosts,
+  tests each, publishes them with `SHA256SUMS` and provenance attestations, then its `verify` jobs fetch each one from
+  the published release with no compiler to fall back on. The release is done when those are green. Between releases
+  `VERSION` keeps naming the last one: a checkout whose `host/` still matches it gets its binaries. Never move or
+  delete a tag: consumers pin tags and refuse a moved one. A fix after a tag is a new tag.
 - Atomic commits, one concern each, with the subject saying what changed for a user of the kit.

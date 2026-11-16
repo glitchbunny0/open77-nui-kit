@@ -35,8 +35,8 @@ What you can do with it:
 
 | Tool | Answers | Needs |
 |---|---|---|
-| `rml-check` | Does the document load cleanly in every state, and does every button fire the right event? | a C++ compiler |
-| `rml-preview` | What does each state look like with my real fonts, sizes and wrapping? | a C++ compiler, Pillow |
+| `rml-check` | Does the document load cleanly in every state, and does every button fire the right event? | the host: [prebuilt](#prebuilt-host), or a C++ compiler |
+| `rml-preview` | What does each state look like with my real fonts, sizes and wrapping? | the host, Pillow |
 | `fake-nui` | What models does my client Lua actually build? Run it in plain Lua and write the states out as cases. | Lua 5.4 |
 | `html2rml` | I have a WebUI page. What is its NativeUI twin, and what can't be converted? | Python |
 | `lrbind` | Can one markup serve a WebUI page and its NativeUI twin? Yes: RmlUi's data bindings, run in the browser. | (none) |
@@ -55,10 +55,12 @@ rml-check: FAIL
 
 ## Quick start
 
-Runs on Linux, macOS and Windows. Needs `git`, a C++17 compiler, Python 3.8+, Lua 5.4 and, for lrbind's tests,
-Node 20.19+ (22 in CI). Optional: Pillow for previews, a Chromium for `html-shot`.
+Runs on Linux, macOS and Windows. Needs Python 3.8+, Lua 5.4 and, for lrbind's tests, Node 20.19+ (22 in CI).
+The RmlUi host comes [prebuilt](#prebuilt-host) for Linux (x86-64, arm64), macOS and Windows (x86-64); elsewhere,
+or when `host/` has changed since the release, it is built from source, which needs `git` and a C++17 compiler.
+Optional: Pillow for previews, a Chromium for `html-shot`.
 
-| | C++17 compiler | Lua 5.4 (as in the game: `lua -v` says) | Pillow |
+| | C++17 compiler (only to build the host) | Lua 5.4 (as in the game: `lua -v` says) | Pillow |
 |---|---|---|---|
 | Debian / Ubuntu | `apt install g++` | `apt install lua5.4` | `apt install python3-pil` |
 | Fedora | `dnf install gcc-c++` | `dnf install lua` (command `lua`) | `dnf install python3-pillow` |
@@ -75,7 +77,7 @@ The commands below say `lua5.4`; where the binary is called `lua`, use that (`sc
 
 ```sh
 git clone https://github.com/glitchbunny0/open77-nui-kit && cd open77-nui-kit
-scripts/build.sh                            # fetches RmlUi 6.3 and builds the host once (about a minute)
+scripts/build.sh                            # gets the host once: the release's prebuilt one, else RmlUi 6.3 built from source (about a minute)
 cd examples/side-menu
 lua5.4 models.lua > cases.json              # the client Lua, run on fake-nui, writes one case per state
 ../../bin/rml-check ui/menu.rml cases.json
@@ -129,7 +131,8 @@ full mapping and the RmlUi facts behind it, each measured in real RmlUi.
 ## Using it in your resources
 
 - **Pin a tag.** Vendor a tagged release into your tree (`git archive vX.Y.Z`) or add it as a submodule, and update
-  on purpose. The tools only need the kit's folder; the RmlUi build lives in a cache, not in your tree.
+  on purpose. The tools only need the kit's folder; the RmlUi build lives in a cache, not in your tree, and a tagged
+  copy gets its release's prebuilt host.
 - **lrbind copies.** A resource ships its own `web/lrbind.js` / `client/lrbind.lua`.
   `bin/lrbind-sync add <resource>` writes them, `refresh <folder>` brings old copies up to date after an update, and
   `check <folder>` (exit 1) belongs in your test run.
@@ -143,11 +146,33 @@ chromatic and scanline filters, `fx()` decorators, `<shape>` paint, motion chann
 or the game's anti-aliasing. `rml-check` validates those values; only the game shows them. `rml-preview` lists
 what it didn't paint per state (`NOT PAINTED ...`, missing images and faces), and `--strict` makes that a failure.
 
+## Prebuilt host
+
+Each release carries `rmlhost` for Linux x86-64 and arm64 (linked statically, so it runs on any distro), macOS 11+
+(one universal file, Apple silicon and Intel) and Windows x86-64 (no Visual C++ runtime needed). CI builds each one
+from the tagged sources and runs the host checks and the RmlUi golden against it before the release is published.
+Each file is named after a hash of the host sources it was built from.
+
+When a tool needs the host and none is built yet, `scripts/build.py` asks the release named in `VERSION` for the
+binary of this checkout's host sources, checks it against the release's `SHA256SUMS`, runs it once, and keeps it in
+a `prebuilt` folder next to the RmlUi build dir. When there is none (`host/` changed since that release, no network,
+another CPU), it builds from source as before. `NUIKIT_PREBUILT=0` always builds from source.
+
+Each binary also has a build provenance attestation: signed proof that this repository's release workflow built it
+from the tagged commit. To check one yourself with the GitHub CLI:
+
+```text
+gh release download vX.Y.Z --repo glitchbunny0/open77-nui-kit --pattern 'rmlhost-*-linux-x86_64.zip'
+gh attestation verify rmlhost-*-linux-x86_64.zip --repo glitchbunny0/open77-nui-kit
+```
+
 ## Settings
 
 | Variable | Default | Effect |
 |---|---|---|
-| `NUIKIT_RMLUI_DIR` | `${XDG_CACHE_HOME:-~/.cache}/open77-nui-kit/rmlui-6.3`; Windows: `%LOCALAPPDATA%\open77-nui-kit\rmlui-6.3` | where RmlUi is cloned and the host built |
+| `NUIKIT_RMLUI_DIR` | `${XDG_CACHE_HOME:-~/.cache}/open77-nui-kit/rmlui-6.3`; Windows: `%LOCALAPPDATA%\open77-nui-kit\rmlui-6.3` | where RmlUi is cloned and the host built; a prebuilt host is kept in `prebuilt` next to it |
+| `NUIKIT_PREBUILT` | on | `0`: never fetch a prebuilt host, always build from source |
+| `NUIKIT_PREBUILT_URL` | `https://github.com/glitchbunny0/open77-nui-kit/releases/download` | where releases are fetched from (`<url>/v<VERSION>/SHA256SUMS` and the zips): a mirror, or a `file://` folder |
 | `CXX` | the first found: `g++`, `clang++`, `c++`; Windows: `cl` on PATH, `g++`, `clang++`, then Visual Studio by vswhere | the C++17 compiler (`g++`, `clang++`, `cl` or `clang-cl`, by name or path); RmlUi's objects and the host are built once per compiler |
 | `NUIKIT_HOST` | (built on demand) | use this already built `rmlhost` |
 | `NUIKIT_CHROME` | Playwright's headless shell | the Chromium `html-shot` starts |
@@ -173,8 +198,9 @@ Agents changing the kit itself: [AGENTS.md](AGENTS.md).
 
 `scripts/test.sh` runs every suite, one `tests/<area>.sh` per area. Every check is proven by a mutant: a copy of the
 tool with one planted bug that must turn exactly that check red ([tests/README.md](tests/README.md)). CI runs it on
-Linux, macOS and Windows (MSVC and MinGW-w64); on Windows it runs in Git Bash, with a `python3` on PATH. The repo map
-and the rules for changes are in [AGENTS.md](AGENTS.md).
+Linux, macOS and Windows (MSVC and MinGW-w64); on Windows it runs in Git Bash, with a `python3` on PATH. A release is
+a `VERSION` bump and an annotated tag: `.github/workflows/release.yml` builds, tests and publishes the prebuilt hosts.
+The repo map and the rules for changes are in [AGENTS.md](AGENTS.md).
 
 ## License
 

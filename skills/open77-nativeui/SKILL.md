@@ -2,7 +2,7 @@
 name: open77-nativeui
 description: Build, port, restyle or debug an Open77 NativeUI screen (an RmlUi 6.3 document, RML + RCSS, driven by Open77.ui from client Lua) offline with open77-nui-kit, without starting the game. Use when writing or changing .rml / .rcss files for Open77, porting a WebUI page (HTML/CSS) to NativeUI, making one markup serve a WebUI page and its NativeUI twin (lrbind), generating cases from client Lua with fake-nui, or reading rml-check, rml-preview, html2rml or html-shot output.
 license: MIT
-compatibility: Linux, macOS or Windows. Needs the open77-nui-kit folder (a clone or a vendored copy), a C++17 compiler (g++, clang++; on Windows MSVC or MinGW-w64), Python 3.8+, Lua 5.4. Pillow for rml-preview, a Chromium for html-shot.
+compatibility: Linux, macOS or Windows. Needs the open77-nui-kit folder (a clone or a vendored copy), Python 3.8+, Lua 5.4. A tagged kit fetches its release's prebuilt RmlUi host (Linux x86-64/arm64, macOS, Windows x86-64); without one, git and a C++17 compiler (g++, clang++; on Windows MSVC or MinGW-w64) build it. Pillow for rml-preview, a Chromium for html-shot.
 ---
 
 # Open77 NativeUI screens with open77-nui-kit
@@ -15,11 +15,13 @@ offline, so you can check and see a screen before anyone starts the game.
 ## 0. Find the kit
 
 `$KIT` below is the kit's folder: the one holding `bin/rml-check`. It is a clone of open77-nui-kit, or a copy
-vendored into the project (look for `*/bin/rml-check` next to a `fake-nui/` folder). Build the RmlUi host once; the
-tools build it on demand too, so this only moves the wait:
+vendored into the project (look for `*/bin/rml-check` next to a `fake-nui/` folder). Get the RmlUi host once; the
+tools get it on demand too, so this only moves the wait. A tagged kit fetches the prebuilt host its release carries
+(checked by SHA-256); without one for its host sources, it builds RmlUi from source, which needs git and a C++17
+compiler:
 
 ```sh
-"$KIT"/scripts/build.sh          # fetches RmlUi 6.3 and builds the host into a cache dir, about a minute the first time
+"$KIT"/scripts/build.sh          # the release's prebuilt host, else RmlUi 6.3 built from source into a cache dir (about a minute)
 ```
 
 Try the loop on the kit's example before your own screen. It touches nothing in the kit (outputs go to a temp dir):

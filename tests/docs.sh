@@ -276,9 +276,9 @@ mutant() {   # mutant CHECK-FUNCTION NAME FILE OLD NEW
 
 mutant chk_readme_run "README: its commands run" README.md '../../bin/html2rml web/index.html --out out/twin --name menu     #' '../../bin/html2rml web/index.html --out ui --name menu     #'
 mutant chk_readme_run "README: its commands run" README.md 'git clone https://github.com/glitchbunny0/open77-nui-kit && cd open77-nui-kit
-scripts/build.sh                            # fetches RmlUi 6.3 and builds the host once (about a minute)
+scripts/build.sh                            # gets the host once: the release'"'"'s prebuilt one, else RmlUi 6.3 built from source (about a minute)
 cd examples/side-menu' 'git clone https://github.com/glitchbunny0/open77-nui-kit && cd open77-nui-kit
-scripts/build.sh                            # fetches RmlUi 6.3 and builds the host once (about a minute)'
+scripts/build.sh                            # gets the host once: the release'"'"'s prebuilt one, else RmlUi 6.3 built from source (about a minute)'
 mutant chk_example_readme_run "example README: its commands run" examples/side-menu/README.md '../../bin/rml-check ui/menu.rml cases.json
 ../../bin/rml-preview ui/menu.rml' '../../bin/rml-check ui/menu.rml cases.json
 ../../bin/rml-check2 ui/menu.rml'
