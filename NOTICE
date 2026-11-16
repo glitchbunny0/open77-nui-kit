@@ -1,7 +1,7 @@
 open77-nui-kit includes work derived from RmlUi (https://github.com/mikke89/RmlUi):
 
 - lrbind/lrbind.js ports RmlUi's data-binding expression parser, interpreter and data views to JavaScript.
-- host/ links RmlUi (fetched and built from source by scripts/build.sh; not vendored in this repository).
+- host/ links RmlUi (fetched and built from source by scripts/build.py; not vendored in this repository).
 
 RmlUi is distributed under the following license:
 

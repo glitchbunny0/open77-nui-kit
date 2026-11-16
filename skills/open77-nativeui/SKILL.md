@@ -2,7 +2,7 @@
 name: open77-nativeui
 description: Build, port, restyle or debug an Open77 NativeUI screen (an RmlUi 6.3 document, RML + RCSS, driven by Open77.ui from client Lua) offline with open77-nui-kit, without starting the game. Use when writing or changing .rml / .rcss files for Open77, porting a WebUI page (HTML/CSS) to NativeUI, making one markup serve a WebUI page and its NativeUI twin (lrbind), generating cases from client Lua with fake-nui, or reading rml-check, rml-preview, html2rml or html-shot output.
 license: MIT
-compatibility: Needs the open77-nui-kit folder (a clone or a vendored copy), g++ (C++17), python3, Lua 5.4. Pillow for rml-preview, a Chromium for html-shot.
+compatibility: Linux, macOS or Windows. Needs the open77-nui-kit folder (a clone or a vendored copy), a C++17 compiler (g++, clang++; on Windows MSVC or MinGW-w64), Python 3.8+, Lua 5.4. Pillow for rml-preview, a Chromium for html-shot.
 ---
 
 # Open77 NativeUI screens with open77-nui-kit
@@ -32,7 +32,9 @@ lua5.4 models.lua > "$o/cases.json"                    # the client Lua, run on 
 "$KIT"/bin/rml-preview ui/menu.rml "$o/cases.json" --font kitraj=fonts/Rajdhani-Regular.ttf,fonts/Rajdhani-SemiBold.ttf --out "$o/preview"
 ```
 
-Where Lua 5.4 is called `lua` (Fedora, Arch, Homebrew), use that.
+Where Lua 5.4 is called `lua` (Fedora) or `lua54` (Windows), use that; `lua -v` must say 5.4 (Arch's and Homebrew's
+`lua` is 5.5: their 5.4 is `lua54`, `lua@5.4`). On Windows, Git Bash runs these commands as written; from PowerShell
+or cmd start each tool through Python: `py <kit>\bin\rml-check ui\menu.rml cases.json`, `py <kit>\scripts\build.py`.
 
 ## 1. Pick the loop
 

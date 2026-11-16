@@ -7,12 +7,12 @@ skill in [skills/open77-nativeui/](skills/open77-nativeui/SKILL.md) instead.
 
 Offline tools for Open77 NativeUI screens (RmlUi 6.3 documents): a check, a preview painter, a WebUI-to-RML
 converter, a fake `Open77.ui` for client Lua, and lrbind (RmlUi data bindings for WebUI pages). Everything that
-says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.sh`.
+says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.py`. Linux, macOS and Windows alike.
 
 | Path | What |
 |---|---|
 | `bin/` | the CLIs (Python 3, stdlib; `rml-preview` needs Pillow) |
-| `host/`, `scripts/build.sh` | `rmlhost`: real RmlUi with a JSON-fed data model, modes `check`, `layout`, `parity`; RmlUi at a pinned tag, no CMake, no FreeType; the binary is named after a hash of its sources |
+| `host/`, `scripts/build.py` | `rmlhost`: real RmlUi with a JSON-fed data model, modes `check`, `layout`, `parity`; RmlUi at a pinned tag, no CMake, no FreeType; g++, clang++ or MSVC (vswhere); the binary is named after a hash of its sources and the compiler (`build.sh` runs `build.py`) |
 | `lrbind/` | `lrbind.js`, `lrbind.lua`, the parity suite against real RmlUi (`lrbind/tests/parity/golden.json`) |
 | `fake-nui/` | the fake `Open77.ui`, its scheduler and Open77's instruction budget |
 | `converter/` | html2rml; `converter/tests/facts.py` measures every RmlUi fact a mapping rests on |
@@ -29,6 +29,19 @@ says how RmlUi behaves runs the real RmlUi, built from source by `scripts/build.
 - Pillow and Chromium are optional: without them the suite skips their steps. Before a release, run it with
   `NUIKIT_REQUIRE_PILLOW=1 NUIKIT_REQUIRE_CHROME=1` as CI does.
 - `NUIKIT_RMLUI_DIR` names the RmlUi build dir. Give parallel work separate dirs; a first build takes about a minute.
+- CI runs the gate on Linux, macOS and Windows (MSVC and MinGW-w64). A change that is green on one OS only is not done.
+
+## Every OS
+
+- **Tools** (`bin/`, `scripts/build.py`, `converter/`): Python standard library, no bash, no shell-outs. No POSIX-only
+  call without its Windows path (`os.killpg`, `signal.SIGALRM`, `fcntl`: see `kill_tree` in `bin/html-shot`, the lock
+  in `build.py`). Output UTF-8 with `\n` (each `main` reconfigures stdout and stderr); write text files with
+  `encoding='utf-8', newline='\n'`; decode a child's output as UTF-8, never with `text=True`. Run a tool on PATH by
+  `shutil.which` (Windows starts `.cmd` files only by their full path). The host prints the same bytes everywhere.
+- **Suites** (`tests/*.sh`): bash 3.2 (macOS): no `wait -n`, `${a,,}`, `mapfile`; an array that can be empty is
+  `${a[@]+"${a[@]}"}` under `set -u`. No GNU-only flags: `sed -i`, sed's `0,/re/`, `sort -V`, `timeout`, `realpath -m`.
+  A scripted fake run by a Python tool goes through `shim` from `tests/lib/os.sh` (a `.cmd` on Windows), and a path a
+  tool prints is compared through `upath`. Lua on Windows writes `\r\n`: compare its output with the `\r` removed.
 
 ## Rules
 
