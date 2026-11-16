@@ -1,0 +1,7 @@
+# Text files are checked out with LF on every OS, Windows included, whatever core.autocrlf says: the suites compare
+# files byte for byte (the parity golden, the converter's fixtures, the lrbind copies), and RmlUi reads LF fine.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.tga binary
+*.ttf binary
