@@ -4,7 +4,7 @@ seconds and never touch the real cache. Usage: build_checks.py BUILD_PY WORKDIR 
 Prints "ok <check>" or "FAIL <check>: why" per check; exits 1 when any failed. Runs on Linux, macOS and Windows: the
 cache lock is held from here the way build.py takes it, and the fake git is a script on PATH (git.cmd on Windows).
 """
-import os, pathlib, subprocess, sys, time
+import json, os, pathlib, subprocess, sys, time
 
 WINDOWS = os.name == 'nt'
 BUILD, W = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
@@ -166,5 +166,32 @@ if want(c):
         bad(c, f'the next build failed: {p or "no binary"}')
     else:
         ok(c)
+
+c = 'build: the compiler found is remembered, and probed again when it changed'
+if want(c):
+    d = os.path.join(W, 'c5', 'rmlui')
+    memo = os.path.join(W, 'c5', 'compilers.json')
+    a = last(run(d, '--host', HOST_A))
+
+    def edit_memo(change):
+        with open(memo, encoding='utf-8') as f:
+            known = json.load(f)
+        for e in known.values():
+            change(e)
+        with open(memo, 'w', encoding='utf-8') as f:
+            json.dump(known, f)
+    if not os.path.isfile(memo) or says(a) != 'A':
+        bad(c, f'no compilers.json next to the cache dir after a build ({a or "no binary"})')
+    else:
+        edit_memo(lambda e: e.update(ident=e['ident'] + ' (remembered)'))   # the remembered ident names the binary
+        b = last(run(d, '--host', HOST_A))
+        edit_memo(lambda e: e.update(stamp=[0, 0]))   # as if the compiler had changed since
+        again = last(run(d, '--host', HOST_A))
+        if not b or b == a or says(b) != 'A':
+            bad(c, f'the remembered compiler was not used: {a} then {b}')
+        elif again != a:
+            bad(c, f'a changed compiler was not probed again: {again}, want {a}')
+        else:
+            ok(c)
 
 sys.exit(1 if failed else 0)

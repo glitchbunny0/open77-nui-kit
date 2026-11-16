@@ -6,6 +6,8 @@ The compiler: $CXX when set (g++, clang++, cl or clang-cl, by name or path), els
 PATH. On Windows: cl when it is on PATH (a developer prompt), else g++ or clang++ (MinGW-w64), else the newest Visual
 Studio or Build Tools with the C++ workload, found by vswhere, whose environment is loaded here (no developer prompt
 needed; CXX=cl without a cl on PATH loads it too).
+The compiler found is remembered in <cache>/open77-nui-kit/compilers.json (probing Visual Studio takes seconds) while
+CXX, PATH and the compiler's executable stay as they were.
 The RmlUi checkout and its objects live in a cache dir, never in the repo:
   NUIKIT_RMLUI_DIR   default <cache>/open77-nui-kit/rmlui-<tag>; <cache> is $XDG_CACHE_HOME when set, else
                      %LOCALAPPDATA% on Windows and ~/.cache elsewhere
@@ -21,7 +23,7 @@ to <dir>.tmp.<pid> and is renamed once complete, so a killed clone never leaves 
 Prints the path of the built binary on its last line; everything else goes to stderr. Exit status: 0 built (or
 already there), 1 a compile or clone failed, 2 a usage, compiler or cache dir problem.
 """
-import argparse, glob, hashlib, os, platform, shlex, shutil, stat, subprocess, sys, time
+import argparse, glob, hashlib, json, os, platform, shlex, shutil, stat, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 
 WINDOWS = os.name == 'nt'
@@ -49,23 +51,28 @@ def output(r):
 # ---- the compiler
 
 class Compiler:
-    """kind 'gnu' (g++ / clang++ flags) or 'msvc' (cl / clang-cl flags); cmd: the command, wrappers and all; env: the
-    environment it runs in (Visual Studio's when vswhere found it)"""
+    """kind 'gnu' (g++ / clang++ flags) or 'msvc' (cl / clang-cl flags); cmd: the command, wrappers and all; delta: what
+    the environment it runs in adds (Visual Studio's, when vswhere found it); ident and target: what it says it is,
+    asked when not given (a remembered compiler)"""
 
-    def __init__(self, cmd, env=None):
-        self.cmd, self.env = cmd, env
+    def __init__(self, cmd, delta=None, ident=None, target=None):
+        self.cmd, self.delta = cmd, delta or {}
+        self.env = dict(os.environ, **self.delta) if self.delta else None
         names = [os.path.splitext(os.path.basename(c))[0].lower() for c in cmd]
         self.kind = 'msvc' if any(n in ('cl', 'clang-cl') for n in names) else 'gnu'
-        if self.kind == 'msvc':
-            self.flags, self.obj, self.target = MSVC_FLAGS, '.obj', ''
+        if ident is None and self.kind == 'msvc':
             r = self.run(['--version'] if 'clang-cl' in names else [])
-            self.ident = next((l.strip() for l in output(r).splitlines() if 'version' in l.lower()), '')
+            ident, target = next((l.strip() for l in output(r).splitlines() if 'version' in l.lower()), ''), ''
+        elif ident is None:
+            ident = (output(self.run(['--version'])).splitlines() or [''])[0].strip()
+            target = output(self.run(['-dumpmachine'])).strip()
+        self.ident, self.target = ident, target
+        if self.kind == 'msvc':
+            self.flags, self.obj = MSVC_FLAGS, '.obj'
             self.libs = ['shell32.lib', 'user32.lib']   # CommandLineToArgvW; RmlUi's LogDefault calls MessageBox
         else:
             self.flags, self.obj = GNU_FLAGS, '.o'
-            self.ident = (output(self.run(['--version'])).splitlines() or [''])[0].strip()
-            self.target = output(self.run(['-dumpmachine'])).strip()
-            mingw = 'mingw' in self.target or 'windows-gnu' in self.target
+            mingw = 'mingw' in target or 'windows-gnu' in target
             # MinGW: a standalone exe (no libstdc++ DLL to find at run time); shell32 holds CommandLineToArgvW, user32
             # the MessageBox RmlUi's LogDefault calls
             self.libs = (['-static'] if mingw else []) + (['-lshell32', '-luser32'] if WINDOWS else [])
@@ -91,8 +98,9 @@ class Compiler:
 
 
 def msvc_env():
-    """the environment of the newest Visual Studio / Build Tools with the C++ tools (vcvarsall for this machine), or
-    None; read with `cmd /u` so that every value arrives as UTF-16, whatever the code page"""
+    """what the environment of the newest Visual Studio / Build Tools with the C++ tools adds (vcvarsall for this
+    machine; names upper case, as os.environ has them on Windows), or None; read with `cmd /u` so that every value
+    arrives as UTF-16, whatever the code page"""
     pf = os.environ.get('ProgramFiles(x86)') or os.environ.get('ProgramFiles') or r'C:\Program Files (x86)'
     vswhere = os.path.join(pf, 'Microsoft Visual Studio', 'Installer', 'vswhere.exe')
     if not os.path.isfile(vswhere):
@@ -111,11 +119,13 @@ def msvc_env():
     for line in r.stdout.decode('utf-16-le', 'replace').splitlines():
         k, eq, v = line.partition('=')
         if eq and k:
-            env[k] = v
-    return env if r.returncode == 0 and 'INCLUDE' in {k.upper() for k in env} else None
+            env[k.upper()] = v
+    if r.returncode or 'INCLUDE' not in env:
+        return None
+    return {k: v for k, v in env.items() if os.environ.get(k) != v}
 
 
-def find_compiler():
+def probe_compiler():
     cxx = os.environ.get('CXX', '').strip()
     if cxx:
         cmd = [cxx] if os.path.isfile(cxx) else [c.strip('"') for c in shlex.split(cxx, posix=not WINDOWS)]
@@ -123,22 +133,63 @@ def find_compiler():
         if exe:
             return Compiler([exe] + cmd[1:])
         if WINDOWS and os.path.splitext(os.path.basename(cmd[0]))[0].lower() == 'cl':
-            env = msvc_env()
-            exe = env and shutil.which('cl', path=next((v for k, v in env.items() if k.upper() == 'PATH'), ''))
+            delta = msvc_env()
+            exe = delta and shutil.which('cl', path=delta.get('PATH', os.environ.get('PATH', '')))
             if exe:
-                return Compiler([exe] + cmd[1:], env)
+                return Compiler([exe] + cmd[1:], delta)
             die('CXX is cl, but neither is cl on PATH nor did vswhere find Visual Studio with the C++ tools')
         die(f'CXX is {cxx!r}, which is not on PATH')
     for name in (('cl', 'g++', 'clang++') if WINDOWS else ('g++', 'clang++', 'c++')):
         exe = shutil.which(name)
         if exe:
             return Compiler([exe])
-    env = msvc_env() if WINDOWS else None
-    exe = env and shutil.which('cl', path=next((v for k, v in env.items() if k.upper() == 'PATH'), ''))
+    delta = msvc_env() if WINDOWS else None
+    exe = delta and shutil.which('cl', path=delta.get('PATH', os.environ.get('PATH', '')))
     if exe:
-        return Compiler([exe], env)
+        return Compiler([exe], delta)
     die('no C++17 compiler found: install g++ or clang++ (macOS: xcode-select --install; Windows: Visual Studio or '
         'its Build Tools with the C++ workload, or MinGW-w64), or set CXX')
+
+
+def stamp(path):
+    """[size, mtime] of a file: a compiler updated in place is probed again"""
+    try:
+        st = os.stat(path)
+        return [st.st_size, st.st_mtime_ns]
+    except OSError:
+        return None
+
+
+def find_compiler(memo):
+    """the compiler, remembered in memo (a JSON file by the cache dir): probing takes seconds with Visual Studio
+    (vswhere, then vcvarsall), and every tool run asks. An entry holds while CXX and PATH are what they were and the
+    compiler's executable has the size and time it had; else the compiler is probed again."""
+    key = hashlib.sha256(json.dumps([os.environ.get('CXX', ''), os.environ.get('PATH', ''), sys.platform,
+                                     platform.machine()]).encode()).hexdigest()[:16]
+    try:
+        with open(memo, encoding='utf-8') as f:
+            known = json.load(f)
+    except (OSError, ValueError):
+        known = {}
+    entry = known.get(key) if isinstance(known, dict) else None
+    try:
+        if entry and entry['stamp'] and stamp(entry['cmd'][0]) == entry['stamp']:
+            return Compiler(entry['cmd'], entry['delta'], entry['ident'], entry['target'])
+    except (KeyError, TypeError, IndexError):
+        pass   # an entry of another shape: probe
+    cc = probe_compiler()
+    known = {k: v for k, v in (known.items() if isinstance(known, dict) else []) if k != key}
+    known = dict(list(known.items())[-31:], **{key: {'cmd': cc.cmd, 'delta': cc.delta, 'ident': cc.ident,
+                                                     'target': cc.target, 'stamp': stamp(cc.cmd[0])}})
+    tmp = f'{memo}.{os.getpid()}.tmp'
+    try:   # written whole, then renamed: a build reading it at the same time never sees half a file
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(known, f, indent=1)
+        os.replace(tmp, memo)
+    except OSError:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return cc
 
 
 # ---- the cache dir
@@ -271,8 +322,8 @@ def main():
     d = os.path.abspath(os.path.expanduser(os.environ.get('NUIKIT_RMLUI_DIR') or os.path.join(
         os.environ.get('XDG_CACHE_HOME') or (WINDOWS and os.environ.get('LOCALAPPDATA')) or os.path.expanduser(
             os.path.join('~', '.cache')), 'open77-nui-kit', 'rmlui-' + TAG)))
-    cc = find_compiler()
     os.makedirs(os.path.dirname(d), exist_ok=True)
+    cc = find_compiler(os.path.join(os.path.dirname(d), 'compilers.json'))
     objdir = os.path.join(d, 'build', 'obj-' + cc.key)
     with Lock(d + '.lock'):
         checkout(d)

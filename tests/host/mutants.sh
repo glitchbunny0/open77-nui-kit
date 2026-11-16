@@ -8,6 +8,12 @@ mutant build scripts/build.py "build: a build waits while another holds the cach
     "    with Lock(d + '.lock'):" "    with open(d + '.lock', 'a'):"
 mutant build scripts/build.py "build: a checkout at another tag is refused" \
     'if have != TAG:' 'if False:'
+mutant build scripts/build.py "build: the compiler found is remembered, and probed again when it changed" \
+    'entry = known.get(key) if isinstance(known, dict) else None' 'entry = None'
+mutant build scripts/build.py "build: the compiler found is remembered, and probed again when it changed" \
+    "if entry and entry['stamp'] and stamp(entry['cmd'][0]) == entry['stamp']:" 'if entry:'
+mutant build scripts/build.py "build: the compiler found is remembered, and probed again when it changed" \
+    '        os.replace(tmp, memo)' '        os.remove(tmp)'
 mutant build scripts/build.py "build: a killed clone leaves no half checkout behind" \
     "URL, tmp], stdout=sys.stderr)
         if r.returncode:
