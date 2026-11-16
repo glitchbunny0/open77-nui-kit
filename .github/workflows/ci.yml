@@ -4,29 +4,72 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    name: test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-24.04, cache: ~/.cache/open77-nui-kit }
+          - { name: macos, os: macos-15, cache: ~/.cache/open77-nui-kit }                        # Apple clang, bash 3.2
+          - { name: windows-msvc, os: windows-2025, cxx: cl, cache: ~/AppData/Local/open77-nui-kit }   # found by vswhere
+          - { name: windows-mingw, os: windows-2025, cxx: g++, cache: ~/AppData/Local/open77-nui-kit }
+    defaults:
+      run:
+        shell: bash   # Git Bash on Windows
     env:
       # html-shot and the rml-preview steps are required here: a missing Chromium or Pillow fails the run instead of
       # skipping those steps (locally they stay optional)
       NUIKIT_REQUIRE_CHROME: "1"
       NUIKIT_REQUIRE_PILLOW: "1"
       PLAYWRIGHT_VERSION: "1.65.1"
+      PILLOW_VERSION: "13.0.0"   # one FreeType for the preview's reference PNGs on every OS
+      LUA_VERSION: "5.4.8"
+      CXX: ${{ matrix.cxx }}     # empty: build.py takes the first compiler it finds
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22        # jsdom 29 (lrbind's tests) needs 20.19+, 22.13+ or 24+
-      - name: tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Pillow
+        run: python -m pip install --quiet "Pillow==$PILLOW_VERSION"
+      - name: Lua 5.4 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q lua5.4
+      - name: Lua 5.4 (macOS)
+        if: runner.os == 'macOS'
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q lua5.4 python3-pil
-      - name: Chromium headless shell (for html-shot; found under ~/.cache/ms-playwright)
+          # Homebrew's lua is 5.5; lua@5.4 is keg-only (not on PATH by itself)
+          brew install lua@5.4
+          echo "$(brew --prefix lua@5.4)/bin" >> "$GITHUB_PATH"
+      - name: Lua 5.4 and python3 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # no Lua 5.4 package to trust: build it from lua.org's release with the image's MinGW gcc
+          d="$(cygpath -u "$RUNNER_TEMP")/lua"; mkdir -p "$d"   # tar reads D:\... as host:path
+          curl -fsSL "https://www.lua.org/ftp/lua-$LUA_VERSION.tar.gz" | tar -xz -C "$d"
+          (cd "$d/lua-$LUA_VERSION/src" && gcc -O2 -o "$d/lua.exe" $(ls *.c | grep -v '^luac\.c$'))
+          cygpath -w "$d" >> "$GITHUB_PATH"
+          # the suites run python3, which a Windows Python does not name itself: a copy next to python.exe
+          python -c "import os, shutil, sys; d = os.path.dirname(sys.executable); p = os.path.join(d, 'python3.exe'); os.path.exists(p) or shutil.copy(sys.executable, p)"
+      - name: tools found
+        run: |
+          python3 --version; node --version; git --version
+          command -v lua5.4 || command -v lua; (lua5.4 -v || lua -v) 2>&1
+          if [ -n "$CXX" ]; then echo "CXX=$CXX"; fi
+      - name: Chromium headless shell (for html-shot; Playwright's cache dir)
         run: npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell
       - name: cache RmlUi build
         uses: actions/cache@v4
         with:
-          path: ~/.cache/open77-nui-kit
-          key: rmlui-6.3-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          path: ${{ matrix.cache }}
+          key: rmlui-6.3-${{ matrix.name }}-${{ hashFiles('scripts/build.py') }}
+          restore-keys: rmlui-6.3-${{ matrix.name }}-
+      - name: build the host
+        run: python3 scripts/build.py
       - name: test
         run: scripts/test.sh

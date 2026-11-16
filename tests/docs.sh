@@ -287,7 +287,7 @@ mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml ' 
 ' ''
 mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml '      NUIKIT_REQUIRE_PILLOW: "1"
 ' ''
-mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml '    timeout-minutes: 30
+mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml '    timeout-minutes: 60
 ' ''
 mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml 'node-version: 22 ' 'node-version: 18 '
 mutant chk_ci "ci.yml: Chromium and Pillow required" .github/workflows/ci.yml 'run: npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell' 'run: echo skipped'
