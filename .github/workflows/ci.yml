@@ -71,5 +71,21 @@ jobs:
           restore-keys: rmlui-6.3-${{ matrix.name }}-
       - name: build the host
         run: python3 scripts/build.py
+      - name: a place for the outputs of a failed run
+        run: |
+          # a failed run keeps its outputs under TMPDIR: here, so the last step can upload them (POSIX form for Git Bash)
+          d="$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")/nuikit-tmp"; mkdir -p "$d"
+          echo "TMPDIR=$d" >> "$GITHUB_ENV"
       - name: test
         run: scripts/test.sh
+      - name: the outputs of a failed run (PNGs and logs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/nuikit-tmp/**/*.png
+            ${{ runner.temp }}/nuikit-tmp/**/*.log
+            ${{ runner.temp }}/nuikit-tmp/**/*.txt
+          retention-days: 5
+          if-no-files-found: ignore
