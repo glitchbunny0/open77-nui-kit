@@ -131,7 +131,7 @@ def fonts_json(faces, path):
             except (RuntimeError, OSError):
                 pass   # a code point the shaper refuses: the host uses the font's default advance
         out[f'{fam}|{w}' + ('|i' if it else '')] = {'ascent': a, 'descent': d, 'def': f.getlength('n'), 'adv': adv}
-    with open(path, 'w') as fh:
+    with open(path, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(out, fh)
 
 
@@ -1183,6 +1183,9 @@ def parse_crop(s):
 
 
 def main():
+    for s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS (a Windows pipe gets the ANSI code page and \r\n)
+        if hasattr(s, 'reconfigure'):
+            s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
     ap = argparse.ArgumentParser(prog='rml-preview', description=__doc__.split('\n')[0])
     ap.add_argument('doc')
     ap.add_argument('cases')

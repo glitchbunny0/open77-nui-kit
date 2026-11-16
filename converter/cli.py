@@ -21,6 +21,9 @@ Exit status: 0 written, 1 written with --strict and a non-empty report, 2 usage 
 
 
 def main(argv=None):
+    for s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS (a Windows pipe gets the ANSI code page and \r\n)
+        if hasattr(s, 'reconfigure'):
+            s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
     ap = argparse.ArgumentParser(prog='html2rml', usage=USAGE, add_help=False)
     ap.add_argument('page', nargs='?')
     ap.add_argument('--css', action='append', default=[])
@@ -55,14 +58,14 @@ def main(argv=None):
     os.makedirs(a.out, exist_ok=True)
     c, rml, rcss = convert(a.page, a.out, a.name, a.css, (w, h), a.px_per_dp, a.root, a.vars)
     base = os.path.join(a.out, c.name)
-    with open(base + '.rml', 'w', encoding='utf-8') as fh:
+    with open(base + '.rml', 'w', encoding='utf-8', newline='\n') as fh:   # LF on every OS: the same bytes everywhere
         fh.write(rml)
-    with open(base + '.rcss', 'w', encoding='utf-8') as fh:
+    with open(base + '.rcss', 'w', encoding='utf-8', newline='\n') as fh:
         fh.write(rcss)
-    with open(base + '.report.md', 'w', encoding='utf-8') as fh:
+    with open(base + '.report.md', 'w', encoding='utf-8', newline='\n') as fh:
         fh.write(report_md(c))
     if a.report == 'json':
-        with open(base + '.report.json', 'w', encoding='utf-8') as fh:
+        with open(base + '.report.json', 'w', encoding='utf-8', newline='\n') as fh:
             json.dump({'page': os.path.basename(c.page), 'canvas': [w, h], 'px_per_dp': a.px_per_dp, 'vars': a.vars,
                        'fonts': c.fonts, 'items': c.report.items}, fh, indent=1)
             fh.write('\n')

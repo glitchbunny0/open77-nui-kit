@@ -258,6 +258,9 @@ def parse_host(idx, text):
 
 
 def main():
+    for s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS (a Windows pipe gets the ANSI code page and \r\n)
+        if hasattr(s, 'reconfigure'):
+            s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
     ap = argparse.ArgumentParser(prog='rml-check', description=__doc__.split('\n')[0])
     ap.add_argument('doc')
     ap.add_argument('cases')
@@ -344,10 +347,10 @@ def main():
     out = a.outline
     try:
         if out:
-            fh = open(out, 'w', encoding='utf-8')
+            fh = open(out, 'w', encoding='utf-8', newline='\n')
         else:
             fd, out = tempfile.mkstemp(prefix='rml-check-', suffix='.outline.txt')
-            fh = os.fdopen(fd, 'w', encoding='utf-8')
+            fh = os.fdopen(fd, 'w', encoding='utf-8', newline='\n')
         with fh:
             fh.write('\n'.join(outline) + '\n')
     except OSError as e:

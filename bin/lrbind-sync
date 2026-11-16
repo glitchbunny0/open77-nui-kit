@@ -72,6 +72,9 @@ def write(path, name):
 
 
 def main(argv):
+    for s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS (a Windows pipe gets the ANSI code page and \r\n)
+        if hasattr(s, 'reconfigure'):
+            s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
     if len(argv) == 2 and argv[1] in ('-h', '--help', 'help'):
         print(__doc__.strip())
         return 0
