@@ -7,6 +7,28 @@ default stylesheet, its own CSS dialect, and a typo in a binding fails silently 
 fix costs a reload in the game. The kit runs the real RmlUi 6.3 offline, so a wrong binding fails in your test run and
 a layout bug shows up in a PNG.
 
+What you can do with it:
+
+- **Build a native screen and check it offline.** Every state you describe is loaded in real RmlUi; bindings,
+  properties, images, events and clicks are checked, and each state is painted to a PNG with your real fonts.
+  [Workflow A](#workflow-a-write-the-native-screen).
+- **Port a WebUI page to NativeUI.** `html2rml` converts the HTML + CSS into RML + RCSS and reports everything it
+  could not map, with `file:line` and what to do instead; `html-shot` + `rml-preview --compare` put the page and
+  its native twin side by side, state by state. [Workflow B](#workflow-b-start-from-a-webui-page),
+  [what converts](docs/converter.md).
+- **Keep one markup for both surfaces.** lrbind runs RmlUi's data bindings in a WebUI page and gives client Lua
+  one API for both, its behaviour measured case by case against real RmlUi. [lrbind](lrbind/README.md).
+- **Run your client Lua without the game.** fake-nui is a fake `Open77.ui` for plain Lua 5.4, with Open77's
+  scheduler and instruction budget: click through a screen and write its states out as cases.
+  [The case format](docs/cases.md).
+- **Gate it in CI.** `rml-check` exits 1 on any problem; `--strict` does the same for the preview's missing and
+  unpainted notes and for the converter's report; `lrbind-sync check` fails on a stale copy of lrbind.
+  [Using it in your resources](#using-it-in-your-resources).
+- **Hand it to an agent.** The kit ships an [Agent Skills](https://agentskills.io) skill for Claude Code, Codex,
+  Hermes and other agents: the loops, what "done" means, the RmlUi traps, and how to read every line the tools
+  print. Agents changing the kit itself get [AGENTS.md](AGENTS.md). [Agents](#agents).
+- **Avoid the RmlUi traps** every native document meets, each with its reason: [docs/rmlui-traps.md](docs/rmlui-traps.md).
+
 ![A WebUI page in Chromium next to its converted NativeUI twin, painted from real RmlUi layout](docs/img/compare.png)
 
 ## The tools
