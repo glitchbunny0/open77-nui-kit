@@ -2,6 +2,8 @@
 """states.py CASES.json: what each state of the side-menu example means (the client Lua run on fake-nui, as the
 example's models.lua writes it). One line per assertion, 'FAIL <name>' for a broken one; exit 1 when any failed."""
 import json, sys
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 cases = {c['name']: c for c in json.load(open(sys.argv[1], encoding='utf-8'))}
 failed = 0

@@ -24,7 +24,7 @@ fi
 export LUA
 
 # every step writes into a directory of its own under one root, kept (and named) when something failed
-root="$(mktemp -d)"
+t="${TMPDIR:-/tmp}"; root="$(mktemp -d "${t%/}/nuikit-test.XXXXXX")"   # with a template: macOS's bare mktemp -d ignores TMPDIR
 fail=0
 trap '[ "$fail" = 0 ] && rm -rf "$root" || echo "(outputs kept in $root)"' EXIT
 sub() { mktemp -d "$root/$1.XXXXXX"; }

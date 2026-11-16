@@ -18,6 +18,8 @@ must go red, and its output must contain the expected text (the failing case or 
 longer matches exactly once fails too, so the table cannot rot silently.
 """
 import concurrent.futures as cf, json, os, random, re, shutil, subprocess, sys
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 KIT = os.environ.get('NUIKIT') or os.getcwd()
 TMP = os.environ['NUIKIT_TMP']
@@ -111,8 +113,16 @@ def check_protocol(js=JS):
     return result(*sh(['node', 'lrbind/tests/protocol.test.mjs'], env={'LRBIND_SHIM': js}))
 
 
+def lua_exe():
+    """the Lua 5.4 to run: $LUA (scripts/test.sh sets it), else lua5.4, lua or lua54 on PATH"""
+    for name in (os.environ.get('LUA'), 'lua5.4', 'lua', 'lua54'):
+        if name and shutil.which(name):
+            return shutil.which(name)
+    return 'lua5.4'
+
+
 def check_lua(lua=LUA):
-    return result(*sh(['lua5.4', 'tests/lrbind_lua.lua'], cwd=os.path.join(KIT, 'lrbind'), env={'LRBIND_LUA': lua}))
+    return result(*sh([lua_exe(), 'tests/lrbind_lua.lua'], cwd=os.path.join(KIT, 'lrbind'), env={'LRBIND_LUA': lua}))
 
 
 CHECKS.update(parity=check_parity, protocol=check_protocol, lua=check_lua)
@@ -610,8 +620,18 @@ def plant(i, src, old, new):
     return out, None
 
 
+# mutants whose probe cannot fire on an OS: (sys.platform, why), printed on a skip line, never silent
+NOT_HERE = {
+    'a case whose outcome hangs on view order': (
+        'darwin', "macOS's allocator moves a case's views only now and then, so no shuffle can be relied on to flip "
+        "them (RmlUi updates views of one depth in address order); proven on Linux and Windows"),
+}
+
+
 def run_mutant(i, m):
     what, src, old, new, check, expect = m
+    if what in NOT_HERE and sys.platform == NOT_HERE[what][0]:
+        return True, f'skip  mutant {what}: {NOT_HERE[what][1]}'
     path, err = plant(i, src, old, new)
     if err:
         return False, f'FAIL mutant {what}: {err}'

@@ -16,6 +16,8 @@ HTML2RML_KIT names the kit whose bin/rml-check and host are used (default: this 
 real kit while they import a mutated converter).
 """
 import contextlib, difflib, io, json, os, re, shutil, subprocess, sys, threading, types
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(os.path.dirname(HERE))

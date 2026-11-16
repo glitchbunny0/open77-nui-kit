@@ -5,6 +5,8 @@ checkout the kit builds against and fails when the two differ (a new RmlUi pin: 
   converter/tests/test_spec.py [--regen]
 """
 import os, re, subprocess, sys
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(KIT, 'converter', 'rmlui_spec.py')

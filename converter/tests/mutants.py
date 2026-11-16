@@ -6,6 +6,8 @@ exactly once fails the run too (the converter moved: update the mutant).
   converter/tests/mutants.py [ID ...]          (runs into $NUIKIT_TMP, or a fresh temp dir)
 """
 import os, shutil, subprocess, sys, tempfile
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(os.path.dirname(HERE))

@@ -6,6 +6,8 @@ and asserts what RmlUi did. docs/converter.md lists the same facts; when RmlUi m
   converter/tests/facts.py [-v]
 """
 import json, os, re, subprocess, sys, tempfile
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

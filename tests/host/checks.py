@@ -7,6 +7,8 @@ assert what it prints (check outline and clicks, layout numbers, parity dumps, e
 Prints "ok <check>" or "FAIL <check>: why" per check; exits 1 when any failed. Needs only the standard library.
 """
 import json, os, struct, subprocess, sys, tempfile, zlib
+for _s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS: a check's message may hold any character
+    _s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.path.abspath(sys.argv[1])
