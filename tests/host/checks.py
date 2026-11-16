@@ -646,10 +646,12 @@ def _():
     expect(r.rc == 0 and json.loads(r.out)[0]['els'], f'layout rc {r.rc}: {r.err[:200]}')
 
 
-@check('files: ../ in an image path climbs from the folder of a document given with native separators')
+@check('files: ../ in an image path climbs from the document folder, also when the path mixes / and \\')
 def _():
+    # a path that came in with / and was joined on with os.sep, as os.path.join does on Windows: RmlUi takes the
+    # document's folder up to its last '/', so without the host's fix ../../ climbs from the wrong folder
     png(os.path.join('sep', 'img', 'u.png'), 12, 9)
-    path = os.path.join(WORK, 'sep', 'ui', 'deep', 'doc.rml')   # \ between the folders on Windows
+    path = WORK.replace(os.sep, '/') + os.sep + os.path.join('sep', 'ui', 'deep', 'doc.rml')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write('<rml><body data-model="m"><img id="i" src="../../img/u.png"/></body></rml>')
