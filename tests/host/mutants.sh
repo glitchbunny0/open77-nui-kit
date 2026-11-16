@@ -16,6 +16,18 @@ mutant build scripts/build.py "build: a killed clone leaves no half checkout beh
         if r.returncode:
             die(f'git clone of RmlUi {TAG} from {URL} failed', 1)"
 
+# files by UTF-8 path: only Windows has another narrow encoding, so only there can these turn their check red
+if [ "$windows" = 1 ]; then
+    mutant host host/rmlhost.cpp "files: a document, its sheet, an image and fonts.json under a non-ASCII folder" \
+        'if (wargv) { argc = wargc; argv = ptrs.data(); }' 'if (false) { argc = wargc; argv = ptrs.data(); }'
+    mutant host host/common.hpp "files: a document, its sheet, an image and fonts.json under a non-ASCII folder" \
+        'return (FileHandle)_wfopen(u8(path).c_str(), L"rb");' 'return (FileHandle)fopen(path.c_str(), "rb");'
+    mutant host host/common.hpp "files: a document, its sheet, an image and fonts.json under a non-ASCII folder" \
+        'std::ifstream f(u8(path), std::ios::binary);' 'std::ifstream f(path, std::ios::binary);'
+    mutant host host/mode_layout.inc "files: a document, its sheet, an image and fonts.json under a non-ASCII folder" \
+        'std::ifstream fj(u8(fontsPath), std::ios::binary);' 'std::ifstream fj(fontsPath, std::ios::binary);'
+fi
+
 # host/common.hpp: the JSON reader
 mutant host host/common.hpp "json: an emoji (a surrogate pair) arrives as one 4-byte UTF-8 character" \
     'if (lo >= 0xDC00 && lo < 0xE000) cp =' 'if (false) cp ='

@@ -621,6 +621,29 @@ def _():
     expect(' 40x30' in line, f'outline line {line!r}')
 
 
+# ---- files under a folder named outside ASCII: Windows opens such a path only through its wide API (no Western ANSI
+# code page holds the д); elsewhere a narrow path is UTF-8 already
+@check('files: a document, its sheet, an image and fonts.json under a non-ASCII folder are read')
+def _():
+    d = os.path.join(WORK, 'Jürgen', 'ресурс')
+    png(os.path.join('Jürgen', 'ресурс', 'img', 'n.png'), 40, 30)
+    with open(os.path.join(d, 'ui.rcss'), 'w', encoding='utf-8') as f:
+        f.write('#box { display: block; width: 33dp; height: 7dp; }')
+    path = os.path.join(d, 'ui.rml')
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('<rml><head><link type="text/rcss" href="ui.rcss"/></head>'
+                '<body data-model="m"><div id="box"/><img id="i" src="img/n.png"/></body></rml>')
+    r = check_doc(path)
+    box = next((l for l in r.out.splitlines() if l.strip().startswith('div#box')), '')
+    img = next((l for l in r.out.splitlines() if l.strip().startswith('img#i')), '')
+    expect(' 33x7' in box and ' 40x30' in img and not warns(r), f'{box!r} {img!r} {warns(r)}')
+    fj = os.path.join(d, 'fonts.json')
+    with open(fj, 'w', encoding='utf-8') as f:
+        json.dump({'probe|400': PROBE_FONT}, f)
+    r = host('layout', path, 'm', fj, cases=[{'name': 'c', 'model': {}}])
+    expect(r.rc == 0 and json.loads(r.out)[0]['els'], f'layout rc {r.rc}: {r.err[:200]}')
+
+
 # ---- check output: one line per item, whatever the input holds
 @check('check: a newline in a case name cannot start a line of its own')
 def _():
