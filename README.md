@@ -66,8 +66,10 @@ Node 20.19+ (22 in CI). Optional: Pillow for previews, a Chromium for `html-shot
 | macOS | `xcode-select --install` | `brew install lua@5.4`, then put `$(brew --prefix lua@5.4)/bin` on PATH (Homebrew's `lua` is 5.5) | `pip3 install Pillow` |
 | Windows | Visual Studio or its Build Tools with the C++ workload (found by itself), or MinGW-w64: `winget install BrechtSanders.WinLibs.POSIX.UCRT` | `winget install DEVCOM.Lua` | `py -m pip install Pillow` |
 
-A Chromium for `html-shot`, on any OS: `npx playwright install chromium-headless-shell`, or `NUIKIT_CHROME=/path/to/chrome`.
-The build takes the compiler in `CXX` when set, else the first it finds ([Settings](#settings)).
+On Windows, Python and Git come first: `winget install Python.Python.3.13`, `winget install Git.Git`; open a new
+terminal after winget installs, so that PATH has them. A Chromium for `html-shot`, on any OS:
+`npx playwright install chromium-headless-shell`, or `NUIKIT_CHROME=/path/to/chrome`. The build takes the compiler in
+`CXX` when set, else the first it finds ([Settings](#settings)).
 
 The commands below say `lua5.4`; where the binary is called `lua`, use that (`scripts/test.sh` finds either, or `LUA=...`).
 
