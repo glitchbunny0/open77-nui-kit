@@ -455,6 +455,13 @@ check("json: strings, escapes, booleans, nested objects with sorted keys, an emp
     eq(F.json({ {} , { n = {} } }), '[[],{"n":[]}]')
 end)
 
+check("json: every character outside ASCII is a \\u escape (a pair past U+FFFF); a string that is not UTF-8 is an error", function()
+    local F = fresh()
+    eq(F.json({ "WATSON \u{B7} KABUKI", "\u{20AC}9", "a\u{1F600}b", "\127" }), '["WATSON \\u00b7 KABUKI","\\u20ac9","a\\ud83d\\ude00b","\\u007f"]')
+    errors(function() F.json({ s = "caf\xe9" }) end, "$.s", "latin-1")
+    errors(function() F.json({ s = "\xed\xa0\x80" }) end, "not UTF-8", "a lone surrogate")
+end)
+
 check("json: floats keep every digit and stay floats", function()
     local F = fresh()
     eq(F.json({ 1234567.5, 0.1, 3.0, -2.5e-9 }), "[1234567.5,0.1,3.0,-2.5e-09]")

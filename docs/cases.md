@@ -93,8 +93,10 @@ The document (`F.last`, `Open77.ui.create(...)`):
   `true`, run no layout and never call a callback. `create(parent, spec)` returns a fresh `"@serial"`; `rect` is nil
   ("until published"); `state()` is a table with `loaded`, `visible`, `focused` and a size.
 
-`F.json` writes cases: floats keep every digit, an empty table is `[]`, and NaN, infinity, a table that mixes an array
-with other keys and a function are errors naming the path (`$.rows[2].price`).
+`F.json` writes cases: floats keep every digit, an empty table is `[]`, every character outside ASCII is a `\u` escape
+(ASCII reaches the cases file unchanged through any shell; Windows PowerShell 5 reads a program's output in the
+console's code page), and NaN, infinity, a string that is not UTF-8, a table that mixes an array with other keys and a
+function are errors naming the path (`$.rows[2].price`).
 
 ## Hooks for rml-preview
 

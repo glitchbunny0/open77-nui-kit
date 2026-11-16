@@ -114,6 +114,9 @@ mutant "Open77.ui: registerEffect records" 'return nil, "invalid_effect"' 'retur
 mutant "Open77.ui: registerEffect records" '{ path, family, fallback }' '{ path, family }'
 
 # F.json
+mutant "json: every character outside ASCII" 'elseif c < 65536 then out[#out + 1] = ("\\u%04x"):format(c)' 'elseif c < 65536 then out[#out + 1] = utf8.char(c)'
+mutant "json: every character outside ASCII" 'out[#out + 1] = ("\\u%04x\\u%04x"):format(0xD800 + (c >> 10), 0xDC00 + (c & 0x3FF))' 'out[#out + 1] = ("\\u%04x"):format(c)'
+mutant "json: every character outside ASCII" 'if not utf8.len(v) then error(' 'if false then error('
 mutant "json: strings, escapes" 'table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)' 'table.sort(keys, function(a, b) return tostring(a) > tostring(b) end)'
 mutant "json: strings, escapes" 'if count == 0 or v[1] ~= nil then' 'if v[1] ~= nil then'
 mutant "json: floats keep every digit" 'for digits = 15, 17 do' 'for digits = 6, 6 do'

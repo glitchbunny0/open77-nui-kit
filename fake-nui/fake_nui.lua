@@ -330,15 +330,31 @@ function F.advance(ms) F.frames(math.ceil(ms / FRAME)) end
 
 -- JSON for the cases file (strings, numbers, booleans, arrays = sequences, objects with sorted keys; an empty table is
 -- an empty array, as NativeUI maps it). What JSON cannot hold is an error naming the path ($.rows[2].price): NaN and
--- infinity, a table that mixes a sequence with other keys (or has holes), a function. Floats keep every digit (the
--- shortest of 15..17 that reads back the same).
+-- infinity, a string that is not UTF-8, a table that mixes a sequence with other keys (or has holes), a function.
+-- Floats keep every digit (the shortest of 15..17 that reads back the same). Every character outside ASCII is a \u
+-- escape (one past U+FFFF a surrogate pair): ASCII reaches the cases file unchanged through any shell, where raw UTF-8
+-- does not (Windows PowerShell 5 reads a program's output in the console's code page).
+local function jsonString(v, path)
+    if not utf8.len(v) then error("F.json: the string at " .. path .. " is not UTF-8", 0) end
+    local out = {}
+    for _, c in utf8.codes(v) do
+        if c == 34 then out[#out + 1] = '\\"'
+        elseif c == 92 then out[#out + 1] = "\\\\"
+        elseif c == 10 then out[#out + 1] = "\\n"
+        elseif c < 32 or c == 127 then out[#out + 1] = ("\\u%04x"):format(c)
+        elseif c < 128 then out[#out + 1] = string.char(c)
+        elseif c < 65536 then out[#out + 1] = ("\\u%04x"):format(c)
+        else
+            c = c - 65536
+            out[#out + 1] = ("\\u%04x\\u%04x"):format(0xD800 + (c >> 10), 0xDC00 + (c & 0x3FF))
+        end
+    end
+    return '"' .. table.concat(out) .. '"'
+end
 local function jsonOf(v, path)
     local t = type(v)
     if t == "string" then
-        return '"' .. v:gsub('[%c"\\]', function(c)
-            if c == '"' then return '\\"' elseif c == "\\" then return "\\\\" elseif c == "\n" then return "\\n" end
-            return ("\\u%04x"):format(c:byte())
-        end) .. '"'
+        return jsonString(v, path)
     elseif t == "number" then
         if math.type(v) == "integer" then return tostring(v) end
         if v ~= v or v == math.huge or v == -math.huge then error("F.json: " .. tostring(v) .. " at " .. path .. " is not JSON", 0) end
