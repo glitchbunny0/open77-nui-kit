@@ -30,6 +30,9 @@ int main(int argc, char** argv) {
 	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
 	std::vector<std::string> args;
 	for (int i = 0; wargv && i < wargc; i++) args.push_back(utf8(wargv[i]));
+	// the document path with / only: RmlUi splits a document's path from its name at the last '/' (a \ after it
+	// would hide the folders it names, and ../ in an image path would climb from the wrong one)
+	if (args.size() > 2) std::replace(args[2].begin(), args[2].end(), '\\', '/');
 	std::vector<char*> ptrs;
 	for (auto& s : args) ptrs.push_back(&s[0]);
 	if (wargv) { argc = wargc; argv = ptrs.data(); }

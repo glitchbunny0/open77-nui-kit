@@ -644,6 +644,18 @@ def _():
     expect(r.rc == 0 and json.loads(r.out)[0]['els'], f'layout rc {r.rc}: {r.err[:200]}')
 
 
+@check('files: ../ in an image path climbs from the folder of a document given with native separators')
+def _():
+    png(os.path.join('sep', 'img', 'u.png'), 12, 9)
+    path = os.path.join(WORK, 'sep', 'ui', 'deep', 'doc.rml')   # \ between the folders on Windows
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('<rml><body data-model="m"><img id="i" src="../../img/u.png"/></body></rml>')
+    r = check_doc(path)
+    img = next((l for l in r.out.splitlines() if l.strip().startswith('img#i')), '')
+    expect(' 12x9' in img and not warns(r), f'{img!r} {warns(r)}')
+
+
 # ---- check output: one line per item, whatever the input holds
 @check('check: a newline in a case name cannot start a line of its own')
 def _():

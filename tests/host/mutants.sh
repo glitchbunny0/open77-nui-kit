@@ -26,6 +26,8 @@ if [ "$windows" = 1 ]; then
         'std::ifstream f(u8(path), std::ios::binary);' 'std::ifstream f(path, std::ios::binary);'
     mutant host host/mode_layout.inc "files: a document, its sheet, an image and fonts.json under a non-ASCII folder" \
         'std::ifstream fj(u8(fontsPath), std::ios::binary);' 'std::ifstream fj(fontsPath, std::ios::binary);'
+    mutant host host/rmlhost.cpp "files: ../ in an image path climbs from the folder of a document given with native" \
+        "if (args.size() > 2) std::replace(args[2].begin(), args[2].end(), '\\\\', '/');" ''
 fi
 
 # host/common.hpp: the JSON reader
