@@ -9,6 +9,7 @@ set -uo pipefail
 kit="${NUIKIT:-$(cd "$(dirname "$0")/.." && pwd)}"
 tmp="${NUIKIT_TMP:-$(mktemp -d)}"
 cd "$kit"
+source tests/lib/os.sh
 export NUIKIT_HOST; NUIKIT_HOST="${NUIKIT_HOST:-$(bash scripts/build.sh)}" || { echo "FAIL: scripts/build.sh"; exit 1; }
 fx="$tmp/fx"; mkdir -p "$fx" "$tmp/tmpdir"
 export TMPDIR="$tmp/tmpdir"
@@ -57,14 +58,14 @@ variant() { local f=$1; shift; local src="$fx/ui.${f##*.}"; [ "${f##*.}" = json 
 chk_clean()        { rc "$fx/ui.rml" "$fx/ok.json"; want 0 'cases: 1  clicks ok: 3' 'model: m' 'rml-check: ok$'; }
 chk_binding()      { variant b.rml 's/{{r.name}}/{{r.nam}}/'; rc "$fx/b.rml" "$fx/ok.json"; want 1 'WARN .*nam' 'rml-check: FAIL' && wantnot 'CLICK FAIL'; }
 chk_event_name()   { variant e.rml 's/pick(r.id)/pik(r.id)/'; rc "$fx/e.rml" "$fx/ok.json"; want 1 'WARN +Could not find data event callback .pik.' 'CLICK FAIL state: \.row -> nothing'; }
-chk_click_event()  { variant c.json '0,/"event":"pick"/s//"event":"close"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 'CLICK FAIL state: \.row -> pick\(2\) \(want close\(2\)\)'; }
+chk_click_event()  { variant c.json 's/"event":"pick"/"event":"close"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 'CLICK FAIL state: \.row -> pick\(2\) \(want close\(2\)\)'; }
 chk_click_args()   { variant c.json 's/\["2"\]/["3"]/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 'CLICK FAIL state: \.row -> pick\(2\) \(want pick\(3\)\)'; }
 chk_click_hidden() { variant c.json 's/"sel":"\.x"/"sel":"#hid .x"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 'CLICK FAIL state: #hid \.x -> no element'; }
 chk_click_nothing(){ variant c.json 's/"sel":"\.btn"/"sel":"#title"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 'CLICK FAIL state: #title -> nothing'; }
 chk_exit_click()   { variant c.json 's/\["2"\]/["3"]/'; rc "$fx/ui.rml" "$fx/c.json" --quiet; want 1 'CLICK FAIL' && wantnot 'WARN'; }
-chk_property()     { variant p.rcss 's/color/colr/'; cp "$fx/ui.rml" "$fx/p.rml"; sed -i 's/ui.rcss/p.rcss/' "$fx/p.rml"
+chk_property()     { variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$fx/ui.rml" > "$fx/p.rml"
                      rc "$fx/p.rml" "$fx/ok.json"; want 1 "WARN +Syntax error parsing property declaration 'colr: red;'" 'rml-check: FAIL'; }
-chk_click_undeclared() { variant c.json '0,/"event":"pick"/s//"event":"zzz"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 "CLICK FAIL state: \\.row -> the case's \"events\" do not list 'zzz'" && wantnot 'EVENT'; }
+chk_click_undeclared() { variant c.json 's/"event":"pick"/"event":"zzz"/'; rc "$fx/ui.rml" "$fx/c.json"; want 1 "CLICK FAIL state: \\.row -> the case's \"events\" do not list 'zzz'" && wantnot 'EVENT'; }
 # click args as JSON numbers and bools: compared as RmlUi prints them
 mdl='"model":{"title":"T","rows":[{"id":2,"name":"n","f":0.3333333}],"show":false},"events":["pick","a","b","close","f"]'
 typed() { printf '[{"name":"state",%s,"clicks":[%s]}]' "$mdl" "$1" > "$fx/t.json"; rc "${doc:-$fx/ui.rml}" "$fx/t.json"; }
@@ -106,11 +107,12 @@ chk_allow_values() { local d; for d in '.row { fill: #GGGGGG; }' '.row { stroke-
 chk_allow_flag()   { scoped '.row { glowy: 1; }'; want 1 'WARN' || return 1; rc "$fx/s.rml" "$fx/ok.json" --allow 'glowy'; want 0 'rml-check: ok'; }
 
 # the host protocol, with a scripted host
-fake() { printf '#!/bin/sh\ncat >/dev/null\n%s\n' "$2" > "$tmp/fake-$1"; chmod +x "$tmp/fake-$1"; }
+fake() { printf '#!/bin/sh\ncat >/dev/null\n%s\n' "$2" > "$tmp/fake-$1"; shim "$tmp/fake-$1" >/dev/null; }
+hostext=""; [ "$windows" = 1 ] && hostext=.cmd   # what shim adds to a script's name
 # a host that accepts any input (the CLI's own validation is what the shape checks test) and one that records it
 fake quiet "printf '=== case 0\\n'"
-printf '#!/bin/sh\ncat > "$REC"\nprintf "=== case 0\\n"\n' > "$tmp/fake-rec"; chmod +x "$tmp/fake-rec"
-withhost() { local h=$1; shift; NUIKIT_HOST="$tmp/fake-$h" rc "$@"; }
+printf '#!/bin/sh\ncat > "$REC"\nprintf "=== case 0\\n"\n' > "$tmp/fake-rec"; shim "$tmp/fake-rec" >/dev/null
+withhost() { local h=$1; shift; NUIKIT_HOST="$tmp/fake-$h$hostext" rc "$@"; }
 chk_load_failed()  { fake load "printf '=== case 0\nLOAD FAILED\n'"; withhost load "$fx/ui.rml" "$fx/ok.json"; want 1 'LOAD FAILED state' 'rml-check: FAIL'; }
 chk_no_header()    { fake none "exit 0"; withhost none "$fx/ui.rml" "$fx/ok.json"; want 2 'no "=== case 0" header'; }
 chk_host_crash()   { fake crash "echo boom >&2; kill -SEGV \$\$"; withhost crash "$fx/ui.rml" "$fx/ok.json"; want 2 'host failed on case 0 \(state\)' 'boom'; }
@@ -156,7 +158,7 @@ chk_name_inject()  { python3 -c 'import json; print(json.dumps([{"name":"a\nWARN
                      printf '<rml><body data-model="m"><div>{{t}}</div></body></rml>' > "$fx/em.rml"
                      rc "$fx/em.rml" "$fx/inj.json" --outline "$fx/inj.txt"; want 0 'cases: 2' 'rml-check: ok' && wantnot 'injected|ghost|LOAD' \
                        && [ "$(grep -c '^=== case' "$fx/inj.txt")" = 2 ] || fail "forged lines got through"; }
-chk_outline_path() { local a b; rc "$fx/ui.rml" "$fx/ok.json"; a=$(sed -n 's/.*outline: //p' <<<"$out"); rc "$fx/ui.rml" "$fx/ok.json"; b=$(sed -n 's/.*outline: //p' <<<"$out")
+chk_outline_path() { local a b; rc "$fx/ui.rml" "$fx/ok.json"; a=$(upath "$(sed -n 's/.*outline: //p' <<<"$out")"); rc "$fx/ui.rml" "$fx/ok.json"; b=$(upath "$(sed -n 's/.*outline: //p' <<<"$out")")
                      [ -n "$a" ] && [ "$a" != "$b" ] && [ -s "$a" ] && [ -s "$b" ] && [ "${a#"$TMPDIR"/}" != "$a" ] || fail "outline paths '$a' '$b'"; }
 
 # what the host is sent (a recording host: true of every host, old or new)
@@ -272,7 +274,7 @@ EOF
     RC="$tmp/mut/$name"; verbose=0; run_checks; RC="$kit/bin/rml-check"; verbose=1; CHECKS=("${all[@]}")
     # red ON ITS OWN: exactly the named checks fail, nothing else
     # chk_emoji is end to end: a host that cannot decode surrogate pairs (the one before its fix) reddens it too
-    got=$(printf '%s\n' "${failed[@]}" | grep -vx 'chk_emoji' | sort | tr '\n' ' '); want_set=$(printf '%s\n' $expect | sort | tr '\n' ' ')
+    got=$(printf '%s\n' ${failed[@]+"${failed[@]}"} | grep -vx 'chk_emoji' | sort | tr '\n' ' '); want_set=$(printf '%s\n' $expect | sort | tr '\n' ' ')
     if [ "$got" != "$want_set" ]; then echo "FAIL: mutant $name: red in [${got}], expected [${want_set}]"; status=1
     else echo "ok:   mutant $name -> red: ${got//chk_/}"; fi
 done

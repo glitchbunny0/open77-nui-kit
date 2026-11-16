@@ -15,7 +15,7 @@ fixtures. Output goes to $NUIKIT_TMP when set (the kit's suite contract), else c
 HTML2RML_KIT names the kit whose bin/rml-check and host are used (default: this one; the mutation runs point it at the
 real kit while they import a mutated converter).
 """
-import contextlib, difflib, io, json, os, re, shutil, signal, subprocess, sys, types
+import contextlib, difflib, io, json, os, re, shutil, subprocess, sys, threading, types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(os.path.dirname(HERE))
@@ -88,15 +88,23 @@ class Hang(Exception):
 
 
 def with_timeout(sec, fn):
-    def alarm(*_):
+    """fn() in a thread of its own, so that a hang fails the check instead of the run, on every OS (Windows has no
+    SIGALRM). A hung thread is left behind; it ends with the process."""
+    box = {}
+
+    def go():
+        try:
+            box['value'] = fn()
+        except BaseException as e:   # noqa: BLE001 - handed to the caller
+            box['error'] = e
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    t.join(sec)
+    if t.is_alive():
         raise Hang(f'no result in {sec} s')
-    old = signal.signal(signal.SIGALRM, alarm)
-    signal.alarm(sec)
-    try:
-        return fn()
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old)
+    if 'error' in box:
+        raise box['error']
+    return box.get('value')
 
 
 def unit_tests(only=None):

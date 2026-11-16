@@ -13,12 +13,12 @@ cd "$kit"
 
 LUA="${LUA:-}"
 if [ -z "$LUA" ]; then
-    for c in lua5.4 lua; do
+    for c in lua5.4 lua lua54; do
         if command -v "$c" >/dev/null 2>&1 && "$c" -v 2>&1 | grep -q 'Lua 5\.4'; then LUA="$c"; break; fi
     done
 fi
 if [ -z "$LUA" ]; then
-    echo "FAILED: Lua 5.4 not found (the binary is lua5.4 on Debian/Ubuntu, lua on Fedora/Arch/Homebrew); set LUA=/path/to/lua"
+    echo "FAILED: Lua 5.4 not found (the binary is lua5.4 on Debian/Ubuntu, lua on Fedora/Arch/Homebrew, lua or lua54 on Windows); set LUA=/path/to/lua"
     exit 1
 fi
 export LUA

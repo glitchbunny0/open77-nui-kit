@@ -7,9 +7,10 @@
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
+source tests/lib/os.sh   # windows
 fail=0
 have_pil=0; python3 -c 'import PIL' 2>/dev/null && have_pil=1
-lua54=$(command -v lua5.4 || command -v lua)
+lua54=$(command -v lua5.4 || command -v lua || command -v lua54)
 
 # ---- the stub kit ----
 stub="$tmp/stub"
@@ -55,13 +56,19 @@ echo '<html/>' > "$stub/examples/side-menu/web/index.html"
 echo '<rml/>' > "$stub/examples/side-menu/ui/menu.rml"
 echo 'echo "stub suite ran"' > "$stub/tests/ok.sh"
 # the tools the stub kit's PATH holds: the basics (nolua/), Lua under the name Fedora gives it (stubbin/), python3 through a
-# wrapper (a venv's python must be started by its own path)
+# wrapper (a venv's python must be started by its own path). On Windows the basics are Git's own /usr/bin and node's
+# folder (neither holds a Lua): Git Bash makes a symlink a copy, without the DLLs next to the tool it needs.
 mkdir -p "$stub/nolua"
-for t in bash cat cmp cp find grep ls mkdir mktemp node rm sed sort tail wc env dirname basename readlink sleep head tr; do
-    ln -sf "$(command -v $t)" "$stub/nolua/$t"
-done
+if [ "$windows" = 1 ]; then
+    basics="$stub/nolua:/usr/bin:$(dirname "$(command -v node)")"
+else
+    basics="$stub/nolua"
+    for t in bash cat cmp cp find grep ls mkdir mktemp node rm sed sort tail wc env dirname basename readlink sleep head tr; do
+        ln -sf "$(command -v $t)" "$stub/nolua/$t"
+    done
+fi
 printf '#!/bin/sh\nexec "%s" "$@"\n' "$(command -v python3)" > "$stub/nolua/python3"; chmod +x "$stub/nolua/python3"
-ln -s "$lua54" "$stub/stubbin/lua"
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$lua54" > "$stub/stubbin/lua"; chmod +x "$stub/stubbin/lua"
 
 good_protocol() { echo 'console.log("protocol: 3 passed")' > "$stub/lrbind/tests/protocol.test.mjs"; }
 bad_protocol() { echo 'console.log("FAIL a check of the protocol suite"); console.log("protocol: 1 passed, 1 failed"); process.exitCode = 1' > "$stub/lrbind/tests/protocol.test.mjs"; }
@@ -74,7 +81,7 @@ runner_checks() {   # runner_checks TESTSH
     local sh="$1"
     cp "$sh" "$stub/scripts/test.sh"
     rm -rf "$stub/tmp"; mkdir -p "$stub/tmp"
-    local P="PATH=$stub/stubbin:$stub/nolua:$stub/bin"      # only the stub tools and the basics
+    local P="PATH=$stub/stubbin:$basics:$stub/bin"      # only the stub tools and the basics
 
     good_protocol
     runner "$P" TMPDIR="$stub/tmp" LUA= STUB_CHROME=ok
@@ -89,7 +96,7 @@ runner_checks() {   # runner_checks TESTSH
     rm -rf "$stub/tmp"; mkdir -p "$stub/tmp"
     good_protocol
 
-    runner "$P" TMPDIR="$stub/tmp" LUA= PATH="$stub/nolua:$stub/bin" STUB_CHROME=ok
+    runner "$P" TMPDIR="$stub/tmp" LUA= PATH="$basics:$stub/bin" STUB_CHROME=ok
     want "runner: no Lua 5.4 is FAILED with a hint, exit 1" bash -c '[ "$1" = 1 ] && grep -q "Lua 5.4 not found" <<<"$2" && grep -q "lua5.4 on Debian" <<<"$2"' _ "$rc" "$out"
 
     runner "$P" TMPDIR="$stub/tmp" LUA= STUB_CHROME=none
@@ -146,7 +153,7 @@ PY
 }
 
 mutant "runner: a green stub kit" 'sub() { mktemp -d "$root/$1.XXXXXX"; }' 'sub() { mktemp -d "$root/$1.XXXXXX"; false; }'
-mutant "runner: Lua found under the name lua" 'for c in lua5.4 lua; do' 'for c in lua5.4; do'
+mutant "runner: Lua found under the name lua" 'for c in lua5.4 lua lua54; do' 'for c in lua5.4 lua54; do'
 mutant "runner: outputs are removed when green" 'trap '"'"'[ "$fail" = 0 ] && rm -rf "$root" || echo "(outputs kept in $root)"'"'"' EXIT' 'trap '"'"'echo "(outputs kept in $root)"'"'"' EXIT'
 mutant "runner: a red suite step prints its FAIL lines" 'if o=$("$@" 2>&1); then tail -n 1 <<<"$o"; else echo "$o"; fail=1; fi' 'if o=$("$@" 2>&1); then tail -n 1 <<<"$o"; else tail -n 1 <<<"$o"; fail=1; fi'
 mutant "runner: ... and names the kept outputs" 'echo "(outputs kept in $root)"' 'echo "(outputs removed)"; rm -rf "$root"'

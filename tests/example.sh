@@ -19,7 +19,8 @@ evaluate() {
     fi
     echo "ok   cases: models.lua runs"
     python3 "$kit/tests/example/states.py" "$1/cases.json"
-    if cmp -s "$1/cases.json" "$kit/examples/side-menu/cases.json"; then echo "ok   committed: cases.json is what models.lua writes"
+    # Lua on Windows writes its stdout in text mode (\r\n); the JSON is the same either way
+    if tr -d '\r' < "$1/cases.json" | cmp -s - "$kit/examples/side-menu/cases.json"; then echo "ok   committed: cases.json is what models.lua writes"
     else echo "FAIL committed: cases.json is what models.lua writes"; fi
     local n
     n=$(sed -n 's/^max instructions in one resume or event: \([0-9]*\) .*/\1/p' "$1/stderr")
