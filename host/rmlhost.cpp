@@ -3,8 +3,37 @@
 #include "mode_parity.inc"
 #include "mode_check.inc"
 #include "mode_layout.inc"
+#ifdef _WIN32
+// last: windows.h defines macros (min, max, ...) that RmlUi's names must never meet
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
+#include <fcntl.h>
+#include <io.h>
+static std::string utf8(const wchar_t* w) {
+	int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+	std::string s(n > 1 ? n - 1 : 0, '\0');
+	if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w, -1, &s[0], n, nullptr, nullptr);
+	return s;
+}
+#endif
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+	// the same bytes in and out as on every other OS: no \r\n for \n and no ^Z as the end of the input; and the
+	// arguments as UTF-8 (main's argv is in the ANSI code page, which cannot hold every path)
+	_setmode(_fileno(stdin), _O_BINARY);
+	_setmode(_fileno(stdout), _O_BINARY);
+	_setmode(_fileno(stderr), _O_BINARY);
+	int wargc = 0;
+	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+	std::vector<std::string> args;
+	for (int i = 0; wargv && i < wargc; i++) args.push_back(utf8(wargv[i]));
+	std::vector<char*> ptrs;
+	for (auto& s : args) ptrs.push_back(&s[0]);
+	if (wargv) { argc = wargc; argv = ptrs.data(); }
+#endif
 	std::string mode = argc > 1 ? argv[1] : "";
 	try {
 		if (mode == "parity") return parity::run();

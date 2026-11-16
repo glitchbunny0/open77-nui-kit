@@ -55,7 +55,7 @@ int run(const std::string& doc_path, const std::string& modelName) {
 	faces[0].ascent = 800, faces[0].descent = 200, faces[0].def = 500;
 	standIn = true;
 	NullRender render; Sys sys; MeasureFont font;
-	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
+	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font); SetFileInterface(&u8files);
 	Initialise();
 	registerOpen77();
 	int n = 0;

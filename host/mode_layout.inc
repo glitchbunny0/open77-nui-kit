@@ -83,7 +83,7 @@ static void emit(Element* el, std::ostringstream& out, bool& first) {
 int run(const std::string& doc_path, const std::string& modelName, const std::string& fontsPath) {
 	docPath = doc_path;
 	{
-		std::ifstream fj(fontsPath);
+		std::ifstream fj(u8(fontsPath), std::ios::binary);
 		if (!fj) badInput("cannot read " + fontsPath);
 		std::string ftxt((std::istreambuf_iterator<char>(fj)), std::istreambuf_iterator<char>());
 		J fonts = parseJson(ftxt, fontsPath);
@@ -128,7 +128,7 @@ int run(const std::string& doc_path, const std::string& modelName, const std::st
 	}
 	J cases = readCases(Mode::Layout);
 	NullRender render; Sys sys; MeasureFont font;
-	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font);
+	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font); SetFileInterface(&u8files);
 	Initialise();
 	registerOpen77();
 	int n = 0;

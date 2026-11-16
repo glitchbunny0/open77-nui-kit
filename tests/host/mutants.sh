@@ -164,7 +164,7 @@ mutant host host/common.hpp "image: a missing img src is reported" \
 mutant host host/mode_check.inc "image: a missing decorator image is reported" \
     'renderOnce(context);   // decorators' '// decorators'
 mutant host host/common.hpp "image: an image next to the document or under the resource root is found" \
-    'if (fs::is_regular_file(dir / source, ec)) return (dir / source).string();' ''
+    'if (fs::is_regular_file(dir / u8(source), ec)) return (dir / u8(source)).u8string();' ''
 mutant host host/common.hpp "image: an img takes the PNG natural size" \
     'd = imageSize(path);' 'd = {1, 1};'
 mutant host host/common.hpp "image: drawing raises no noise of its own" \

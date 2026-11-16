@@ -359,6 +359,26 @@ DataVariable DynDef::Child(void* ptr, const DataAddressEntry& e) {
 	return DataVariable();
 }
 
+// ---- files by UTF-8 path: RmlUi and the modes pass paths around as UTF-8. Windows opens a narrow path in the ANSI
+// code page, which cannot hold every name (a home folder in Cyrillic, say), so there a path goes through the wide API;
+// elsewhere a narrow path is UTF-8 already.
+static std::filesystem::path u8(const std::string& s) { return std::filesystem::u8path(s); }
+class U8Files : public FileInterface {
+public:
+	FileHandle Open(const String& path) override {
+#ifdef _WIN32
+		return (FileHandle)_wfopen(u8(path).c_str(), L"rb");
+#else
+		return (FileHandle)fopen(path.c_str(), "rb");
+#endif
+	}
+	void Close(FileHandle f) override { fclose((FILE*)f); }
+	size_t Read(void* buffer, size_t size, FileHandle f) override { return fread(buffer, 1, size, (FILE*)f); }
+	bool Seek(FileHandle f, long offset, int origin) override { return fseek((FILE*)f, offset, origin) == 0; }
+	size_t Tell(FileHandle f) override { return (size_t)ftell((FILE*)f); }
+};
+static U8Files u8files;   // every mode: SetFileInterface(&u8files) before Initialise()
+
 // ---- images: RmlUi hands LoadTexture the path joined with the document's (or sheet's) folder, a game-absolute
 // "/ui/img/x.png" with its slash stripped. Found relative to the working directory or to any folder above the document
 // (the resource root, where the game resolves it); a URL ("nui://...") is taken on trust. Missing: LoadTexture fails
@@ -367,17 +387,17 @@ static std::string docPath;   // the document being checked, set by each mode
 static std::string findImage(const std::string& source) {
 	namespace fs = std::filesystem;
 	std::error_code ec;
-	if (fs::is_regular_file(source, ec)) return source;
-	if (fs::path(source).is_absolute()) return "";
-	for (fs::path dir = fs::absolute(docPath, ec).parent_path(); !dir.empty(); dir = dir.parent_path()) {
-		if (fs::is_regular_file(dir / source, ec)) return (dir / source).string();
+	if (fs::is_regular_file(u8(source), ec)) return source;
+	if (u8(source).is_absolute()) return "";
+	for (fs::path dir = fs::absolute(u8(docPath), ec).parent_path(); !dir.empty(); dir = dir.parent_path()) {
+		if (fs::is_regular_file(dir / u8(source), ec)) return (dir / u8(source)).u8string();
 		if (dir == dir.parent_path()) break;
 	}
 	return "";
 }
 // the natural size from the file's header: PNG, JPEG, TGA; anything else counts as 1x1
 static Vector2i imageSize(const std::string& path) {
-	std::ifstream f(path, std::ios::binary);
+	std::ifstream f(u8(path), std::ios::binary);
 	std::vector<unsigned char> b((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 	auto be16 = [&](size_t i) { return int(b[i] << 8 | b[i + 1]); };
 	auto be32 = [&](size_t i) { return int(unsigned(b[i]) << 24 | b[i + 1] << 16 | b[i + 2] << 8 | b[i + 3]); };

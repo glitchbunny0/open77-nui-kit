@@ -89,6 +89,7 @@ int run() {
 	SetRenderInterface(&render);
 	SetSystemInterface(&sys);
 	SetFontEngineInterface(&font);
+	SetFileInterface(&u8files);
 	Initialise();
 	registerOpen77();
 
