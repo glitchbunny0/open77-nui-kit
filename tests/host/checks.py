@@ -653,8 +653,10 @@ def _():
     png(os.path.join('sep', 'img', 'u.png'), 12, 9)
     path = WORK.replace(os.sep, '/') + os.sep + os.path.join('sep', 'ui', 'deep', 'doc.rml')
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    # the <head> matters: RmlUi records a document's path only there; without one, the image path resolves from no
+    # folder at all and the host's walk-up from the document finds it whatever the separators
     with open(path, 'w', encoding='utf-8') as f:
-        f.write('<rml><body data-model="m"><img id="i" src="../../img/u.png"/></body></rml>')
+        f.write('<rml><head></head><body data-model="m"><img id="i" src="../../img/u.png"/></body></rml>')
     r = check_doc(path)
     img = next((l for l in r.out.splitlines() if l.strip().startswith('img#i')), '')
     expect(' 12x9' in img and not warns(r), f'{img!r} {warns(r)}')
