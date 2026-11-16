@@ -1,0 +1,211 @@
+name: release
+# The host binaries a release carries: built and tested on every push that changes what goes into them, published
+# (with SHA256SUMS and build-provenance attestations) only when a v* tag is pushed, then fetched back on every
+# platform as a user's tools fetch them. Off a tag, publish is a dry run and verify fetches from its files instead.
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths: ['host/**', 'scripts/build.py', '.github/workflows/release.yml', 'VERSION']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-24.04 }
+          - { platform: linux-aarch64, os: ubuntu-24.04-arm }
+          - { platform: macos-universal, os: macos-15 }
+          - { platform: windows-x86_64, os: windows-2025 }
+    defaults:
+      run:
+        shell: bash   # Git Bash on Windows
+    env:
+      NUIKIT_PREBUILT: "0"   # the binaries are built here, never fetched
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: build (Linux; musl in Alpine, linked statically, so it runs on any distro)
+        if: runner.os == 'Linux'
+        run: |
+          # musl is linked in: its licence ships with the binary
+          curl -fsSL https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT -o "$RUNNER_TEMP/musl.txt" \
+            || curl -fsSL https://raw.githubusercontent.com/bminor/musl/master/COPYRIGHT -o "$RUNNER_TEMP/musl.txt"
+          docker run --rm -v "$PWD:/w" -v "$RUNNER_TEMP:/t" -w /w -e GITHUB_SHA alpine:3.22 sh -c \
+            'apk add --no-cache g++ python3 git >/dev/null &&
+             NUIKIT_RMLUI_DIR=/t/rmlui NUIKIT_PREBUILT=0 python3 scripts/build.py --release dist --license /t/musl.txt'
+          sudo chown -R "$(id -u):$(id -g)" dist
+      - name: build (macOS; one universal file, Apple silicon and Intel)
+        if: runner.os == 'macOS'
+        run: python3 scripts/build.py --release dist
+      - name: build (Windows; MSVC, the C runtime linked in)
+        if: runner.os == 'Windows'
+        env:
+          CXX: cl
+        run: python scripts/build.py --release dist
+      - name: unpack the zip, as build.py does for a user
+        run: |
+          python -c "import glob, zipfile; zipfile.ZipFile(glob.glob('dist/*.zip')[0]).extractall('unpacked')"
+          # named per OS: Git Bash's ls finds rmlhost.exe when asked for rmlhost, and native tools then miss it
+          exe=; [ "$RUNNER_OS" = Windows ] && exe=.exe
+          bin=$(echo unpacked/*/rmlhost$exe)
+          [ -f "$bin" ] || { echo "no rmlhost$exe in the zip"; ls -R unpacked; exit 1; }
+          chmod +x "$bin"
+          echo "BIN=$PWD/$bin" >> "$GITHUB_ENV"
+          ls -l unpacked/*/
+          cat unpacked/*/BUILD.txt
+      - name: what it needs at run time (nothing a fresh machine lacks)
+        run: |
+          case "$RUNNER_OS" in
+            Linux)
+              out=$(file "$BIN"); echo "$out"
+              case "$out" in *'statically linked'*) ;; *) echo "not statically linked"; exit 1 ;; esac
+              case "$out" in *', stripped'*) ;; *) echo "not stripped"; exit 1 ;; esac ;;
+            macOS)
+              lipo -archs "$BIN"; otool -L "$BIN"
+              lipo "$BIN" -verify_arch arm64 x86_64
+              # the libraries it links: the system's own only, which every macOS has
+              more=$(otool -L "$BIN" | grep -E '^[[:space:]]' | grep -v -E '^[[:space:]]+/usr/lib/(libc\+\+|libSystem)' || true)
+              [ -z "$more" ] || { echo "links more than the system's libraries: $more"; exit 1; } ;;
+            Windows)
+              # the DLLs it imports (MinGW's objdump, on the image): Windows' own only, no C or C++ runtime
+              objdump -p "$BIN" | grep 'DLL Name' | tee "$RUNNER_TEMP/dlls.txt"
+              if grep -i -E 'vcruntime|msvcp|ucrtbase|api-ms-win-crt|libstdc|libgcc|winpthread' "$RUNNER_TEMP/dlls.txt"; then
+                echo "imports a C or C++ runtime DLL"; exit 1
+              fi ;;
+          esac
+      - name: test the binary (the host checks, the RmlUi golden)
+        run: |
+          python tests/host/checks.py "$BIN"
+          (cd lrbind/tests && npm ci --silent --no-audit --no-fund)
+          node lrbind/tests/parity/parity.test.mjs --emit-cases | "$BIN" parity > "$RUNNER_TEMP/golden.json"
+          cmp "$RUNNER_TEMP/golden.json" lrbind/tests/parity/golden.json && echo "golden: identical"
+      - name: test the Intel half too (macOS, under Rosetta)
+        if: runner.os == 'macOS'
+        run: |
+          arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+          printf '#!/bin/sh\nexec arch -x86_64 "%s" "$@"\n' "$BIN" > "$RUNNER_TEMP/x86host"; chmod +x "$RUNNER_TEMP/x86host"
+          python tests/host/checks.py "$RUNNER_TEMP/x86host"
+          node lrbind/tests/parity/parity.test.mjs --emit-cases | "$RUNNER_TEMP/x86host" parity > "$RUNNER_TEMP/golden-x86.json"
+          cmp "$RUNNER_TEMP/golden-x86.json" lrbind/tests/parity/golden.json && echo "golden (x86_64): identical"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rmlhost-${{ matrix.platform }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: publish${{ !startsWith(github.ref, 'refs/tags/v') && ' (dry run, no tag)' || '' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write       # the release
+      id-token: write       # the attestations' signing certificate
+      attestations: write
+    env:
+      TAGGED: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: the tag is annotated (its message is the release notes) and is v<VERSION> (build.py fetches from that)
+        if: env.TAGGED == 'true'
+        run: |
+          # checkout may leave the tag as a plain ref to the commit: fetch the tag object itself
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag || { echo "$GITHUB_REF_NAME is not an annotated tag"; exit 1; }
+          test "$GITHUB_REF_NAME" = "v$(cat VERSION)" || { echo "tag $GITHUB_REF_NAME, VERSION $(cat VERSION)"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: rmlhost-*
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          [ "$(ls dist/*.zip | wc -l)" -eq 4 ] || { ls dist; echo "want 4 zips"; exit 1; }
+          cd dist && sha256sum *.zip | tee SHA256SUMS
+      - name: the release's files, for verify to fetch from off a tag
+        if: env.TAGGED != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/attest@v4
+        if: env.TAGGED == 'true'
+        with:
+          subject-path: dist/*.zip
+      - name: publish
+        if: env.TAGGED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --title "$GITHUB_REF_NAME" --notes-from-tag --verify-tag
+
+  verify:
+    name: verify (${{ matrix.platform }})
+    needs: publish
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-24.04 }
+          - { platform: linux-aarch64, os: ubuntu-24.04-arm }
+          - { platform: macos-universal, os: macos-15 }
+          - { platform: windows-x86_64, os: windows-2025 }
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAGGED: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: off a tag, the dry run's files
+        if: env.TAGGED != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dry-run
+          path: ${{ runner.temp }}/dry
+      - name: off a tag, fetch from them as from a release (NUIKIT_PREBUILT_URL)
+        if: env.TAGGED != 'true'
+        run: |
+          t="$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")"   # POSIX form for Git Bash
+          rel="$t/rel"; mkdir -p "$rel"; mv "$t/dry" "$rel/v$(cat VERSION)"
+          ls -l "$rel/v$(cat VERSION)"
+          echo "NUIKIT_PREBUILT_URL=$(python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).as_uri())' "$rel")" >> "$GITHUB_ENV"
+      - name: the tools get this platform's host from the release, with no compiler to fall back on
+        env:
+          CXX: no-such-compiler
+        run: |
+          export NUIKIT_RMLUI_DIR="$RUNNER_TEMP/fresh/rmlui-6.3"
+          python scripts/build.py 2> "$RUNNER_TEMP/build.log" || { cat "$RUNNER_TEMP/build.log"; exit 1; }
+          cat "$RUNNER_TEMP/build.log"
+          grep -q "fetching the prebuilt host rmlhost-.*-${{ matrix.platform }} from release v$(cat VERSION)" "$RUNNER_TEMP/build.log"
+          python bin/rml-check examples/side-menu/ui/menu.rml examples/side-menu/cases.json
+      - name: its attestation verifies (built by this repository's release workflow, from this tag)
+        if: env.TAGGED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          name=$(python -c "import sys; sys.path.insert(0, 'scripts'); import build; print(build.asset_name('host', '${{ matrix.platform }}'))")
+          gh release download "$GITHUB_REF_NAME" --pattern "$name.zip" --dir "$RUNNER_TEMP/dl"
+          gh attestation verify "$RUNNER_TEMP/dl/$name.zip" --repo "$GITHUB_REPOSITORY" --source-ref "$GITHUB_REF"
