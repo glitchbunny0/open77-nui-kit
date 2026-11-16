@@ -7,6 +7,7 @@
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
+source tests/lib/os.sh   # py, plant, shim, upath, windows
 lua="${LUA:-$(command -v lua5.4 || command -v lua)}"
 fail=0
 limit=10000      # instructions of one resume or event; the game allows 1,500,000, the example needs about a tenth of this
@@ -46,14 +47,7 @@ mutant() {
     i=$((i + 1))
     local d="$tmp/m$i"
     copy "$d"
-    if ! F="$d/examples/side-menu/$file" OLD="$old" NEW="$new" python3 - <<'PY'
-import os, sys
-f = os.environ['F']
-s = open(f, encoding='utf-8').read()
-if s.count(os.environ['OLD']) != 1:
-    print('mutant site matches %d times: %r' % (s.count(os.environ['OLD']), os.environ['OLD'][:70])); sys.exit(1)
-open(f, 'w', encoding='utf-8').write(s.replace(os.environ['OLD'], os.environ['NEW']))
-PY
+    if ! plant "$d/examples/side-menu/$file" "$d/examples/side-menu/$file" "$old" "$new"
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     local o
     o=$(evaluate "$d")

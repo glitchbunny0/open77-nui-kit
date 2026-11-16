@@ -103,13 +103,23 @@ print(json.dumps([{"name": "fake", "els": els, "warnings": ["font face substitut
 '''
 
 
+def runnable(p):
+    """the path to run the Python script p as a program: p itself on Linux and macOS; on Windows p.cmd, written next to
+    it (Windows starts no script by its #! line, and Python's subprocess starts only .exe and .cmd files)"""
+    if os.name != 'nt':
+        os.chmod(p, 0o755)
+        return p
+    with open(p + '.cmd', 'w', encoding='utf-8', newline='\r\n') as fh:
+        fh.write(f'@"{sys.executable}" "{p}" %*\n')
+    return p + '.cmd'
+
+
 def fake_host():
     p = os.path.join(TMP, 'fakehost')
     if not os.path.exists(p):
-        with open(p, 'w') as fh:
+        with open(p, 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(FAKE)
-        os.chmod(p, 0o755)
-    return p
+    return runnable(p)
 
 
 def host_warnings(tool, out):
@@ -152,12 +162,13 @@ def utf8_cases(tool, out):
     """cases reach the host as UTF-8, so a non-BMP character is one code point there (no \\ud83d surrogate escapes)"""
     rec = os.path.join(out, 'stdin.json')
     os.makedirs(out, exist_ok=True)
-    wrap = os.path.join(out, 'host')
-    with open(wrap, 'w') as fh:
-        fh.write(f'#!/usr/bin/env bash\ntee {rec!r} | {os.environ["NUIKIT_HOST"]!r} "$@"\n')
-    os.chmod(wrap, 0o755)
+    wrap = os.path.join(out, 'host')   # records what the tool sends, then hands it to the real host
+    with open(wrap, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(f'#!/usr/bin/env python3\nimport subprocess, sys\ndata = sys.stdin.buffer.read()\n'
+                 f'open({rec!r}, "wb").write(data)\n'
+                 f'sys.exit(subprocess.run([{os.environ["NUIKIT_HOST"]!r}] + sys.argv[1:], input=data).returncode)\n')
     r = run(tool, 'emoji.rml', [{'name': 'emoji', 'size': [400, 100], 'model': {'s': 'Loot \U0001F600 ready'}}], out,
-            env={'NUIKIT_HOST': wrap})
+            env={'NUIKIT_HOST': runnable(wrap)})
     sent = open(rec, 'rb').read() if os.path.exists(rec) else b''
     ok = r.returncode == 0 and '\U0001F600'.encode() in sent
     return ok, f'exit {r.returncode}, host stdin {sent[:80]!r} {r.stderr.strip()[-200:]}'

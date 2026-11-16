@@ -420,7 +420,7 @@ MUTANTS += [
 # ==== browser: data-rml in a real Chromium (skipped without one): planted handlers, an iframe, a javascript: link
 # that the page clicks; none may run, and the markup must be there
 def find_chrome():
-    rc, out = sh(['bin/html-shot', '--find'])
+    rc, out = sh([sys.executable, 'bin/html-shot', '--find'])   # Windows starts no script by its #! line
     path = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ''
     return path if path and os.path.exists(path) else None
 

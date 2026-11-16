@@ -126,7 +126,10 @@ PY
     fi
 }
 
-want() { local name="$1"; shift; if "$@"; then echo "ok   $name"; else echo "FAIL $name"; fi; }
+want() {   # a check line; a red one shows the end of the stub run it judged
+    local name="$1"; shift
+    if "$@"; then echo "ok   $name"; else echo "FAIL $name"; printf '%s\n' "$out" | tail -4 | sed 's/^/     | /'; fi
+}
 
 real_out=$(runner_checks scripts/test.sh)
 grep -v -e '^ok ' -e '^skip ' <<<"$real_out" && fail=1   # a skip (no Pillow) is not a failure
@@ -138,13 +141,7 @@ mutant() {   # mutant NAME OLD NEW
     local name="$1" old="$2" new="$3"
     i=$((i + 1))
     local f="$tmp/mutant$i.sh"
-    if ! SRC=scripts/test.sh DST="$f" OLD="$old" NEW="$new" python3 - <<'PY'
-import os, sys
-s = open(os.environ['SRC'], encoding='utf-8').read()
-if s.count(os.environ['OLD']) != 1:
-    print('mutant site matches %d times: %r' % (s.count(os.environ['OLD']), os.environ['OLD'][:70])); sys.exit(1)
-open(os.environ['DST'], 'w', encoding='utf-8').write(s.replace(os.environ['OLD'], os.environ['NEW']))
-PY
+    if ! plant scripts/test.sh "$f" "$old" "$new"
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     local o
     o=$(runner_checks "$f")

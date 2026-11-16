@@ -7,6 +7,7 @@
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
+source tests/lib/os.sh   # py, plant, shim, upath, windows
 py="${PYTHON:-python3}"
 fail=0
 host=$("$py" scripts/build.py 2>/dev/null | tail -1)
@@ -31,24 +32,19 @@ mutant() {
     local d="$tmp/mut$n"
     mkdir -p "$d"
     cp -r host "$d/host"; mkdir -p "$d/scripts"; cp scripts/build.py "$d/scripts/build.py"
-    if ! SRC="$file" DST="$d/$file" OLD="$old" NEW="$new" "$py" - <<'PY'
-import os, sys
-s = open(os.environ['SRC'], encoding='utf-8').read()
-k = s.count(os.environ['OLD'])
-if k != 1:
-    print('mutant site matches %d times: %r' % (k, os.environ['OLD'][:70])); sys.exit(1)
-open(os.environ['DST'], 'w', encoding='utf-8', newline='\n').write(s.replace(os.environ['OLD'], os.environ['NEW']))
-PY
+    if ! plant "$file" "$d/$file" "$old" "$new"
     then echo "FAIL: mutant $n ($check): the site is gone"; fail=1; return; fi
     kinds[$n]="$kind"; checks[$n]="$check"; dirs[$n]="$d"
 }
 source tests/host/mutants.sh
 
-# build the host mutants in parallel (a build.py each, as many at once as there are CPUs), then run each one's check
-for i in $(seq 1 $n); do [ "${kinds[$i]:-}" = host ] && echo "${dirs[$i]}"; done > "$tmp/host-mutants.txt"
-"$py" - "$tmp/host-mutants.txt" <<'PY'
+# build the host mutants in parallel (a build.py each, as many at once as there are CPUs), then run each one's check;
+# the folders go as arguments, which Git Bash turns into Windows paths (a file's content it would leave alone)
+hostdirs=()
+for i in $(seq 1 $n); do [ "${kinds[$i]:-}" = host ] && hostdirs+=("${dirs[$i]}"); done
+"$py" - ${hostdirs[@]+"${hostdirs[@]}"} <<'PY'
 import concurrent.futures, os, subprocess, sys
-dirs = [l for l in open(sys.argv[1], encoding='utf-8').read().splitlines() if l]
+dirs = sys.argv[1:]
 def build(d):
     with open(os.path.join(d, 'build.log'), 'wb') as log:
         subprocess.run([sys.executable, 'scripts/build.py', '--host', os.path.join(d, 'host'),

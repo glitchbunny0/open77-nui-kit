@@ -9,6 +9,7 @@
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
+source tests/lib/os.sh   # py, plant, shim, upath, windows
 fail=0
 export LUA="${LUA:-$(command -v lua5.4 || command -v lua)}"
 have_pil=0; python3 -c 'import PIL' 2>/dev/null && have_pil=1
@@ -45,7 +46,7 @@ for i, m in enumerate(re.finditer(r'```sh\n(.*?)```', text, re.S)):
         if ('rml-preview' in l and not pil) or ('html-shot' in l and not chrome) or ('--compare' in l and not chrome):
             continue
         lines.append(l.replace('lua5.4', '"$LUA"'))
-    open('%s/b%d.sh' % (out, i), 'w').write('set -euo pipefail\n' + '\n'.join(lines) + '\n')
+    open('%s/b%d.sh' % (out, i), 'w', encoding='utf-8', newline='\n').write('set -euo pipefail\n' + '\n'.join(lines) + '\n')
 PY
     for b in "$kc"/.blocks/b*.sh; do
         [ -e "$b" ] || continue
@@ -55,11 +56,81 @@ PY
     [ "$n" -gt 0 ]
 }
 
-same_example() {   # the hand-written files of the example are as in the kit
+same_example() {   # the hand-written files of the example are as in the kit (\r aside: Lua on Windows writes \r\n)
     local f
     for f in ui/menu.rml ui/menu.rcss client/menu.lua models.lua web/index.html web/app.css cases.json; do
-        cmp -s "$kit/examples/side-menu/$f" "$1/examples/side-menu/$f" || { echo "changed: examples/side-menu/$f"; return 1; }
+        tr -d '\r' < "$1/examples/side-menu/$f" | cmp -s "$kit/examples/side-menu/$f" - || { echo "changed: examples/side-menu/$f"; return 1; }
     done
+}
+
+# Python that a check runs, as functions: bash 3.2 (macOS) misreads a heredoc inside $(...) whose text has an
+# unbalanced quote or parenthesis
+py_node_floor() {
+    python3 - "$@" <<'PY'
+import json, re
+lock = json.load(open('lrbind/tests/package-lock.json'))
+eng = lock['packages']['node_modules/jsdom']['engines']['node']
+print(re.search(r'\^(\d+\.\d+)', eng).group(1))     # the lowest caret clause: 20.19
+PY
+}
+
+py_skill_meta() {
+    python3 - "$@" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding='utf-8').read()
+m = re.match(r'---\n(.*?)\n---\n', text, re.S)
+if not m:
+    print('no frontmatter'); sys.exit()
+meta = dict(l.split(':', 1) for l in m.group(1).splitlines() if ':' in l and not l.startswith(' '))
+meta = {k.strip(): v.strip() for k, v in meta.items()}
+name, desc = meta.get('name', ''), meta.get('description', '')
+why = []
+if name != sys.argv[2]: why.append(f'name {name!r} is not the folder {sys.argv[2]!r}')
+if not re.fullmatch(r'[a-z0-9]+(-[a-z0-9]+)*', name) or len(name) > 64: why.append('name: 1-64 of a-z 0-9 and single hyphens')
+if not 1 <= len(desc) <= 1024: why.append(f'description is {len(desc)} chars (1-1024)')
+if len(meta.get('compatibility', 'x')) > 500: why.append('compatibility over 500 chars')
+if text.count('\n') >= 500: why.append('SKILL.md has 500 lines or more')
+print('; '.join(why))
+PY
+}
+
+py_missing_links() {
+    python3 - "$@" <<'PY'
+import os, re, sys
+d, kit, docs = sys.argv[1], sys.argv[2], sys.argv[3:]
+miss = []
+for doc in docs:
+    text = open(os.path.join(d, doc), encoding='utf-8').read()
+    base = os.path.dirname(doc)
+    for target in re.findall(r'\]\(([^)\s]+)\)', text):
+        if re.match(r'[a-z]+:', target) or target.startswith('#'):
+            continue
+        if not os.path.exists(os.path.normpath(os.path.join(kit, base, target.split('#')[0]))):
+            miss.append(f'{doc}: {target}')
+    for path in re.findall(r'\$KIT"?/([\w./-]+)', text):
+        path = path.rstrip('.')
+        if not os.path.exists(os.path.join(kit, path)):
+            miss.append(f'{doc}: $KIT/{path}')
+print(' '.join(miss))
+PY
+}
+
+py_missing_forms() {
+    python3 - "$@" <<'PY'
+import re, sys
+doc = open(sys.argv[1], encoding='utf-8').read()
+src = lambda p: open(p, encoding='utf-8').read()
+forms = set(re.findall(r"print\(f?'([A-Z]+(?: [A-Z]+)*)\b", src('bin/rml-check')))            # WARN, EVENT, CLICK FAIL, ...
+forms |= set(re.findall(r"""notes\.add\(f?['"]([A-Z]+(?: [A-Z]+)*)\b""", src('bin/rml-preview')))   # NOT PAINTED, MISSING, ...
+forms |= set(re.findall(r"print\('(not painted \(see rml-preview --help\))", src('bin/rml-preview')))
+host = src('host/mode_check.inc')
+for line in host.splitlines():                                   # what a click line says happened instead
+    if re.search(r'\bgot\s*\+?=', line):
+        forms |= {s.strip() for s in re.findall(r'"([a-z ,][a-z -]*[a-z])', line) if len(s.strip()) > 3}
+if 'do not list' in src('bin/rml-check'):
+    forms.add('do not list')
+print(' '.join(sorted(repr(f) for f in forms if f not in doc)))
+PY
 }
 
 # ---- the checks; each takes the directory holding the (possibly mutated) copies of $files ----
@@ -85,7 +156,7 @@ doc, kit, out = sys.argv[1:]
 snip = re.search(r'```lua\n(.*?)```', open(doc, encoding='utf-8').read(), re.S).group(1)
 models = open(kit + '/examples/side-menu/models.lua', encoding='utf-8').read()
 shop = re.search(r'^local (SHOP = \{.*?^\})', models, re.S | re.M).group(1)
-open(out, 'w').write(shop + '\n' + snip.replace('path/to/open77-nui-kit', kit))
+open(out, 'w', encoding='utf-8', newline='\n').write(shop + '\n' + snip.replace('path/to/open77-nui-kit', kit))
 PY
     if (cd examples/side-menu && "$LUA" "$w/snippet.lua" > "$w/cases.json" 2> "$w/err") \
         && [ -s "$w/cases.json" ] && (cd examples/side-menu && ../../bin/rml-check ui/menu.rml "$w/cases.json" >"$w/check" 2>&1); then
@@ -94,13 +165,7 @@ PY
 }
 chk_node_floor() {
     local d="$1" want
-    want=$(python3 - <<'PY'
-import json, re
-lock = json.load(open('lrbind/tests/package-lock.json'))
-eng = lock['packages']['node_modules/jsdom']['engines']['node']
-print(re.search(r'\^(\d+\.\d+)', eng).group(1))     # the lowest caret clause: 20.19
-PY
-)
+    want=$(py_node_floor)
     if grep -qi "node.* ${want}+" "$d/README.md" && ! grep -qi "node.* 18+" "$d/README.md"; then ok "README: names the Node floor of the pinned jsdom ($want+)"
     else bad "README: names the Node floor of the pinned jsdom ($want+)"; fi
 }
@@ -130,7 +195,7 @@ chk_print() {
 }
 chk_stubs_documented() {   # every method fake-nui only records is named in docs/cases.md
     local d="$1" missing
-    missing=$("$LUA" -e 'local F = dofile("fake-nui/fake_nui.lua"); for _, n in ipairs(F.stubs) do io.write(n, "\n") end' | while read -r m; do grep -q "\`$m\`" "$d/docs/cases.md" || echo "$m"; done)
+    missing=$("$LUA" -e 'local F = dofile("fake-nui/fake_nui.lua"); for _, n in ipairs(F.stubs) do io.write(n, "\n") end' | tr -d '\r' | while read -r m; do grep -q "\`$m\`" "$d/docs/cases.md" || echo "$m"; done)
     if [ -z "$missing" ]; then ok "docs/cases.md: names every method fake-nui only records"
     else bad "docs/cases.md: names every method fake-nui only records" "$(echo $missing)"; fi
 }
@@ -166,67 +231,17 @@ chk_skill_run() {   # the skill's shell blocks run against the example ($KIT = a
 }
 chk_skill_meta() {   # SKILL.md frontmatter as agentskills.io/specification says: name = folder, charset, lengths
     local d="$1" why
-    why=$(python3 - "$d/$SK/SKILL.md" "$(basename "$SK")" <<'PY'
-import re, sys
-text = open(sys.argv[1], encoding='utf-8').read()
-m = re.match(r'---\n(.*?)\n---\n', text, re.S)
-if not m:
-    print('no frontmatter'); sys.exit()
-meta = dict(l.split(':', 1) for l in m.group(1).splitlines() if ':' in l and not l.startswith(' '))
-meta = {k.strip(): v.strip() for k, v in meta.items()}
-name, desc = meta.get('name', ''), meta.get('description', '')
-why = []
-if name != sys.argv[2]: why.append(f'name {name!r} is not the folder {sys.argv[2]!r}')
-if not re.fullmatch(r'[a-z0-9]+(-[a-z0-9]+)*', name) or len(name) > 64: why.append('name: 1-64 of a-z 0-9 and single hyphens')
-if not 1 <= len(desc) <= 1024: why.append(f'description is {len(desc)} chars (1-1024)')
-if len(meta.get('compatibility', 'x')) > 500: why.append('compatibility over 500 chars')
-if text.count('\n') >= 500: why.append('SKILL.md has 500 lines or more')
-print('; '.join(why))
-PY
-)
+    why=$(py_skill_meta "$d/$SK/SKILL.md" "$(basename "$SK")")
     if [ -z "$why" ]; then ok "skill: metadata as the Agent Skills spec says"; else bad "skill: metadata as the Agent Skills spec says" "$why"; fi
 }
 chk_links() {   # every relative link, and every $KIT/<path>, in the README, AGENTS.md and the skill names a file of the kit
     local d="$1" missing
-    missing=$(python3 - "$d" "$kit" README.md AGENTS.md "$SK/SKILL.md" "$SK/references/output.md" "$SK/references/porting.md" <<'PY'
-import os, re, sys
-d, kit, docs = sys.argv[1], sys.argv[2], sys.argv[3:]
-miss = []
-for doc in docs:
-    text = open(os.path.join(d, doc), encoding='utf-8').read()
-    base = os.path.dirname(doc)
-    for target in re.findall(r'\]\(([^)\s]+)\)', text):
-        if re.match(r'[a-z]+:', target) or target.startswith('#'):
-            continue
-        if not os.path.exists(os.path.normpath(os.path.join(kit, base, target.split('#')[0]))):
-            miss.append(f'{doc}: {target}')
-    for path in re.findall(r'\$KIT"?/([\w./-]+)', text):
-        path = path.rstrip('.')
-        if not os.path.exists(os.path.join(kit, path)):
-            miss.append(f'{doc}: $KIT/{path}')
-print(' '.join(miss))
-PY
-)
+    missing=$(py_missing_links "$d" "$kit" README.md AGENTS.md "$SK/SKILL.md" "$SK/references/output.md" "$SK/references/porting.md")
     if [ -z "$missing" ]; then ok "docs: every link and \$KIT path names a file of the kit"; else bad "docs: every link and \$KIT path names a file of the kit" "$missing"; fi
 }
 chk_output_forms() {   # every kind of line the tools print is explained in the skill's references/output.md
     local d="$1" missing
-    missing=$(python3 - "$d/$SK/references/output.md" <<'PY'
-import re, sys
-doc = open(sys.argv[1], encoding='utf-8').read()
-src = lambda p: open(p, encoding='utf-8').read()
-forms = set(re.findall(r"print\(f?'([A-Z]+(?: [A-Z]+)*)\b", src('bin/rml-check')))            # WARN, EVENT, CLICK FAIL, ...
-forms |= set(re.findall(r"""notes\.add\(f?['"]([A-Z]+(?: [A-Z]+)*)\b""", src('bin/rml-preview')))   # NOT PAINTED, MISSING, ...
-forms |= set(re.findall(r"print\('(not painted \(see rml-preview --help\))", src('bin/rml-preview')))
-host = src('host/mode_check.inc')
-for line in host.splitlines():                                   # what a click line says happened instead
-    if re.search(r'\bgot\s*\+?=', line):
-        forms |= {s.strip() for s in re.findall(r'"([a-z ,][a-z -]*[a-z])', line) if len(s.strip()) > 3}
-if 'do not list' in src('bin/rml-check'):
-    forms.add('do not list')
-print(' '.join(sorted(repr(f) for f in forms if f not in doc)))
-PY
-)
+    missing=$(py_missing_forms "$d/$SK/references/output.md")
     if [ -z "$missing" ]; then ok "skill: references/output.md explains every kind of line the tools print"
     else bad "skill: references/output.md explains every kind of line the tools print" "$missing"; fi
 }
@@ -252,14 +267,7 @@ mutant() {   # mutant CHECK-FUNCTION NAME FILE OLD NEW
     local d="$tmp/mut$i"
     mkdir -p "$d"
     for f in "${files[@]}"; do mkdir -p "$d/$(dirname "$f")"; cp "$f" "$d/$f"; done
-    if ! F="$d/$file" OLD="$old" NEW="$new" python3 - <<'PY'
-import os, sys
-f = os.environ['F']
-s = open(f, encoding='utf-8').read()
-if s.count(os.environ['OLD']) != 1:
-    print('mutant site matches %d times: %r' % (s.count(os.environ['OLD']), os.environ['OLD'][:70])); sys.exit(1)
-open(f, 'w', encoding='utf-8').write(s.replace(os.environ['OLD'], os.environ['NEW']))
-PY
+    if ! plant "$d/$file" "$d/$file" "$old" "$new"
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     local o; o=$($fn "$d")
     if grep -q "^FAIL $name" <<<"$o"; then reds=$((reds + 1))

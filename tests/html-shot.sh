@@ -199,13 +199,7 @@ mutant() {   # mutant GROUP NAME OLD NEW: group is fake | find | real
     i=$((i + 1))
     local f="$tmp/mut$i/html-shot"
     mkdir -p "$tmp/mut$i"
-    if ! SRC=bin/html-shot DST="$f" OLD="$old" NEW="$new" "$py" - <<'PY'
-import os, sys
-s = open(os.environ['SRC'], encoding='utf-8').read()
-if s.count(os.environ['OLD']) != 1:
-    print('mutant site matches %d times: %r' % (s.count(os.environ['OLD']), os.environ['OLD'][:70])); sys.exit(1)
-open(os.environ['DST'], 'w', encoding='utf-8').write(s.replace(os.environ['OLD'], os.environ['NEW']))
-PY
+    if ! plant bin/html-shot "$f" "$old" "$new"
     then echo "FAIL: mutant $i ($name): the site is gone"; fail=1; return; fi
     chmod +x "$f"
     if [ "$group" = real ] && [ -z "$real_chrome" ]; then echo "skip mutant (no Chromium): $name"; return; fi
