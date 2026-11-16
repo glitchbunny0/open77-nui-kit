@@ -21,6 +21,12 @@ static std::string utf8(const wchar_t* w) {
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
+	// a crash ends the process at once, with its code, instead of waiting on Windows Error Reporting (a tool running
+	// the host would wait with it)
+	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#ifdef _MSC_VER
+	_set_abort_behavior(0, _CALL_REPORTFAULT);
+#endif
 	// the same bytes in and out as on every other OS: no \r\n for \n and no ^Z as the end of the input; and the
 	// arguments as UTF-8 (main's argv is in the ANSI code page, which cannot hold every path)
 	_setmode(_fileno(stdin), _O_BINARY);

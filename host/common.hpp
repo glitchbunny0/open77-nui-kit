@@ -462,6 +462,13 @@ public:
 		return true;
 	}
 };
+// Rml::Shutdown() when a mode leaves, by its return or by an exception (bad input after Initialise): RmlUi must let go
+// of the mode's interfaces before they are destroyed (RenderInterface's destructor asserts it). Unwinding past them
+// with RmlUi still running sends that assert through the system interface already destroyed, into RmlUi's LogDefault:
+// on an MSVC build a message box no one closes, and the host hangs. Declare one right after Initialise().
+struct RmlSession {
+	~RmlSession() { Shutdown(); }
+};
 static void renderOnce(Context* context) {
 	rendering = true;
 	context->Render();

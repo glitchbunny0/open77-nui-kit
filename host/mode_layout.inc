@@ -130,6 +130,7 @@ int run(const std::string& doc_path, const std::string& modelName, const std::st
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font); SetFileInterface(&u8files);
 	Initialise();
+	RmlSession session;   // Shutdown() on the way out, before the interfaces above are destroyed
 	registerOpen77();
 	int n = 0;
 	std::cout << "[";
@@ -175,7 +176,6 @@ int run(const std::string& doc_path, const std::string& modelName, const std::st
 		RemoveContext(name);
 	}
 	std::cout << "]\n";
-	Shutdown();
 	return 0;
 }
 }  // namespace layout

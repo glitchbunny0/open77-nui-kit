@@ -36,6 +36,13 @@ if [ "$windows" = 1 ]; then
         "if (args.size() > 2) std::replace(args[2].begin(), args[2].end(), '\\\\', '/');" ''
 fi
 
+# an MSVC build only: without RmlUi shut down first, bad input after Initialise ends in RmlUi's assert message box
+# (other builds log that assert quietly), so the host hangs and the check times out
+if [ "$windows" = 1 ] && [ "$(basename "${CXX:-}" .exe)" = cl ]; then
+    mutant host host/mode_check.inc "input: a model bound twice is an error" \
+        'RmlSession session;' 'int no_session = 0;'
+fi
+
 # host/common.hpp: the JSON reader
 mutant host host/common.hpp "json: an emoji (a surrogate pair) arrives as one 4-byte UTF-8 character" \
     'if (lo >= 0xDC00 && lo < 0xE000) cp =' 'if (false) cp ='

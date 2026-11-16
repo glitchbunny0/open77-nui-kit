@@ -91,6 +91,7 @@ int run() {
 	SetFontEngineInterface(&font);
 	SetFileInterface(&u8files);
 	Initialise();
+	RmlSession session;   // Shutdown() on the way out, before the interfaces above are destroyed
 	registerOpen77();
 
 	std::cout << "[";
@@ -154,7 +155,6 @@ int run() {
 		n++;
 	}
 	std::cout << "]\n";
-	Shutdown();
 	return 0;
 }
 }  // namespace parity

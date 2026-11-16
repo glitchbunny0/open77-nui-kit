@@ -57,6 +57,7 @@ int run(const std::string& doc_path, const std::string& modelName) {
 	NullRender render; Sys sys; MeasureFont font;
 	SetRenderInterface(&render); SetSystemInterface(&sys); SetFontEngineInterface(&font); SetFileInterface(&u8files);
 	Initialise();
+	RmlSession session;   // Shutdown() on the way out, before the interfaces above are destroyed
 	registerOpen77();
 	int n = 0;
 	for (J& c : cases.a) {
@@ -140,7 +141,6 @@ int run(const std::string& doc_path, const std::string& modelName) {
 		for (auto& kv : seen) std::cout << "WARN x" << kv.second << ": " << oneLine(kv.first) << "\n";
 		RemoveContext(name);
 	}
-	Shutdown();
 	return 0;
 }
 }  // namespace check
