@@ -231,7 +231,8 @@ def check_sync(sync=SYNC):
     rc, out = run('check', res)
     want = sorted(['hud/web/lrbind.js', 'old/web/lrbind.js', 'misc/web/js/lrbind.js', 'misc/web/data/lrbind.js',
                    'code/web/lrbind.js'])
-    got = sorted(os.path.relpath(l.split(' ', 1)[1], res) for l in out.splitlines() if l.startswith('stale '))
+    got = sorted(os.path.relpath(l.split(' ', 1)[1], res).replace(os.sep, '/') for l in out.splitlines()
+                 if l.startswith('stale '))
     if rc != 1 or got != want or '6 copies, 5 stale' not in out:
         bad.append(f'check on drifted copies: rc {rc}, stale {got} (want {want}), {last(out)!r}')
     rc, out = run('refresh', res)
@@ -249,6 +250,15 @@ def check_sync(sync=SYNC):
     rc, out = run('check', res)
     if rc != 0:
         bad.append(f'check after refresh: {last(out)!r}')
+    crlf = js.replace(b'\n', b'\r\n')   # a copy as Git on Windows checks it out
+    put(p('win', 'web', 'lrbind.js'), crlf)
+    rc, out = run('check', res)
+    if rc != 0:
+        bad.append(f'a CRLF copy counts as stale: {last(out)!r}')
+    put(p('win', 'web', 'lrbind.js'), crlf + b'// drift\r\n')
+    run('refresh', res)
+    if get(p('win', 'web', 'lrbind.js')) != crlf:
+        bad.append('refresh does not keep the CRLF line ends of a copy')
     rc, out = run('--help')
     if rc != 0 or 'A copy is every file named' not in out:
         bad.append(f'--help: rc {rc}')
@@ -258,9 +268,13 @@ def check_sync(sync=SYNC):
 
 CHECKS['sync'] = check_sync
 MUTANTS += [
+    ('sync: a CRLF copy counts as stale', 'lrbind-sync', "data = f.read().replace(b'\\r\\n', b'\\n')", 'data = f.read()',
+     'sync', 'a CRLF copy counts as stale'),
+    ('sync: refresh writes LF over a CRLF copy', 'lrbind-sync', "f.write(out.replace(b'\\n', b'\\r\\n') if crlf else out)",
+     'f.write(out)', 'sync', 'refresh does not keep the CRLF'),
     ('sync: own comment lines count as stale', 'lrbind-sync', 'if line.strip() and not line.lstrip().startswith(comment):',
      'if line.strip():', 'sync', 'own comment lines above the header count as stale'),
-    ('sync: refresh drops own lines', 'lrbind-sync', 'f.write(own + kit_file(name))', 'f.write(kit_file(name))', 'sync',
+    ('sync: refresh drops own lines', 'lrbind-sync', 'out = own + kit_file(name)', 'out = kit_file(name)', 'sync',
      "does not keep the copy's own comment lines"),
     ('sync: code above the header passes', 'lrbind-sync',
      '        if line.strip() and not line.lstrip().startswith(comment):\n            return None\n', '', 'sync',

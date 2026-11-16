@@ -18,7 +18,8 @@ bin/lrbind-sync check path/to/resources   # exit 1 when a copy differs from the 
 **What counts as a copy** (the rule `lrbind-sync` applies; a census of your own should apply the same one): every
 file named `lrbind.js` or `lrbind.lua` under the folder, wherever it sits (`web/js/lrbind.js` and `web/data/lrbind.js`
 too); only `node_modules`, `.git` and the kit's own tree are skipped. A copy is current when it is the kit's file
-byte for byte, licence header included. Lines of your own above the kit's first line (`// SPDX-License-Identifier:
+byte for byte, licence header included, line ends aside: CRLF (as Git on Windows checks text out) counts as LF, and
+`refresh` keeps the line ends a copy has. Lines of your own above the kit's first line (`// SPDX-License-Identifier:
 MIT`) may stay if they are comments (`//` in lrbind.js, `--` in lrbind.lua) or blank: `check` accepts them and
 `refresh`/`add` keep them. Anything else above that line, or a copy without it (from before the header), is stale,
 and `refresh` writes the kit's file whole.

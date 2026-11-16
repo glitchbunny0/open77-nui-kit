@@ -8,7 +8,8 @@
 A copy is every file named lrbind.js or lrbind.lua under <folder>, wherever it sits; only node_modules, .git and the
 kit's own tree are skipped. A copy is current when it is the kit's file byte for byte, licence header included,
 optionally preceded by lines of your own: comments (// in lrbind.js, -- in lrbind.lua) and blank lines above the
-kit's first line. add and refresh keep those lines and write the kit's file below them.
+kit's first line. Line ends aside: CRLF, as Git on Windows checks text out, counts as LF. add and refresh keep those
+lines and write the kit's file below them, with the line ends the copy had.
 """
 import os, sys
 
@@ -56,19 +57,22 @@ def own_lines(name, data):
 
 def current(path, name):
     with open(path, 'rb') as f:
-        data = f.read()
+        data = f.read().replace(b'\r\n', b'\n')   # Git on Windows checks text out with CRLF: line ends aside
     own = own_lines(name, data)
     return own is not None and data[len(own):] == kit_file(name)
 
 
 def write(path, name):
-    own = b''
+    own, crlf = b'', False
     if os.path.exists(path):
         with open(path, 'rb') as f:
-            own = own_lines(name, f.read()) or b''
+            data = f.read()
+        crlf = b'\r\n' in data
+        own = own_lines(name, data.replace(b'\r\n', b'\n')) or b''
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    out = own + kit_file(name)
     with open(path, 'wb') as f:
-        f.write(own + kit_file(name))
+        f.write(out.replace(b'\n', b'\r\n') if crlf else out)   # the line ends the copy had
 
 
 def main(argv):
