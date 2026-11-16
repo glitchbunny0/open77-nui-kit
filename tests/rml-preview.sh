@@ -215,6 +215,21 @@ def bg_missing(tool, out):
             f'exit {r.returncode}: {r.stderr.strip()[-200:]}')
 
 
+def cases_bom(tool, out):
+    """a cases file with a byte order mark: UTF-16 (what `>` writes in Windows PowerShell 5) and UTF-8"""
+    os.makedirs(out, exist_ok=True)
+    text = json.dumps([{'name': 'g', 'size': [64, 40]}])
+    rcs = []
+    for n, data in (('16', b'\xff\xfe' + text.encode('utf-16-le')), ('8', b'\xef\xbb\xbf' + text.encode())):
+        cf = os.path.join(out, f'bom{n}.json')
+        with open(cf, 'wb') as fh:
+            fh.write(data)
+        r = subprocess.run([sys.executable, tool, 'gradients.rml', cf, '--out', os.path.join(out, n), '--root', '.'] + FONT,
+                           cwd=PROBES, capture_output=True, text=True)
+        rcs.append((r.returncode, os.path.exists(os.path.join(out, n, 'g.png')), r.stderr.strip()[-120:]))
+    return all(rc == 0 and png for rc, png, _ in rcs), f'UTF-16, UTF-8: {rcs}'
+
+
 def strict(tool, out):
     a = run(tool, 'images.rml', [{'name': 'images', 'size': [640, 400]}], out + '/a', '--strict')
     b = run(tool, 'gradients.rml', [{'name': 'gradients', 'size': [640, 400]}], out + '/b', '--strict')
@@ -237,6 +252,7 @@ CHECKS.update({
     'case names: a "/" does not leave --out': case_names,
     '--bg: a missing file is an error': bg_missing,
     '--strict: exit 1 on a missing image, 0 when clean': strict,
+    'cases: a byte order mark (UTF-16 from PowerShell 5, UTF-8) is read': cases_bom,
 })
 
 # (check, planted bug, text in bin/rml-preview, replacement): each must turn its check red on its own
@@ -323,6 +339,8 @@ MUTANTS = [
      "                    r = r.resize(size, Image.LANCZOS)", "                    pass"),
     ('--sheet-crop: a bad rectangle is an error, not a traceback', 'crop rectangle not validated',
      "if len(c) != 4 or c[2] <= c[0] or c[3] <= c[1]:", "if len(c) != 4:"),
+    ('cases: a byte order mark (UTF-16 from PowerShell 5, UTF-8) is read', 'the byte order mark left in',
+     "    for bom, name in BOMS:", "    for bom, name in ():"),
     ('no cases: no sheet, no compare, no traceback', 'compare built with no cases',
      "    if a.compare and tiles:", "    if a.compare:"),
     ('case names: a "/" does not leave --out', 'case name used as the file name as is',

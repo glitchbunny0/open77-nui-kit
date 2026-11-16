@@ -105,6 +105,12 @@ fake_checks() {   # fake_checks TOOL
     want "fake: a </script> in a model string stays inside the injected script" \
         bash -c '! grep -q "</script><b id=pwn>" "$1" && grep -q "<\\\\/script><b id=pwn>" "$1"' _ "$d/body-xss.html"
 
+    # a cases file with a byte order mark: UTF-16 (what `>` writes in Windows PowerShell 5) and UTF-8
+    "$py" -c 'import sys; d = open(sys.argv[1], encoding="utf-8").read(); open(sys.argv[2], "wb").write(b"\xff\xfe" + d.encode("utf-16-le")); open(sys.argv[3], "wb").write(b"\xef\xbb\xbf" + d.encode())' "$cases" "$d/bom16.json" "$d/bom8.json"
+    FAKE_MODE=good run "$tool" "$site/web/good.html" "$d/bom16.json" --out "$d/out16"; local r16=$rc
+    FAKE_MODE=good run "$tool" "$site/web/good.html" "$d/bom8.json" --out "$d/out8"
+    want "fake: a cases file with a byte order mark (UTF-16 from PowerShell 5, UTF-8) is read" test "$r16" = 0 -a "$rc" = 0
+
     run "$tool" --help
     want "fake: --help (exit 0) explains the options" bash -c '[ "$1" = 0 ] && grep -q -- "--serve-root  the folder served" <<<"$2"' _ "$rc" "$out"
     unset FAKE_DIR NUIKIT_CHROME TMPDIR
@@ -226,6 +232,7 @@ mutant hang "fake: ... and what it started is killed" '    """kill a process wit
 mutant fake "fake: a case name with separators" "    return '_' + s if s.startswith('.') or not s else s" "    return name"
 mutant fake "fake: two names that end up as one file" '        if other != c['"'"'name'"'"']:' '        if False:'
 mutant fake "fake: a </script> in a model string" "replace('</', '<\\\\/')" "replace('</', '</')"
+mutant fake "fake: a cases file with a byte order mark" "    for bom, name in BOMS:" "    for bom, name in ():"
 mutant fake "fake: --help" "description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter" "description=__doc__.split('\\n')[0]"
 mutant find "find: the highest revision wins" "key=revision)" "key=lambda p: p)"
 mutant find "find: XDG_CACHE_HOME/ms-playwright comes before" "    if os.environ.get('XDG_CACHE_HOME'):

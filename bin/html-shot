@@ -66,6 +66,26 @@ def find_chrome():
     return None
 
 
+# a byte order mark before the cases: Windows PowerShell 5 writes `>` as UTF-16, and some editors put one before UTF-8
+BOMS = ((b'\xef\xbb\xbf', 'utf-8'), (b'\xff\xfe', 'utf-16-le'), (b'\xfe\xff', 'utf-16-be'))
+
+
+def read_cases(arg):
+    """the cases file (or stdin) as text: UTF-8, or UTF-8 / UTF-16 after a byte order mark"""
+    raw = sys.stdin.buffer.read() if arg == '-' else open(arg, 'rb').read()
+    name = 'utf-8'
+    for bom, name in BOMS:
+        if raw.startswith(bom):
+            raw = raw[len(bom):]
+            break
+    else:
+        name = 'utf-8'
+    try:
+        return raw.decode(name)
+    except UnicodeDecodeError as e:
+        die(f'the cases are not {"UTF-8" if name == "utf-8" else name.upper()}: {e}')
+
+
 def model_name(html):
     m = re.search(r'data-model\s*=\s*"([^"]+)"', html)
     return m.group(1) if m else None
@@ -203,8 +223,7 @@ def main():
     if not chrome:
         die('no Chromium found: set NUIKIT_CHROME to a chrome/chrome-headless-shell binary '
             '(npx playwright install chromium-headless-shell gives one)')
-    txt = sys.stdin.read() if a.cases == '-' else open(a.cases, encoding='utf-8').read()
-    cases = json.loads(txt)
+    cases = json.loads(read_cases(a.cases))
     if not isinstance(cases, list) or not all(isinstance(c, dict) and isinstance(c.get('name'), str) for c in cases):
         die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
     names = {}

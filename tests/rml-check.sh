@@ -158,6 +158,10 @@ chk_name_inject()  { python3 -c 'import json; print(json.dumps([{"name":"a\nWARN
                      printf '<rml><body data-model="m"><div>{{t}}</div></body></rml>' > "$fx/em.rml"
                      rc "$fx/em.rml" "$fx/inj.json" --outline "$fx/inj.txt"; want 0 'cases: 2' 'rml-check: ok' && wantnot 'injected|ghost|LOAD' \
                        && [ "$(grep -c '^=== case' "$fx/inj.txt")" = 2 ] || fail "forged lines got through"; }
+# a cases file with a byte order mark: UTF-16 (what `>` writes in Windows PowerShell 5) and UTF-8
+chk_cases_bom()    { "$py" -c 'import sys; d = open(sys.argv[1], encoding="utf-8").read(); open(sys.argv[2], "wb").write(b"\xff\xfe" + d.encode("utf-16-le")); open(sys.argv[3], "wb").write(b"\xef\xbb\xbf" + d.encode())' "$fx/ok.json" "$fx/bom16.json" "$fx/bom8.json"
+                     rc "$fx/ui.rml" "$fx/bom16.json"; want 0 'rml-check: ok' || return 1
+                     rc "$fx/ui.rml" "$fx/bom8.json"; want 0 'rml-check: ok'; }
 chk_outline_path() { local a b; rc "$fx/ui.rml" "$fx/ok.json"; a=$(upath "$(sed -n 's/.*outline: //p' <<<"$out")"); rc "$fx/ui.rml" "$fx/ok.json"; b=$(upath "$(sed -n 's/.*outline: //p' <<<"$out")")
                      [ -n "$a" ] && [ "$a" != "$b" ] && [ -s "$a" ] && [ -s "$b" ] && [ "${a#"$TMPDIR"/}" != "$a" ] || fail "outline paths '$a' '$b'"; }
 
@@ -198,7 +202,7 @@ chk_warn_each_case(){ variant p.rcss 's/color/colr/'; sed 's/ui.rcss/p.rcss/' "$
 CHECKS=(chk_clean chk_binding chk_event_name chk_click_event chk_click_args chk_click_hidden chk_click_nothing chk_click_undeclared chk_arg_types chk_event_static chk_event_parse chk_event_template chk_exit_click
         chk_property chk_allow_open77 chk_allow_scope chk_allow_values chk_allow_flag
         chk_load_failed chk_no_header chk_host_crash chk_forged_lines chk_warn_lines
-        chk_no_cases chk_cases_shape chk_exit_codes chk_host_input chk_emoji chk_name_inject chk_outline_path
+        chk_no_cases chk_cases_shape chk_cases_bom chk_exit_codes chk_host_input chk_emoji chk_name_inject chk_outline_path
         chk_model_comment chk_model_many chk_model_none chk_warn_each_case chk_warn_order)
 
 failed=()
@@ -224,6 +228,7 @@ mut allow_pattern_back 'ALLOWED_OPEN77 = []' "ALLOWED_OPEN77 = [r\"^Syntax error
 mut allow_filter_back  'ALLOWED_OPEN77 = []' "ALLOWED_OPEN77 = [r\"^Syntax error parsing (inline )?property declaration 'filter: [^']*glow[(]\"]" "chk_allow_values"
 mut allow_flag_lost  '[re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77 + a.allow]' '[re.compile(p) for p in ALLOWED_BASE + ALLOWED_OPEN77]' "chk_allow_flag chk_exit_codes chk_warn_lines"
 mut empty_cases_ok   'if not cases:' 'if False:' "chk_no_cases"
+mut cases_bom_kept   '    for bom, name in BOMS:' '    for bom, name in ():' "chk_cases_bom"
 mut clicks_unchecked "if not isinstance(c['clicks'], list):" 'if False:' "chk_cases_shape"
 mut size_unchecked   "if 'size' in c and not" "if False and not" "chk_cases_shape"
 mut name_unescaped   "name = esc(c['name'])" "name = c['name']" "chk_name_inject"

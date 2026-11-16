@@ -1147,9 +1147,23 @@ def model_name(doc):
     return m.group(1) if m else 'model'
 
 
+# a byte order mark before the cases: Windows PowerShell 5 writes `>` as UTF-16, and some editors put one before UTF-8
+BOMS = ((b'\xef\xbb\xbf', 'utf-8'), (b'\xff\xfe', 'utf-16-le'), (b'\xfe\xff', 'utf-16-be'))
+
+
 def load_cases(arg):
-    txt = sys.stdin.read() if arg == '-' else open(arg, encoding='utf-8').read()
-    cases = json.loads(txt)
+    raw = sys.stdin.buffer.read() if arg == '-' else open(arg, 'rb').read()
+    name = 'utf-8'
+    for bom, name in BOMS:
+        if raw.startswith(bom):
+            raw = raw[len(bom):]
+            break
+    else:
+        name = 'utf-8'
+    try:
+        cases = json.loads(raw.decode(name))
+    except UnicodeDecodeError as e:
+        die(f'the cases are not {"UTF-8" if name == "utf-8" else name.upper()}: {e}')
     if not isinstance(cases, list) or not all(isinstance(c, dict) and 'name' in c for c in cases):
         die('cases must be a JSON array of objects with a "name" (see docs/cases.md)')
     return cases
