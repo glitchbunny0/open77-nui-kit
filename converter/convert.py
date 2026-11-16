@@ -93,10 +93,11 @@ class Converter:
 
     # ---- paths
     def rel(self, path):
+        """a path for the report, relative to the root (or the page) and /-separated on every OS, as the page writes URLs"""
         try:
-            return os.path.relpath(path, self.root or self.pdir)
-        except ValueError:
-            return path
+            return os.path.relpath(path, self.root or self.pdir).replace(os.sep, '/')
+        except ValueError:   # Windows: on another drive
+            return path.replace(os.sep, '/')
 
     def where(self, file):
         return self.rel(file) if file else self.rel(self.page)
