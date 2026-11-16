@@ -578,8 +578,8 @@ SOURCES['lrbind-parity'] = (PARITY_BIN, 'tool')
 
 
 def check_cli(tool=PARITY_BIN):
-    rc, out = sh(['bash', tool, '--help'])
-    rc2, _ = sh(['bash', tool, 'only-one-argument'])
+    rc, out = sh([sys.executable, tool, '--help'])
+    rc2, _ = sh([sys.executable, tool, 'only-one-argument'])
     ok = rc == 0 and 'lrbind-parity CASES.mjs GOLDEN.json' in out and rc2 == 2
     return ok, ('bin/lrbind-parity --help: usage, exit 0; bad arguments: exit 2' if ok else
                 f'FAIL cli: bin/lrbind-parity --help rc {rc}, bad arguments rc {rc2}')
@@ -587,8 +587,8 @@ def check_cli(tool=PARITY_BIN):
 
 CHECKS['cli'] = check_cli
 MUTANTS += [
-    ('lrbind-parity --help exits 2', 'lrbind-parity', "-h|--help) sed -n '2,8p' \"$0\"; exit 0 ;;",
-     "-h|--help) sed -n '2,8p' \"$0\"; exit 2 ;;", 'cli', 'FAIL cli'),
+    ('lrbind-parity --help exits 2', 'lrbind-parity', "print(__doc__.strip())\n        return 0",
+     "print(__doc__.strip())\n        return 2", 'cli', 'FAIL cli'),
 ]
 
 # ==== the run
