@@ -3,9 +3,15 @@
 
 # scripts/build.py
 mutant build scripts/build.py "build: two host sources sharing one cache dir get their own binaries" \
-    "f'rmlhost-{host_hash(cc, src)}{exe}'" "f'rmlhost{exe}'"
+    "f'rmlhost-{host_hash(cc, src)}{EXE}'" "f'rmlhost{EXE}'"
 mutant build scripts/build.py "build: a build waits while another holds the cache lock" \
-    "    with Lock(d + '.lock'):" "    with open(d + '.lock', 'a'):"
+    "    with Lock(d + '.lock'):
+        checkout(d)
+        build_core(cc, d, objdir)
+    # the host needs no lock" "    with open(d + '.lock', 'a'):
+        checkout(d)
+        build_core(cc, d, objdir)
+    # the host needs no lock"
 mutant build scripts/build.py "build: a checkout at another tag is refused" \
     'if have != TAG:' 'if False:'
 mutant build scripts/build.py "build: the compiler found is remembered, and probed again when it changed" \
@@ -14,6 +20,22 @@ mutant build scripts/build.py "build: the compiler found is remembered, and prob
     "if entry and entry['stamp'] and stamp(entry['cmd'][0]) == entry['stamp']:" 'if entry:'
 mutant build scripts/build.py "build: the compiler found is remembered, and probed again when it changed" \
     '        os.replace(tmp, memo)' '        os.remove(tmp)'
+mutant build scripts/build.py "prebuilt: the release binary for these host sources is fetched" \
+    '            p, why = fetch_prebuilt(src, d)' "            p, why = None, 'never fetched'"
+mutant build scripts/build.py "prebuilt: the release binary for these host sources is fetched" \
+    "    return p if p and os.path.isfile(p) else None" "    return None"
+mutant build scripts/build.py "prebuilt: a download whose SHA-256 is not the release's is refused" \
+    '    if got != want:' '    if False:'
+mutant build scripts/build.py "prebuilt: NUIKIT_PREBUILT=0 never fetches" \
+    "    if os.environ.get('NUIKIT_PREBUILT', '') != '0' and not a.out:" '    if not a.out:'
+mutant build scripts/build.py "prebuilt: a zip holding files outside its folder is refused" \
+    "            if not all(m.startswith(name + '/') and '..' not in m.split('/') for m in z.namelist()):" \
+    '            if False:'
+mutant build scripts/build.py "prebuilt: a binary that does not start here is refused" \
+    '        if not starts(binary):' '        if False:'
+mutant build scripts/build.py "prebuilt: with no release binary and no compiler, the error says why for both" \
+    "                die(f'no prebuilt host ({why}), and none can be built: {find_compiler.why}')" \
+    '                die(find_compiler.why)'
 mutant build scripts/build.py "build: a killed clone leaves no half checkout behind" \
     "URL, tmp], stdout=sys.stderr)
         if r.returncode:

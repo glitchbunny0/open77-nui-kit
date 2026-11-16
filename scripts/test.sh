@@ -22,6 +22,8 @@ if [ -z "$LUA" ]; then
     exit 1
 fi
 export LUA
+# the suite proves building from source; the prebuilt path has checks of its own (tests/host/build_checks.py)
+export NUIKIT_PREBUILT=0
 
 # every step writes into a directory of its own under one root, kept (and named) when something failed
 t="${TMPDIR:-/tmp}"; root="$(mktemp -d "${t%/}/nuikit-test.XXXXXX")"   # with a template: macOS's bare mktemp -d ignores TMPDIR

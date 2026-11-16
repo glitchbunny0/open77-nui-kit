@@ -4,7 +4,7 @@ seconds and never touch the real cache. Usage: build_checks.py BUILD_PY WORKDIR 
 Prints "ok <check>" or "FAIL <check>: why" per check; exits 1 when any failed. Runs on Linux, macOS and Windows: the
 cache lock is held from here the way build.py takes it, and the fake git is a script on PATH (git.cmd on Windows).
 """
-import json, os, pathlib, subprocess, sys, time
+import hashlib, importlib.util, json, os, pathlib, subprocess, sys, time, zipfile
 
 WINDOWS = os.name == 'nt'
 BUILD, W = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
@@ -52,15 +52,18 @@ def mkhost(d, word):   # a host source dir whose binary prints WORD
 HOST_A, HOST_B = mkhost(os.path.join(W, 'hostA'), 'A'), mkhost(os.path.join(W, 'hostB'), 'B')
 
 
-def env(d, path=None):
-    e = dict(os.environ, NUIKIT_RMLUI_URL=pathlib.Path(REPO).as_uri(), NUIKIT_RMLUI_TAG='6.3', NUIKIT_RMLUI_DIR=d)
+def env(d, path=None, **extra):
+    # no prebuilt host unless a check asks for one: these checks are about building, and must never fetch
+    e = dict(os.environ, NUIKIT_RMLUI_URL=pathlib.Path(REPO).as_uri(), NUIKIT_RMLUI_TAG='6.3', NUIKIT_RMLUI_DIR=d,
+             NUIKIT_PREBUILT='0')
     if path:
         e['PATH'] = path
+    e.update(extra)
     return e
 
 
-def run(d, *args, path=None):
-    return subprocess.run([sys.executable, BUILD, *args], env=env(d, path), capture_output=True)
+def run(d, *args, path=None, **extra):
+    return subprocess.run([sys.executable, BUILD, *args], env=env(d, path, **extra), capture_output=True)
 
 
 def last(r):
@@ -191,6 +194,111 @@ if want(c):
             bad(c, f'the remembered compiler was not used: {a} then {b}')
         elif again != a:
             bad(c, f'a changed compiler was not probed again: {again}, want {a}')
+        else:
+            ok(c)
+
+# ---- prebuilt: a fake release (a file:// folder) holding the binary built for HOST_A's sources
+spec = importlib.util.spec_from_file_location('build_under_test', BUILD)
+B = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(B)   # its source_hash and platform_tag name the release asset, as the build under test does
+PLAT = B.platform_tag()
+
+
+def fake_release(where, binary, digest=None, extra=()):
+    """a release folder for HOST_A: v<VERSION>/<asset>.zip and SHA256SUMS (digest: what SHA256SUMS claims). binary: a
+    file, or bytes to ship as the host; extra: more zip members, as (name, text)"""
+    name = B.asset_name(HOST_A, PLAT)
+    folder = os.path.join(where, 'v' + B.kit_version())
+    os.makedirs(folder, exist_ok=True)
+    z = os.path.join(folder, name + '.zip')
+    with zipfile.ZipFile(z, 'w') as zf:
+        if isinstance(binary, bytes):
+            zf.writestr(f'{name}/rmlhost{B.EXE}', binary)
+        else:
+            zf.write(binary, f'{name}/rmlhost{B.EXE}')
+        zf.writestr(f'{name}/LICENSE', 'MIT')
+        for member, text in extra:
+            zf.writestr(member, text)
+    with open(z, 'rb') as f:
+        real = hashlib.sha256(f.read()).hexdigest()
+    with open(os.path.join(folder, 'SHA256SUMS'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(f'{digest or real}  {name}.zip\n')
+    return pathlib.Path(where).as_uri()
+
+
+PRE = dict(NUIKIT_PREBUILT='')   # the prebuilt path on, as for a user
+if not PLAT or not B.kit_version():
+    print('skip build: the prebuilt checks (no release binary for this platform, or no VERSION file)')
+else:
+    built_a = last(run(os.path.join(W, 'c6', 'src', 'rmlui'), '--host', HOST_A))   # the binary a release would ship
+
+    c = 'prebuilt: the release binary for these host sources is fetched, checked and used, then kept'
+    if want(c):
+        d = os.path.join(W, 'c6', 'rmlui')
+        url = fake_release(os.path.join(W, 'c6', 'rel'), built_a)
+        nocc = os.path.join(W, 'no-such-compiler')   # a source build cannot happen: the release must serve
+        first = last(run(d, '--host', HOST_A, CXX=nocc, NUIKIT_PREBUILT_URL=url, **PRE))
+        again = last(run(d, '--host', HOST_A, CXX=nocc, NUIKIT_PREBUILT_URL=pathlib.Path(W, 'gone').as_uri(), **PRE))
+        inside = os.path.join(W, 'c6', 'prebuilt')
+        if not first or not first.startswith(inside) or says(first) != 'A':
+            bad(c, f'the release binary was not used: {first or "no binary"}')
+        elif again != first:
+            bad(c, f'a second run without the release did not use the one fetched: {again or "no binary"}')
+        else:
+            ok(c)
+
+    c = 'prebuilt: a download whose SHA-256 is not the release\'s is refused, and the host is built from source'
+    if want(c):
+        d = os.path.join(W, 'c7', 'rmlui')
+        url = fake_release(os.path.join(W, 'c7', 'rel'), built_a, digest='0' * 64)
+        r = run(d, '--host', HOST_A, NUIKIT_PREBUILT_URL=url, **PRE)
+        p = last(r)
+        if not p or p.startswith(os.path.join(W, 'c7', 'prebuilt')) or says(p) != 'A':
+            bad(c, f'the binary used: {p or "none"}')
+        elif b'SHA-256' not in r.stderr:
+            bad(c, 'no word of the SHA-256 that did not match')
+        else:
+            ok(c)
+
+    c = 'prebuilt: NUIKIT_PREBUILT=0 never fetches'
+    if want(c):
+        d = os.path.join(W, 'c8', 'rmlui')
+        url = fake_release(os.path.join(W, 'c8', 'rel'), built_a)
+        p = last(run(d, '--host', HOST_A, NUIKIT_PREBUILT_URL=url))   # env() sets NUIKIT_PREBUILT=0
+        if not p or p.startswith(os.path.join(W, 'c8', 'prebuilt')):
+            bad(c, f'the binary used: {p or "none"}')
+        else:
+            ok(c)
+
+    def refused(c, n, word, **release):
+        """a release for HOST_A made with **release is not used: the host is built from source, stderr says word"""
+        url = fake_release(os.path.join(W, n, 'rel'), release.pop('binary', built_a), **release)
+        r = run(os.path.join(W, n, 'rmlui'), '--host', HOST_A, NUIKIT_PREBUILT_URL=url, **PRE)
+        p = last(r)
+        if not p or p.startswith(os.path.join(W, n, 'prebuilt')) or says(p) != 'A':   # never runs a refused one
+            bad(c, f'the binary used: {p or "none"}')
+        elif word not in r.stderr.decode('utf-8', 'replace'):
+            bad(c, f'no {word!r} in: {r.stderr.decode("utf-8", "replace").strip()[-300:]}')
+        else:
+            ok(c)
+
+    c = 'prebuilt: a zip holding files outside its folder is refused, and the host is built from source'
+    if want(c):
+        refused(c, 'c9', 'outside', extra=[('elsewhere/x.txt', 'x'), ('../up.txt', 'x')])
+
+    c = 'prebuilt: a binary that does not start here is refused, and the host is built from source'
+    if want(c):
+        refused(c, 'c10', 'does not run here', binary=b'not a program for this machine\n')
+
+    c = 'prebuilt: with no release binary and no compiler, the error says why for both'
+    if want(c):
+        r = run(os.path.join(W, 'c11', 'rmlui'), '--host', HOST_A, CXX=os.path.join(W, 'no-such-compiler'),
+                NUIKIT_PREBUILT_URL=pathlib.Path(W, 'c11', 'no-release').as_uri(), **PRE)
+        err = r.stderr.decode('utf-8', 'replace')
+        if r.returncode != 2:
+            bad(c, f'exit {r.returncode}, want 2')
+        elif not all(w in err for w in ('no prebuilt host', 'no release v', 'none can be built', 'no-such-compiler')):
+            bad(c, f'the message: {err.strip()[-300:]}')
         else:
             ok(c)
 

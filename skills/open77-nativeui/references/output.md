@@ -74,6 +74,20 @@ show up here: RmlUi loads what it parsed up to the fault and logs a WARN, so an 
 mistake in text (`{{a} }}`, a stray `}}`) shows as WARN lines plus everything after the fault missing from the
 outline. When a screen is half empty, read the outline.
 
+### `building the host failed:` and the lines after it
+
+`rml-check` and `rml-preview` get the host from `scripts/build.py`: the prebuilt one from the kit's release when it
+has one for these host sources, else one built from source. That stays silent while it works; on failure the tool
+prints `building the host failed:` and then `build.py`'s own lines:
+
+- `no prebuilt host (<why>), and none can be built: <why>`: no binary for this checkout and no compiler. `release
+  vX.Y.Z has no rmlhost-....zip` means its `host/` changed since that release; `no release vX.Y.Z to fetch from`
+  means no network, or the release does not exist yet. Install a C++17 compiler, or use a tagged kit.
+- `no prebuilt host (<why>): building from source`, then a compile error: the source build itself failed; the
+  compiler's message follows.
+- `<name>.zip has SHA-256 <a>, the release lists <b>: not used`: the download is not the file the release published
+  (a broken mirror or proxy). The host is built from source instead; tell a human.
+
 ## rml-preview
 
 ```text

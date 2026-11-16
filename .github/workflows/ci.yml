@@ -27,6 +27,7 @@ jobs:
       PILLOW_VERSION: "13.0.0"   # one FreeType for the preview's reference PNGs on every OS
       LUA_VERSION: "5.4.8"
       CXX: ${{ matrix.cxx }}     # empty: build.py takes the first compiler it finds
+      NUIKIT_PREBUILT: "0"       # CI builds the host it tests; release.yml builds and tests the prebuilt ones
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

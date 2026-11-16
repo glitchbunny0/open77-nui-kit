@@ -31,7 +31,7 @@ mutant() {
     n=$((n + 1))
     local d="$tmp/mut$n"
     mkdir -p "$d"
-    cp -r host "$d/host"; mkdir -p "$d/scripts"; cp scripts/build.py "$d/scripts/build.py"
+    cp -r host "$d/host"; mkdir -p "$d/scripts"; cp scripts/build.py "$d/scripts/build.py"; cp VERSION "$d/VERSION"
     if ! plant "$file" "$d/$file" "$old" "$new"
     then echo "FAIL: mutant $n ($check): the site is gone"; fail=1; return; fi
     kinds[$n]="$kind"; checks[$n]="$check"; dirs[$n]="$d"
