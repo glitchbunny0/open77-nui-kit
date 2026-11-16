@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# rmlhost's own tests (host/ and scripts/build.sh). Suite contract: tests/README.md.
+# rmlhost's own tests (host/ and scripts/build.py). Suite contract: tests/README.md.
 #   1. tests/host/checks.py on the real host: check, layout and parity mode against the probe documents in tests/host/
-#   2. tests/host/build_checks.sh on the real scripts/build.sh (a fake RmlUi, so it takes seconds)
-#   3. mutants: broken copies of a host/ file or of build.sh, one bug each, built into $NUIKIT_TMP; each must turn the
+#   2. tests/host/build_checks.py on the real scripts/build.py (a fake RmlUi, so it takes seconds)
+#   3. mutants: broken copies of a host/ file or of build.py, one bug each, built into $NUIKIT_TMP; each must turn the
 #      check it names red on its own
 set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
 py="${PYTHON:-python3}"
 fail=0
-host=$(bash scripts/build.sh 2>/dev/null | tail -1)
-[ -x "$host" ] || { echo "FAIL: scripts/build.sh did not build the host"; exit 1; }
+host=$("$py" scripts/build.py 2>/dev/null | tail -1)
+[ -x "$host" ] || { echo "FAIL: scripts/build.py did not build the host"; exit 1; }
 
 summary() {   # summary LABEL OUTPUT RC
     [ -z "$2" ] || echo "$2" | grep -v '^ok ' || true
@@ -18,11 +18,11 @@ summary() {   # summary LABEL OUTPUT RC
     [ "$3" = 0 ] || { echo "FAIL: $1"; fail=1; }
 }
 out=$("$py" tests/host/checks.py "$host" 2>&1); summary "host checks" "$out" $?
-out=$(bash tests/host/build_checks.sh scripts/build.sh "$tmp/build" 2>&1); summary "build.sh checks" "$out" $?
+out=$("$py" tests/host/build_checks.py scripts/build.py "$tmp/build" 2>&1); summary "build checks" "$out" $?
 
 # mutant KIND FILE CHECK OLD NEW: replace OLD (it must occur exactly once) by NEW in a copy of FILE
 #   KIND host: FILE is under host/, the mutant host is built and tests/host/checks.py runs on it
-#   KIND build: FILE is scripts/build.sh, tests/host/build_checks.sh runs on the copy
+#   KIND build: FILE is scripts/build.py, tests/host/build_checks.py runs on the copy
 n=0
 declare -a kinds checks dirs
 mutant() {
@@ -30,28 +30,32 @@ mutant() {
     n=$((n + 1))
     local d="$tmp/mut$n"
     mkdir -p "$d"
-    cp -r host "$d/host"; mkdir -p "$d/scripts"; cp scripts/build.sh "$d/scripts/build.sh"
+    cp -r host "$d/host"; mkdir -p "$d/scripts"; cp scripts/build.py "$d/scripts/build.py"
     if ! SRC="$file" DST="$d/$file" OLD="$old" NEW="$new" "$py" - <<'PY'
 import os, sys
 s = open(os.environ['SRC'], encoding='utf-8').read()
 k = s.count(os.environ['OLD'])
 if k != 1:
     print('mutant site matches %d times: %r' % (k, os.environ['OLD'][:70])); sys.exit(1)
-open(os.environ['DST'], 'w', encoding='utf-8').write(s.replace(os.environ['OLD'], os.environ['NEW']))
+open(os.environ['DST'], 'w', encoding='utf-8', newline='\n').write(s.replace(os.environ['OLD'], os.environ['NEW']))
 PY
     then echo "FAIL: mutant $n ($check): the site is gone"; fail=1; return; fi
     kinds[$n]="$kind"; checks[$n]="$check"; dirs[$n]="$d"
 }
 source tests/host/mutants.sh
 
-# build the host mutants in parallel, then run each one's check
-jobs=$(nproc 2>/dev/null || echo 4)
-for i in $(seq 1 $n); do
-    [ "${kinds[$i]:-}" = host ] || continue
-    while [ "$(jobs -rp | wc -l)" -ge "$jobs" ]; do wait -n; done
-    bash scripts/build.sh --host "${dirs[$i]}/host" --out "${dirs[$i]}/rmlhost" >"${dirs[$i]}/build.log" 2>&1 &
-done
-wait
+# build the host mutants in parallel (a build.py each, as many at once as there are CPUs), then run each one's check
+for i in $(seq 1 $n); do [ "${kinds[$i]:-}" = host ] && echo "${dirs[$i]}"; done > "$tmp/host-mutants.txt"
+"$py" - "$tmp/host-mutants.txt" <<'PY'
+import concurrent.futures, os, subprocess, sys
+dirs = [l for l in open(sys.argv[1], encoding='utf-8').read().splitlines() if l]
+def build(d):
+    with open(os.path.join(d, 'build.log'), 'wb') as log:
+        subprocess.run([sys.executable, 'scripts/build.py', '--host', os.path.join(d, 'host'),
+                        '--out', os.path.join(d, 'rmlhost')], stdout=log, stderr=log)
+with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+    list(pool.map(build, dirs))
+PY
 red=0
 for i in $(seq 1 $n); do
     [ -n "${kinds[$i]:-}" ] || continue
@@ -60,7 +64,7 @@ for i in $(seq 1 $n); do
         if [ ! -x "$d/rmlhost" ]; then echo "FAIL: mutant $i ($c) did not build"; tail -3 "$d/build.log"; fail=1; continue; fi
         o=$("$py" tests/host/checks.py "$d/rmlhost" --only "$c" 2>&1)
     else
-        o=$(bash tests/host/build_checks.sh "$d/scripts/build.sh" "$d/work" "$c" 2>&1)
+        o=$("$py" tests/host/build_checks.py "$d/scripts/build.py" "$d/work" "$c" 2>&1)
     fi
     if echo "$o" | grep -qF -- "FAIL $c"; then red=$((red + 1))
     else echo "FAIL: mutant $i did not turn '$c' red"; echo "$o" | head -5; fail=1; fi

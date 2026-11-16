@@ -1,5 +1,5 @@
 #pragma once
-// open77-nui-kit host: real RmlUi (pinned in scripts/build.sh) with a dynamic, Lua-like data model fed from JSON.
+// open77-nui-kit host: real RmlUi (pinned in scripts/build.py) with a dynamic, Lua-like data model fed from JSON.
 // One binary, three modes:
 //   rmlhost check  <doc.rml> <model>              < cases.json   element outline, warnings, real clicks per case
 //   rmlhost layout <doc.rml> <model> <fonts.json> < cases.json   boxes + text runs + warnings as JSON, real advances

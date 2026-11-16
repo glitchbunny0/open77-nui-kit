@@ -1,16 +1,20 @@
 # The suite's mutants, sourced by tests/host.sh: mutant KIND FILE CHECK OLD NEW (see there). One bug each; the check
 # named must go red on its own.
 
-# scripts/build.sh
-mutant build scripts/build.sh "build: two host sources sharing one cache dir get their own binaries" \
-    'bin="${out:-$dir/build/rmlhost-$hash}"' 'bin="${out:-$dir/build/rmlhost}"'
-mutant build scripts/build.sh "build: a build waits while another holds the cache lock" \
-    '    flock 9' '    :'
-mutant build scripts/build.sh "build: a checkout at another tag is refused" \
-    'if [ "$have" != "$tag" ]; then' 'if false; then'
-mutant build scripts/build.sh "build: a killed clone leaves no half checkout behind" \
-    '"$url" "$dir.tmp.$$"
-    mv "$dir.tmp.$$" "$dir"' '"$url" "$dir"'
+# scripts/build.py
+mutant build scripts/build.py "build: two host sources sharing one cache dir get their own binaries" \
+    "f'rmlhost-{host_hash(cc, src)}{exe}'" "f'rmlhost{exe}'"
+mutant build scripts/build.py "build: a build waits while another holds the cache lock" \
+    "    with Lock(d + '.lock'):" "    with open(d + '.lock', 'a'):"
+mutant build scripts/build.py "build: a checkout at another tag is refused" \
+    'if have != TAG:' 'if False:'
+mutant build scripts/build.py "build: a killed clone leaves no half checkout behind" \
+    "URL, tmp], stdout=sys.stderr)
+        if r.returncode:
+            die(f'git clone of RmlUi {TAG} from {URL} failed', 1)
+        rename(tmp, d)" "URL, d], stdout=sys.stderr)
+        if r.returncode:
+            die(f'git clone of RmlUi {TAG} from {URL} failed', 1)"
 
 # host/common.hpp: the JSON reader
 mutant host host/common.hpp "json: an emoji (a surrogate pair) arrives as one 4-byte UTF-8 character" \

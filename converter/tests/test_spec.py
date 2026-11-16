@@ -11,10 +11,10 @@ OUT = os.path.join(KIT, 'converter', 'rmlui_spec.py')
 
 
 def rmlui_dir():
-    r = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(KIT, 'scripts', 'build.py')], capture_output=True)
     if r.returncode != 0:
-        sys.exit('test_spec: building the host failed:\n' + r.stderr)
-    return os.path.dirname(os.path.dirname(r.stdout.strip().splitlines()[-1]))   # <dir>/build/rmlhost
+        sys.exit('test_spec: building the host failed:\n' + r.stderr.decode('utf-8', 'replace'))
+    return os.path.dirname(os.path.dirname(r.stdout.decode('utf-8').strip().splitlines()[-1]))   # <dir>/build/rmlhost
 
 
 def generate(src):

@@ -22,7 +22,7 @@ allowances with --allow REGEX.
              temp dir; its path is printed)
 Click args: JSON numbers and bools are compared as RmlUi prints them (`pick(2)`, `toggle(1)`, three decimals at most,
 trailing zeros cut), so `"args": [2]` and `"args": ["2"]` both want `pick(2)`.
-Environment: NUIKIT_HOST=/path/to/rmlhost uses that host binary instead of building one with scripts/build.sh.
+Environment: NUIKIT_HOST=/path/to/rmlhost uses that host binary instead of building one with scripts/build.py.
 Exit status: 0 clean, 1 warnings, failed clicks or undeclared events, 2 usage, input or build problem.
 """
 import argparse, difflib, html, json, os, re, subprocess, sys, tempfile
@@ -302,10 +302,10 @@ def main():
 
     host = os.environ.get('NUIKIT_HOST')
     if not host:
-        b = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
+        b = subprocess.run([sys.executable, os.path.join(KIT, 'scripts', 'build.py')], capture_output=True)
         if b.returncode != 0 or not b.stdout.strip():
-            die('building the host failed:\n' + b.stderr)
-        host = b.stdout.strip().splitlines()[-1]
+            die('building the host failed:\n' + b.stderr.decode('utf-8', 'replace'))
+        host = b.stdout.decode('utf-8').strip().splitlines()[-1]
 
     bad, fails, loadfail, outline = {}, [], [], []
     clicks = 0

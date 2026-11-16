@@ -118,10 +118,10 @@ _HOST = []
 
 def host():
     if not _HOST:
-        r = subprocess.run(['bash', os.path.join(TOOLS, 'scripts', 'build.sh')], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, os.path.join(TOOLS, 'scripts', 'build.py')], capture_output=True)
         if r.returncode != 0:
-            raise RuntimeError('building the host failed:\n' + r.stderr)
-        _HOST.append(r.stdout.strip().splitlines()[-1])
+            raise RuntimeError('building the host failed:\n' + r.stderr.decode('utf-8', 'replace'))
+        _HOST.append(r.stdout.decode('utf-8').strip().splitlines()[-1])
     return _HOST[0]
 
 

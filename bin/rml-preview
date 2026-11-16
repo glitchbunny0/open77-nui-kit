@@ -1166,10 +1166,10 @@ def host():
         if not os.access(os.environ['NUIKIT_HOST'], os.X_OK):
             die('NUIKIT_HOST is not an executable: ' + os.environ['NUIKIT_HOST'])
         return os.environ['NUIKIT_HOST']
-    r = subprocess.run(['bash', os.path.join(KIT, 'scripts', 'build.sh')], capture_output=True, text=True)
-    if r.returncode != 0:
-        die('building the host failed:\n' + r.stderr)
-    return r.stdout.strip().splitlines()[-1]
+    r = subprocess.run([sys.executable, os.path.join(KIT, 'scripts', 'build.py')], capture_output=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        die('building the host failed:\n' + r.stderr.decode('utf-8', 'replace'))
+    return r.stdout.decode('utf-8').strip().splitlines()[-1]
 
 
 def parse_crop(s):

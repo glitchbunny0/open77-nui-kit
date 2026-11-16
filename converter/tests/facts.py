@@ -12,10 +12,10 @@ KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 def host():
     tools = os.environ.get('HTML2RML_KIT') or KIT   # the mutation runs point it at the real kit
-    r = subprocess.run(['bash', os.path.join(tools, 'scripts', 'build.sh')], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(tools, 'scripts', 'build.py')], capture_output=True)
     if r.returncode != 0:
-        sys.exit('facts: building the host failed:\n' + r.stderr)
-    return r.stdout.strip().splitlines()[-1]
+        sys.exit('facts: building the host failed:\n' + r.stderr.decode('utf-8', 'replace'))
+    return r.stdout.decode('utf-8').strip().splitlines()[-1]
 
 
 HOST = None

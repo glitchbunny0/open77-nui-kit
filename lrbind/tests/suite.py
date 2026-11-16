@@ -628,10 +628,10 @@ def run_mutant(i, m):
 def main():
     global HOST
     failed = 0
-    rc, out = sh(['bash', 'scripts/build.sh'])
-    HOST = out.strip().splitlines()[-1] if rc == 0 else ''
-    if rc != 0 or not os.path.exists(HOST):
-        print('FAIL rmlhost: scripts/build.sh failed\n' + out)
+    r = subprocess.run([sys.executable, 'scripts/build.py'], cwd=KIT, capture_output=True)   # the path: stdout's last line
+    HOST = (r.stdout.decode('utf-8').strip().splitlines() or [''])[-1] if r.returncode == 0 else ''
+    if r.returncode != 0 or not os.path.exists(HOST):
+        print('FAIL rmlhost: scripts/build.py failed\n' + r.stderr.decode('utf-8', 'replace'))
         return 1
     rc, cases = sh(['node', 'lrbind/tests/parity/parity.test.mjs', '--emit-cases'])
     try:
