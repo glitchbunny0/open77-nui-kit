@@ -63,14 +63,21 @@ jobs:
           if [ -n "$CXX" ]; then echo "CXX=$CXX"; fi
       - name: Chromium headless shell (for html-shot; Playwright's cache dir)
         run: npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell
-      - name: cache RmlUi build
-        uses: actions/cache@v4
+      - name: restore the RmlUi build
+        id: rmlui
+        uses: actions/cache/restore@v4
         with:
           path: ${{ matrix.cache }}
-          key: rmlui-6.3-${{ matrix.name }}-${{ hashFiles('scripts/build.py') }}
+          key: rmlui-6.3-${{ matrix.name }}-${{ hashFiles('scripts/build.py', 'host/*') }}
           restore-keys: rmlui-6.3-${{ matrix.name }}-
       - name: build the host
         run: python3 scripts/build.py
+      - name: save the RmlUi build (now, so that a failed test run keeps it)
+        if: steps.rmlui.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ matrix.cache }}
+          key: rmlui-6.3-${{ matrix.name }}-${{ hashFiles('scripts/build.py', 'host/*') }}
       - name: a place for the outputs of a failed run
         run: |
           # a failed run keeps its outputs under TMPDIR: here, so the last step can upload them (POSIX form for Git Bash)
