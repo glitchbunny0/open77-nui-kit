@@ -22,7 +22,8 @@ page has loaded); a script that loads it later than that (a bundler's async chun
 The PNG is <out>/<case name>.png with every character outside [A-Za-z0-9_.-] written as _ (two cases that end up with
 the same file name are refused).
 Chromium: $NUIKIT_CHROME, else Playwright's headless shell ($PLAYWRIGHT_BROWSERS_PATH, then
-$XDG_CACHE_HOME/ms-playwright, ~/.cache/ms-playwright, ~/Library/Caches/ms-playwright, the first with a shell), else chromium/google-chrome on PATH. Exit status 2 when none is found
+$XDG_CACHE_HOME/ms-playwright, ~/.cache/ms-playwright, ~/Library/Caches/ms-playwright, %LOCALAPPDATA%\\ms-playwright,
+the first with a shell), else chromium/google-chrome on PATH. Exit status 2 when none is found
 (the tool is optional locally; the kit's CI requires it).
 """
 import argparse, glob, http.server, json, os, re, shutil, signal, socketserver, subprocess, sys, tempfile, threading
@@ -44,7 +45,10 @@ def find_chrome():
         roots.append(os.path.join(os.environ['XDG_CACHE_HOME'], 'ms-playwright'))
     roots.append(os.path.expanduser('~/.cache/ms-playwright'))
     roots.append(os.path.expanduser('~/Library/Caches/ms-playwright'))
+    if os.environ.get('LOCALAPPDATA'):   # Windows
+        roots.append(os.path.join(os.environ['LOCALAPPDATA'], 'ms-playwright'))
     patterns = ('chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell',
+                'chromium_headless_shell-*/chrome-linux/headless_shell',      # Linux on arm64
                 'chromium_headless_shell-*/chrome-headless-shell-mac*/chrome-headless-shell',
                 'chromium_headless_shell-*/chrome-headless-shell-win64/chrome-headless-shell.exe')
 
@@ -149,25 +153,36 @@ def verdict(rep):
     return None
 
 
+def kill_tree(proc):
+    """kill a process with everything it started"""
+    if os.name == 'nt':   # no process groups: taskkill walks the tree from the pid down
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True)
+    else:
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 def run_chrome(cmd, timeout):
-    """(returncode, stderr); a run that outlives the timeout is killed with everything it started (own session)"""
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    """(returncode, stderr); a run that outlives the timeout is killed with everything it started"""
+    try:   # its own session on POSIX, so that killpg reaches its children (Windows ignores start_new_session)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
     except OSError as e:
         die(f'cannot run {cmd[0]}: {e}')
     try:
         _, err = proc.communicate(timeout=timeout)
-        return proc.returncode, err
+        return proc.returncode, err.decode('utf-8', 'replace')
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
+        kill_tree(proc)
         proc.communicate()
         return None, f'Chromium did not finish in {timeout} s and was killed'
     except BaseException:
-        os.killpg(proc.pid, signal.SIGKILL)
+        kill_tree(proc)
         raise
 
 
 def main():
+    for s in (sys.stdout, sys.stderr):   # UTF-8 and \n on every OS (a Windows pipe gets the ANSI code page and \r\n)
+        if hasattr(s, 'reconfigure'):
+            s.reconfigure(encoding='utf-8', errors='backslashreplace', newline='\n')
     if sys.argv[1:] == ['--find']:
         c = find_chrome()
         print(c or 'none')

@@ -8,7 +8,7 @@ set -uo pipefail
 kit="${NUIKIT:?run through scripts/test.sh}"; tmp="${NUIKIT_TMP:?}"
 cd "$kit"
 fail=0
-py=$(command -v python3)
+source tests/lib/os.sh   # py, windows, shim, upath
 
 real_chrome=$(bin/html-shot --find 2>/dev/null) || real_chrome=""
 if [ -z "$real_chrome" ] && [ "${NUIKIT_REQUIRE_CHROME:-}" = 1 ]; then
@@ -39,7 +39,7 @@ echo "$url" >> "$FAKE_DIR/urls"
 for a in "$@"; do case "$a" in --user-data-dir=*) echo "${a#--user-data-dir=}" >> "$FAKE_DIR/profiles";; esac; done
 key=$(basename "$url" .html)
 case "${FAKE_MODE:-good}" in
-  hang)    sleep 300 >/dev/null 2>&1 & echo $! > "$FAKE_DIR/child.pid"; wait ;;
+  hang)    sleep 300 >/dev/null 2>&1 & echo $! > "$FAKE_DIR/child.pid"; sleep 20 >/dev/null 2>&1 ;;
   nopng)   ;;
   junk)    echo "not a png" > "$png" ;;
   *)       printf '\x89PNG\r\n\x1a\n' > "$png"
@@ -55,7 +55,7 @@ PY
            ;;
 esac
 EOF
-chmod +x "$tmp/fake-chrome"
+fake_chrome=$(shim "$tmp/fake-chrome")   # Windows: fake-chrome.cmd, which runs the script with this bash
 
 # run TOOL ARGS... -> $out (stdout+stderr), $rc
 run() { out=$("$@" 2>&1) && rc=0 || rc=$?; }
@@ -70,7 +70,7 @@ hasnt() { ! grep -qF -- "$2" <<<"$1"; }
 # ---- the fake-Chromium group ----
 fake_checks() {   # fake_checks TOOL
     local tool="$1" d="$tmp/fk$RANDOM"; mkdir -p "$d/out"
-    export FAKE_DIR="$d" NUIKIT_CHROME="$tmp/fake-chrome" TMPDIR="$d/tmp"; mkdir -p "$TMPDIR"
+    export FAKE_DIR="$d" NUIKIT_CHROME="$fake_chrome" TMPDIR="$d/tmp"; mkdir -p "$TMPDIR"
     local cases="$tmp/cases.json"
 
     FAKE_MODE=good run "$tool" "$site/web/good.html" "$cases" --out "$d/out"
@@ -113,7 +113,7 @@ fake_checks() {   # fake_checks TOOL
 # ---- a Chromium that hangs (its own group: it waits for the timeout) ----
 hang_checks() {   # hang_checks TOOL
     local tool="$1" d="$tmp/hg$RANDOM"; mkdir -p "$d/out" "$d/tmp"
-    export FAKE_DIR="$d" NUIKIT_CHROME="$tmp/fake-chrome" TMPDIR="$d/tmp"
+    export FAKE_DIR="$d" NUIKIT_CHROME="$fake_chrome" TMPDIR="$d/tmp"
     local cases="$tmp/cases.json"
     FAKE_MODE=hang run "$tool" "$site/web/good.html" "$cases" --out "$d/out" --timeout 2
     want "fake: a Chromium that hangs is a FAIL after --timeout" bash -c '[ "$1" = 1 ] && grep -q "FAIL one: Chromium did not finish in 2 s" <<<"$2"' _ "$rc" "$out"
@@ -132,20 +132,25 @@ find_checks() {   # find_checks TOOL
              "$h/xdg/ms-playwright/${sh}5/$(dirname $sfx)" "$h/pw/${sh}7/$(dirname $sfx)" "$h/bin"
     for f in "$h/hm/.cache/ms-playwright/${sh}999/$sfx" "$h/hm/.cache/ms-playwright/${sh}1000/$sfx" \
              "$h/xdg/ms-playwright/${sh}5/$sfx" "$h/pw/${sh}7/$sfx"; do : > "$f"; chmod +x "$f"; done
-    local env0=(env -i PATH="$h/bin" HOME="$h/hm")
+    local env0=(env -i PATH="$h/bin" HOME="$h/hm" USERPROFILE="$h/hm") bare=(env -i PATH="$h/bin")
+    [ "$windows" = 1 ] && { env0+=(SYSTEMROOT="$SYSTEMROOT"); bare+=(SYSTEMROOT="$SYSTEMROOT"); }
     run "${env0[@]}" "$py" "$tool" --find
-    want "find: the highest revision wins (1000 over 999, a number not a string)" bash -c '[ "$1" = 0 ] && grep -q "ms-playwright/chromium_headless_shell-1000/" <<<"$2"' _ "$rc" "$out"
+    want "find: the highest revision wins (1000 over 999, a number not a string)" bash -c '[ "$1" = 0 ] && grep -qE "ms-playwright[/\\\\]chromium_headless_shell-1000[/\\\\]" <<<"$2"' _ "$rc" "$out"
     run "${env0[@]}" XDG_CACHE_HOME="$h/xdg" "$py" "$tool" --find
-    want "find: XDG_CACHE_HOME/ms-playwright comes before ~/.cache" bash -c 'grep -q "/xdg/ms-playwright/" <<<"$1"' _ "$out"
+    want "find: XDG_CACHE_HOME/ms-playwright comes before ~/.cache" bash -c 'grep -qE "[/\\\\]xdg[/\\\\]ms-playwright[/\\\\]" <<<"$1"' _ "$out"
     run "${env0[@]}" XDG_CACHE_HOME="$h/xdg" PLAYWRIGHT_BROWSERS_PATH="$h/pw" "$py" "$tool" --find
-    want "find: PLAYWRIGHT_BROWSERS_PATH comes first" bash -c 'grep -q "/pw/" <<<"$1"' _ "$out"
+    want "find: PLAYWRIGHT_BROWSERS_PATH comes first" bash -c 'grep -qE "[/\\\\]pw[/\\\\]" <<<"$1"' _ "$out"
     run "${env0[@]}" XDG_CACHE_HOME="$h/empty-xdg" "$py" "$tool" --find
-    want "find: an XDG_CACHE_HOME without a browser falls back to ~/.cache" bash -c '[ "$1" = 0 ] && grep -q "/hm/.cache/" <<<"$2"' _ "$rc" "$out"
+    want "find: an XDG_CACHE_HOME without a browser falls back to ~/.cache" bash -c '[ "$1" = 0 ] && grep -qE "[/\\\\]hm[/\\\\][.]cache[/\\\\]" <<<"$2"' _ "$rc" "$out"
     run "${env0[@]}" NUIKIT_CHROME="$tmp/fake-chrome" PLAYWRIGHT_BROWSERS_PATH="$h/pw" "$py" "$tool" --find
-    want "find: NUIKIT_CHROME wins over everything" bash -c 'grep -qx "$1" <<<"$2"' _ "$tmp/fake-chrome" "$out"
+    want "find: NUIKIT_CHROME wins over everything" test "$(upath "$out")" = "$tmp/fake-chrome"
     run "${env0[@]}" NUIKIT_CHROME="$h/does-not-exist" "$py" "$tool" --find
     want "find: a NUIKIT_CHROME that does not exist is none (exit 2), not a silent fallback" test $rc = 2
-    run env -i PATH="$h/bin" HOME="$h/nothing" "$py" "$tool" --find
+    local sfxw=chrome-headless-shell-win64/chrome-headless-shell.exe
+    mkdir -p "$h/lad/ms-playwright/${sh}3/$(dirname $sfxw)"; : > "$h/lad/ms-playwright/${sh}3/$sfxw"
+    run "${bare[@]}" HOME="$h/nothing" USERPROFILE="$h/nothing" LOCALAPPDATA="$h/lad" "$py" "$tool" --find
+    want "find: %LOCALAPPDATA%/ms-playwright is searched (Playwright's cache on Windows)" bash -c '[ "$1" = 0 ] && grep -qE "[/\\\\]lad[/\\\\]ms-playwright[/\\\\]" <<<"$2"' _ "$rc" "$out"
+    run "${bare[@]}" HOME="$h/nothing" USERPROFILE="$h/nothing" "$py" "$tool" --find
     want "find: nothing anywhere is none, exit 2" bash -c '[ "$1" = 2 ] && [ "$2" = none ]' _ "$rc" "$out"
 }
 
@@ -215,9 +220,9 @@ mutant fake "fake: no PNG is a FAIL" "if not os.path.exists(png) or open(png, 'r
 mutant fake "fake: a PNG left from an earlier run" '                os.remove(png)   # a stale shot must not pass for this run'"'"'s' '                pass'
 mutant fake "fake: a file that is not a PNG" "if not os.path.exists(png) or open(png, 'rb').read(8) != b'\\x89PNG\\r\\n\\x1a\\n':" "if not os.path.exists(png):"
 mutant hang "fake: a Chromium that hangs" 'return None, f'"'"'Chromium did not finish in {timeout} s and was killed'"'" 'return 0, f'"'"'Chromium did not finish in {timeout} s and was killed'"'"
-mutant hang "fake: ... and what it started is killed" '        os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()' '        proc.kill()
-        proc.communicate()'
+mutant hang "fake: ... and what it started is killed" '    """kill a process with everything it started"""' '    """kill a process with everything it started"""
+    proc.kill()
+    return'
 mutant fake "fake: a case name with separators" "    return '_' + s if s.startswith('.') or not s else s" "    return name"
 mutant fake "fake: two names that end up as one file" '        if other != c['"'"'name'"'"']:' '        if False:'
 mutant fake "fake: a </script> in a model string" "replace('</', '<\\\\/')" "replace('</', '</')"
@@ -228,6 +233,9 @@ mutant find "find: XDG_CACHE_HOME/ms-playwright comes before" "    if os.environ
 " ""
 mutant find "find: PLAYWRIGHT_BROWSERS_PATH comes first" "        roots.append(os.path.expanduser(os.environ['PLAYWRIGHT_BROWSERS_PATH']))" "        pass"
 mutant find "find: an XDG_CACHE_HOME without a browser falls back" "    roots.append(os.path.expanduser('~/.cache/ms-playwright'))
+" ""
+mutant find "find: %LOCALAPPDATA%/ms-playwright is searched" "    if os.environ.get('LOCALAPPDATA'):   # Windows
+        roots.append(os.path.join(os.environ['LOCALAPPDATA'], 'ms-playwright'))
 " ""
 mutant find "find: NUIKIT_CHROME wins" "        return env if os.path.exists(env) else None" "        return None"
 mutant find "find: a NUIKIT_CHROME that does not exist is none" "        return env if os.path.exists(env) else None" "        return env"
@@ -246,7 +254,7 @@ mutant real "real: a script of the page that throws" "window.addEventListener('e
 mutant real "real: ... and the shot of a failed case is kept" "                print(f'FAIL {c[\"name\"]}: {why} (shot kept: {png})')" "                os.remove(png); print(f'FAIL {c[\"name\"]}: {why} (shot kept: {png})')"
 
 wait
-for r in $(ls "$tmp"/mut*/result 2>/dev/null | sort -V); do grep -v '^ok ' "$r"; done
+for j in $(seq 1 $i); do [ -f "$tmp/mut$j/result" ] && grep -v '^ok ' "$tmp/mut$j/result"; done
 reds=$(cat "$tmp"/mut*/result 2>/dev/null | grep -c '^ok   mutant -> red')
 echo "html-shot: $reds of $i mutants turn their check red (the rest skipped without Chromium)"
 grep -q '^FAIL' "$tmp"/mut*/result 2>/dev/null && fail=1
